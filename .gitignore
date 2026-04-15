@@ -1,0 +1,15 @@
+# Binaries
+*.exe
+*.out
+
+# Test cache
+*.test
+
+# Environment / secrets
+.env
+*.env
+
+# Editor
+.idea/
+.vscode/
+*.swp
