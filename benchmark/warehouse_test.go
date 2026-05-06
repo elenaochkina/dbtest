@@ -44,7 +44,7 @@ func TestWarehouseChecksum(t *testing.T) {
 
 	// Seed 5 warehouses with a fixed seed — same seed always produces the same rows.
 	seeder := seedgen.New(42)
-	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5); err != nil {
+	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5, nil); err != nil {
 		t.Fatalf("seed warehouses: %v", err)
 	}
 
