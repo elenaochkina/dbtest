@@ -27,25 +27,18 @@ func TestWarehouseChecksum(t *testing.T) {
 	}
 	defer pool.Close()
 
-	// Clean slate: remove any leftover tables from previous runs.
+	if err := benchmark.DropOrdersTable(ctx, pool); err != nil {
+		t.Fatalf("drop orders: %v", err)
+	}
 	if err := benchmark.DropWarehouseTable(ctx, pool); err != nil {
 		t.Fatalf("drop warehouse: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS orders`); err != nil {
-		t.Fatalf("drop orders: %v", err)
-	}
 
-	// Create both tables fresh.
+	// Create Warehouse and Orders table
 	if err := benchmark.CreateWarehouseTable(ctx, pool); err != nil {
 		t.Fatalf("create warehouse: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `
-		CREATE TABLE orders (
-			id           SERIAL PRIMARY KEY,
-			warehouse_id INT NOT NULL,
-			quantity     INT NOT NULL
-		)
-	`); err != nil {
+	if err := benchmark.CreateOrdersTable(ctx, pool); err != nil {
 		t.Fatalf("create orders: %v", err)
 	}
 
@@ -77,19 +70,29 @@ func TestWarehouseChecksum(t *testing.T) {
 }
 
 // runOrderCycle simulates a minimal order: decrease warehouse 1 stock by 10
-// and record the transaction in the orders table.
+// and record it in the orders table.
+// Both statements run inside a single transaction — either both commit or both roll back.
 func runOrderCycle(ctx context.Context, db *pgxpool.Pool) error {
-	_, err := db.Exec(ctx,
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	// Rollback is a no-op if Commit succeeds, so this is always safe to defer.
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx,
 		`UPDATE warehouse SET stock_count = stock_count - 10 WHERE id = 1`,
 	)
 	if err != nil {
 		return fmt.Errorf("update warehouse stock: %w", err)
 	}
-	_, err = db.Exec(ctx,
+
+	_, err = tx.Exec(ctx,
 		`INSERT INTO orders (warehouse_id, quantity) VALUES (1, 10)`,
 	)
 	if err != nil {
 		return fmt.Errorf("insert order: %w", err)
 	}
-	return nil
+
+	return tx.Commit(ctx)
 }

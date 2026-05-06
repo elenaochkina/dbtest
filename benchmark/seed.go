@@ -43,3 +43,22 @@ func DropWarehouseTable(ctx context.Context, db *pgxpool.Pool) error {
 	_, err := db.Exec(ctx, `DROP TABLE IF EXISTS warehouse`)
 	return err
 }
+
+// CreateOrdersTable creates the orders table if it does not already exist.
+func CreateOrdersTable(ctx context.Context, db *pgxpool.Pool) error {
+	_, err := db.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS orders (
+			id           SERIAL PRIMARY KEY,
+			warehouse_id INT NOT NULL,
+			quantity     INT NOT NULL
+		)
+	`)
+	return err
+}
+
+// DropOrdersTable removes the orders table.
+// Used at the start of tests to ensure a clean slate.
+func DropOrdersTable(ctx context.Context, db *pgxpool.Pool) error {
+	_, err := db.Exec(ctx, `DROP TABLE IF EXISTS orders`)
+	return err
+}
