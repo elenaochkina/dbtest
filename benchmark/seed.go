@@ -68,3 +68,25 @@ func DropOrdersTable(ctx context.Context, db *pgxpool.Pool) error {
 	_, err := db.Exec(ctx, `DROP TABLE IF EXISTS orders`)
 	return err
 }
+
+// RunOrderCycle decreases warehouse 1 stock by 10 and records the order.
+// Both statements run inside a single transaction — either both commit or both roll back.
+func RunOrderCycle(ctx context.Context, db *pgxpool.Pool) error {
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `UPDATE warehouse SET stock_count = stock_count - 10 WHERE id = 1`)
+	if err != nil {
+		return fmt.Errorf("update warehouse stock: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `INSERT INTO orders (warehouse_id, quantity) VALUES (1, 10)`)
+	if err != nil {
+		return fmt.Errorf("insert order: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}

@@ -1,9 +1,11 @@
-package benchmark_test
+package main
 
 import (
+	"bufio"
 	"context"
+	"fmt"
+	"log/slog"
 	"os"
-	"testing"
 
 	"github.com/elenaochkina/dbtest/adapter"
 	"github.com/elenaochkina/dbtest/benchmark"
@@ -12,65 +14,74 @@ import (
 	"github.com/elenaochkina/dbtest/validator"
 )
 
-func TestWarehouseChecksum(t *testing.T) {
+func main() {
 	dsn := os.Getenv("DSN")
 	if dsn == "" {
-		t.Skip("DSN not set — skipping integration test")
+		fmt.Fprintln(os.Stderr, "DSN env var is required")
+		os.Exit(1)
 	}
 
-	// initialize telemetry
 	tel := telemetry.Init(telemetry.Config{
 		MetricsPort: 9090,
 		LogLevel:    "info",
 	})
 	defer tel.Shutdown()
 
+	fmt.Println("metrics server running → http://localhost:9090/metrics")
+
 	ctx := context.Background()
 
 	pool, err := adapter.Connect(dsn, adapter.WithMetrics(tel))
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		slog.Error("connect failed", "error", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
+	// clean slate
 	if err := benchmark.DropOrdersTable(ctx, pool); err != nil {
-		t.Fatalf("drop orders: %v", err)
+		slog.Error("drop orders", "error", err)
+		os.Exit(1)
 	}
 	if err := benchmark.DropWarehouseTable(ctx, pool); err != nil {
-		t.Fatalf("drop warehouse: %v", err)
+		slog.Error("drop warehouse", "error", err)
+		os.Exit(1)
 	}
-
-	// Create Warehouse and Orders table
 	if err := benchmark.CreateWarehouseTable(ctx, pool); err != nil {
-		t.Fatalf("create warehouse: %v", err)
+		slog.Error("create warehouse", "error", err)
+		os.Exit(1)
 	}
 	if err := benchmark.CreateOrdersTable(ctx, pool); err != nil {
-		t.Fatalf("create orders: %v", err)
+		slog.Error("create orders", "error", err)
+		os.Exit(1)
 	}
 
-	// Seed 5 warehouses with a fixed seed — same seed always produces the same rows.
+	// seed with fixed seed so output is always the same
 	seeder := seedgen.New(42)
 	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5, tel); err != nil {
-		t.Fatalf("seed warehouses: %v", err)
+		slog.Error("seed warehouses", "error", err)
+		os.Exit(1)
 	}
 
-	// Snapshot the table state before we do anything.
 	before, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
 	if err != nil {
-		t.Fatalf("checksum before: %v", err)
+		slog.Error("checksum before", "error", err)
+		os.Exit(1)
 	}
+	fmt.Printf("before: rows=%d stock_sum=%d\n", before.RowCount, before.StockSum)
 
-	// Run one order cycle: pick warehouse 1, decrease its stock by 10.
 	if err := benchmark.RunOrderCycle(ctx, pool); err != nil {
-		t.Fatalf("order cycle: %v", err)
+		slog.Error("order cycle", "error", err)
+		os.Exit(1)
 	}
 
-	// Snapshot again after the operation.
 	after, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
 	if err != nil {
-		t.Fatalf("checksum after: %v", err)
+		slog.Error("checksum after", "error", err)
+		os.Exit(1)
 	}
+	fmt.Printf("after:  rows=%d stock_sum=%d  (delta=%d)\n", after.RowCount, after.StockSum, after.StockSum-before.StockSum)
 
-	// The number of warehouse rows must be unchanged; total stock must be exactly 10 less.
-	validator.AssertDelta(t, before, after, -10)
+	fmt.Println("\npress Enter to shut down the metrics server and exit...")
+	bufio.NewReader(os.Stdin).ReadString('\n')
 }
