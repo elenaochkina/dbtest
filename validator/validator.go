@@ -3,8 +3,11 @@ package validator
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,13 +20,19 @@ type Checksum struct {
 // ComputeChecksum reads COUNT(*) and SUM(stock_count) from the named table.
 // The table name is provided as a string because pgx does not support parameterised
 // identifiers — only use this with trusted, hardcoded table names in tests.
-func ComputeChecksum(ctx context.Context, db *pgxpool.Pool, table string) (Checksum, error) {
+func ComputeChecksum(ctx context.Context, db *pgxpool.Pool, table string, tel *telemetry.Telemetry) (Checksum, error) {
+	start := time.Now()
 	var c Checksum
 	// #nosec G201 — table name comes from test code, not user input
 	query := fmt.Sprintf(`SELECT COUNT(*), COALESCE(SUM(stock_count), 0) FROM %s`, table)
 	err := db.QueryRow(ctx, query).Scan(&c.RowCount, &c.StockSum)
 	if err != nil {
 		return Checksum{}, fmt.Errorf("checksum %s: %w", table, err)
+	}
+	duration := time.Since(start).Seconds()
+	if tel != nil {
+		tel.ValidatorChecksumDuration.Observe(duration)
+		slog.Info("checksum computed", "table", table, "latency_seconds", duration)
 	}
 	return c, nil
 }

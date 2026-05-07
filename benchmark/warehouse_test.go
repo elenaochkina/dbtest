@@ -49,7 +49,7 @@ func TestWarehouseChecksum(t *testing.T) {
 	}
 
 	// Snapshot the table state before we do anything.
-	before, err := validator.ComputeChecksum(ctx, pool, "warehouse")
+	before, err := validator.ComputeChecksum(ctx, pool, "warehouse", nil)
 	if err != nil {
 		t.Fatalf("checksum before: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestWarehouseChecksum(t *testing.T) {
 	}
 
 	// Snapshot again after the operation.
-	after, err := validator.ComputeChecksum(ctx, pool, "warehouse")
+	after, err := validator.ComputeChecksum(ctx, pool, "warehouse", nil)
 	if err != nil {
 		t.Fatalf("checksum after: %v", err)
 	}
