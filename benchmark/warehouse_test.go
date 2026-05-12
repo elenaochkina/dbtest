@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/elenaochkina/dbtest/adapter"
+	"github.com/elenaochkina/dbtest/pgadapter"
 	"github.com/elenaochkina/dbtest/benchmark"
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/telemetry"
@@ -20,14 +20,14 @@ func TestWarehouseChecksum(t *testing.T) {
 
 	// initialize telemetry
 	tel := telemetry.Init(telemetry.Config{
-		MetricsPort: 9090,
-		LogLevel:    "info",
+		Log: telemetry.LogConfig{LogLevel: "info"},
+		Metrics: telemetry.MetricsConfig{MetricsPort: 9090},
 	})
 	defer tel.Shutdown()
 
 	ctx := context.Background()
 
-	pool, err := adapter.Connect(dsn, adapter.WithMetrics(tel))
+	pool, err := pgadapter.Connect(dsn, pgadapter.WithMetrics(tel))
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

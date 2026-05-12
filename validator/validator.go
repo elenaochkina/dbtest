@@ -31,7 +31,7 @@ func ComputeChecksum(ctx context.Context, db *pgxpool.Pool, table string, tel *t
 	}
 	duration := time.Since(start).Seconds()
 	if tel != nil {
-		tel.ValidatorChecksumDuration.Observe(duration)
+		tel.Metrics.ValidatorChecksumDuration.Observe(duration)
 		slog.Info("checksum computed", "table", table, "latency_seconds", duration)
 	}
 	return c, nil

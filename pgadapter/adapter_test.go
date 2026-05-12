@@ -1,11 +1,11 @@
-package adapter_test
+package pgadapter_test
 
 import (
 	"context"
 	"os"
 	"testing"
 
-	"github.com/elenaochkina/dbtest/adapter"
+	"github.com/elenaochkina/dbtest/pgadapter"
 )
 
 func TestConnect(t *testing.T) {
@@ -14,7 +14,7 @@ func TestConnect(t *testing.T) {
 		t.Skip("DSN not set — skipping integration test")
 	}
 
-	pool, err := adapter.Connect(dsn)
+	pool, err := pgadapter.Connect(dsn)
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}

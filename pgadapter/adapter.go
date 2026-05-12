@@ -1,4 +1,4 @@
-package adapter
+package pgadapter
 
 import (
 	"context"
@@ -24,7 +24,8 @@ func WithMetrics(tel *telemetry.Telemetry) Option {
 	return func(o *options) { o.tel = tel }
 }
 
-// Connect opens a connection pool to Postgres using the given DSN.
+// Connect opens a pgxpool connection pool to any PostgreSQL-compatible
+// database (Postgres, Aurora, RDS, etc.) using the given DSN.
 // Example DSN: "postgres://postgres:test@localhost/postgres"
 func Connect(dsn string, opts ...Option) (*pgxpool.Pool, error) {
 	// apply options
@@ -51,7 +52,7 @@ func Connect(dsn string, opts ...Option) (*pgxpool.Pool, error) {
 
 	// emit metric and log line only if telemetry was provided
 	if o.tel != nil {
-		o.tel.AdapterConnectDuration.Observe(duration)
+		o.tel.Metrics.AdapterConnectDuration.Observe(duration)
 		slog.Info("connected to database",
 			"latency_seconds", duration,
 		)

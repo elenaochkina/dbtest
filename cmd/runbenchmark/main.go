@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/elenaochkina/dbtest/adapter"
+	"github.com/elenaochkina/dbtest/pgadapter"
 	"github.com/elenaochkina/dbtest/benchmark"
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/telemetry"
@@ -22,8 +22,8 @@ func main() {
 	}
 
 	tel := telemetry.Init(telemetry.Config{
-		MetricsPort: 9090,
-		LogLevel:    "info",
+		Log: telemetry.LogConfig{LogLevel: "info"},
+		Metrics: telemetry.MetricsConfig{MetricsPort: 9090},
 	})
 	defer tel.Shutdown()
 
@@ -31,7 +31,7 @@ func main() {
 
 	ctx := context.Background()
 
-	pool, err := adapter.Connect(dsn, adapter.WithMetrics(tel))
+	pool, err := pgadapter.Connect(dsn, pgadapter.WithMetrics(tel))
 	if err != nil {
 		slog.Error("connect failed", "error", err)
 		os.Exit(1)

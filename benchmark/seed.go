@@ -36,7 +36,7 @@ func SeedWarehouses(ctx context.Context, db *pgxpool.Pool, seeder *seedgen.Seede
 			return fmt.Errorf("seed warehouse %d: %w", i, err)
 		}
 		if tel != nil{
-			tel.SeedRowsTotal.WithLabelValues("warehouse").Inc()
+			tel.Metrics.SeedRowsTotal.WithLabelValues("warehouse").Inc()
 			slog.Info("seeded row", "table", "warehouse", "id", i)
 		}
 	}
