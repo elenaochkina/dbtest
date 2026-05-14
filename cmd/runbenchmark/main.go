@@ -22,7 +22,7 @@ func main() {
 	}
 
 	tel := telemetry.Init(telemetry.Config{
-		Log: telemetry.LogConfig{LogLevel: "info"},
+		Log: telemetry.LogConfig{LogLevel: "info", Output: nil},
 		Metrics: telemetry.MetricsConfig{MetricsPort: 9090},
 	})
 	defer tel.Shutdown()
@@ -31,7 +31,7 @@ func main() {
 
 	ctx := context.Background()
 
-	pool, err := pgadapter.Connect(dsn, pgadapter.WithMetrics(tel))
+	pool, err := pgadapter.Connect(dsn, pgadapter.WithTelemetry(tel))
 	if err != nil {
 		slog.Error("connect failed", "error", err)
 		os.Exit(1)
@@ -56,14 +56,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	benchMetrics := benchmark.NewBenchMarkMetrics(tel.Metrics.Registry)
+	valMetrics := validator.NewValidatorMetrics(tel.Metrics.Registry)
+
 	// seed with fixed seed so output is always the same
 	seeder := seedgen.New(42)
-	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5, tel); err != nil {
+	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5, benchMetrics); err != nil {
 		slog.Error("seed warehouses", "error", err)
 		os.Exit(1)
 	}
 
-	before, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
+	before, err := validator.ComputeChecksum(ctx, pool, "warehouse", valMetrics)
 	if err != nil {
 		slog.Error("checksum before", "error", err)
 		os.Exit(1)
@@ -75,7 +78,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	after, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
+	after, err := validator.ComputeChecksum(ctx, pool, "warehouse", valMetrics)
 	if err != nil {
 		slog.Error("checksum after", "error", err)
 		os.Exit(1)

@@ -1,18 +1,19 @@
 package telemetry
 
 import (
+	"io"
 	"log/slog"
 	"os"
 )
 
 // LogConfig holds configuration for structured logging.
 type LogConfig struct {
-	LogLevel string // "info", "debug", "warn"
+	LogLevel string    // "info", "debug", "warn"
+	Output   io.Writer // where to write logs; defaults to os.Stdout if nil
 }
 
 // InitLogging sets up a JSON structured logger and installs it as the global default.
-// After this call, slog.Info(...) anywhere in the program uses this logger.
-func InitLogging(cfg LogConfig) {
+func InitLogging(cfg LogConfig) *slog.Logger{
 	var level slog.Level
 	switch cfg.LogLevel {
 	case "debug":
@@ -23,8 +24,13 @@ func InitLogging(cfg LogConfig) {
 		level = slog.LevelInfo
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	out := cfg.Output
+	if out == nil {
+		out = os.Stdout
+	}
+
+	 return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
 		Level: level,
-	}))
-	slog.SetDefault(logger)
+	 }))
+	 
 }

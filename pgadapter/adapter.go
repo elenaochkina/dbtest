@@ -15,13 +15,17 @@ type Option func(*options)
 
 // options holds optional parameters for Connect.
 type options struct {
-	tel *telemetry.Telemetry // nil means no metrics
+	metrics *PGAdapterMetrics
+	logger  *slog.Logger
 }
 
-// WithMetrics attaches telemetry to the adapter.
+// WithTelemetry attaches telemetry to the adapter.
 // When provided, Connect will emit a duration metric and a log line.
-func WithMetrics(tel *telemetry.Telemetry) Option {
-	return func(o *options) { o.tel = tel }
+func WithTelemetry(tel *telemetry.Telemetry) Option {
+	return func(o *options) {
+		o.metrics = NewAdapterMetrics(tel.Metrics.Registry)
+		o.logger = tel.Logger.With("package", "pgadapter")
+	}
 }
 
 // Connect opens a pgxpool connection pool to any PostgreSQL-compatible
@@ -51,11 +55,9 @@ func Connect(dsn string, opts ...Option) (*pgxpool.Pool, error) {
 	duration := time.Since(start).Seconds()
 
 	// emit metric and log line only if telemetry was provided
-	if o.tel != nil {
-		o.tel.Metrics.AdapterConnectDuration.Observe(duration)
-		slog.Info("connected to database",
-			"latency_seconds", duration,
-		)
+	if o.metrics != nil {
+		o.metrics.ConnectionDuration.Observe(duration)
+		o.logger.Info("connected to database", "latency_seconds", duration)
 	}
 
 	return pool, nil

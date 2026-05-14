@@ -6,7 +6,6 @@ import (
 	"log/slog"
 
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
-	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,7 +23,7 @@ func CreateWarehouseTable(ctx context.Context, db *pgxpool.Pool) error {
 
 // SeedWarehouses inserts count rows into the warehouse table.
 // The seeder controls which stock values are generated — same seed = same rows every run.
-func SeedWarehouses(ctx context.Context, db *pgxpool.Pool, seeder *seedgen.Seeder, count int, tel *telemetry.Telemetry) error {
+func SeedWarehouses(ctx context.Context, db *pgxpool.Pool, seeder *seedgen.Seeder, count int, metrics *BenchMarkMetrics) error {
 	for i := 0; i < count; i++ {
 		name := fmt.Sprintf("Warehouse-%d", i)
 		stock := seeder.StockCount()
@@ -35,8 +34,8 @@ func SeedWarehouses(ctx context.Context, db *pgxpool.Pool, seeder *seedgen.Seede
 		if err != nil {
 			return fmt.Errorf("seed warehouse %d: %w", i, err)
 		}
-		if tel != nil{
-			tel.Metrics.SeedRowsTotal.WithLabelValues("warehouse").Inc()
+		if metrics != nil {
+			metrics.SeedRowsTotal.WithLabelValues("warehouse").Inc()
 			slog.Info("seeded row", "table", "warehouse", "id", i)
 		}
 	}

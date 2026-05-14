@@ -9,28 +9,21 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+// MetricsConfig holds configuration for the Prometheus metrics server
 
-// MetricsConfig holds configuration for the Prometheus metrics server.
 type MetricsConfig struct {
 	MetricsPort int // port to serve /metrics on, e.g. 9090
 }
 
-// Metrics holds the Prometheus registry, all metric collectors, and the HTTP server.
-// Other packages record observations directly via the exported fields.
+// Metrics holds the shared Prometheus registry and the HTTP server.
+// Each package registers its own metrics using Registry.
 type Metrics struct {
-	// AdapterConnectDuration tracks how long it takes to connect to the database.
-	AdapterConnectDuration prometheus.Histogram
+	// Registry is the shared Prometheus registry. Pass it to each package's
+	// NewMetrics() function to register package-specific metric collectors.
+	Registry *prometheus.Registry
 
-	// SeedRowsTotal counts how many rows have been inserted, broken down by table.
-	// Example: SeedRowsTotal.WithLabelValues("warehouse").Inc()
-	SeedRowsTotal *prometheus.CounterVec
-
-	// ValidatorChecksumDuration tracks how long checksum queries take.
-	ValidatorChecksumDuration prometheus.Histogram
-
-	// internal fields — not used outside this package
-	registry *prometheus.Registry
-	server   *http.Server
+	// internal field — not used outside this package
+	server *http.Server
 }
 
 // InitMetrics creates a Prometheus registry, registers all metrics,
@@ -41,34 +34,6 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 	// use a custom registry (not the global default) to avoid conflicts
 	// when running multiple tests
 	registry := prometheus.NewRegistry()
-
-	// --- register metrics ---
-	// histogram buckets in seconds — covers fast (1ms) to slow (1s) operations
-	durationBuckets := []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0}
-
-	adapterConnectDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "dbtest_adapter_connect_duration_seconds",
-		Help:    "How long it takes to open a connection to the database.",
-		Buckets: durationBuckets,
-	})
-
-	seedRowsTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "dbtest_seed_rows_total",
-		Help: "Total number of rows inserted during seeding, by table name.",
-	}, []string{"table"}) // "table" is the label dimension
-
-	validatorChecksumDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "dbtest_validation_checksum_duration_seconds",
-		Help:    "How long it takes to compute a table checksum.",
-		Buckets: durationBuckets,
-	})
-
-	// register all metrics with the registry
-	registry.MustRegister(
-		adapterConnectDuration,
-		seedRowsTotal,
-		validatorChecksumDuration,
-	)
 
 	// --- HTTP server ---
 	mux := http.NewServeMux()
@@ -91,11 +56,8 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 	}()
 
 	return &Metrics{
-		AdapterConnectDuration:    adapterConnectDuration,
-		SeedRowsTotal:             seedRowsTotal,
-		ValidatorChecksumDuration: validatorChecksumDuration,
-		registry:                  registry,
-		server:                    server,
+		Registry:  registry,
+		server:    server,
 	}
 }
 
