@@ -14,7 +14,7 @@ func TestConnect(t *testing.T) {
 		t.Skip("DSN not set — skipping integration test")
 	}
 
-	pool, err := pgadapter.Connect(dsn)
+	pool, err := pgadapter.Connect(dsn, nil)
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}

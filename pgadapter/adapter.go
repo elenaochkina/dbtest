@@ -3,61 +3,33 @@ package pgadapter
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Option is a functional option for Connect.
-type Option func(*options)
-
-// options holds optional parameters for Connect.
-type options struct {
-	metrics *PGAdapterMetrics
-	logger  *slog.Logger
-}
-
-// WithTelemetry attaches telemetry to the adapter.
-// When provided, Connect will emit a duration metric and a log line.
-func WithTelemetry(tel *telemetry.Telemetry) Option {
-	return func(o *options) {
-		o.metrics = NewAdapterMetrics(tel.Metrics.Registry)
-		o.logger = tel.Logger.With("package", "pgadapter")
-	}
-}
-
 // Connect opens a pgxpool connection pool to any PostgreSQL-compatible
 // database (Postgres, Aurora, RDS, etc.) using the given DSN.
+// Pass a non-nil tel to emit a connection duration metric and log line;
+// pass nil to connect without any observability.
 // Example DSN: "postgres://postgres:test@localhost/postgres"
-func Connect(dsn string, opts ...Option) (*pgxpool.Pool, error) {
-	// apply options
-	o := &options{}
-	for _, opt := range opts {
-		opt(o)
-	}
-
-	// start timer before connecting
+func Connect(dsn string, tel *telemetry.Telemetry) (*pgxpool.Pool, error) {
 	start := time.Now()
 
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
-	// Ping to verify the connection actually works.
 	if err := pool.Ping(context.Background()); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("ping: %w", err)
 	}
 
-	// calculate how long the connect took
-	duration := time.Since(start).Seconds()
-
-	// emit metric and log line only if telemetry was provided
-	if o.metrics != nil {
-		o.metrics.ConnectionDuration.Observe(duration)
-		o.logger.Info("connected to database", "latency_seconds", duration)
+	if tel != nil {
+		duration := time.Since(start).Seconds()
+		tel.Metrics.ConnectionDuration.Observe(duration)
+		tel.Logger.With("package", "pgadapter").Info("connected to database", "latency_seconds", duration)
 	}
 
 	return pool, nil

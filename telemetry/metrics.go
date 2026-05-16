@@ -9,37 +9,50 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-// MetricsConfig holds configuration for the Prometheus metrics server
 
+// MetricsConfig holds configuration for the Prometheus metrics server.
 type MetricsConfig struct {
 	MetricsPort int // port to serve /metrics on, e.g. 9090
 }
 
-// Metrics holds the shared Prometheus registry and the HTTP server.
-// Each package registers its own metrics using Registry.
+// Metrics holds all Prometheus metric collectors and the HTTP server.
 type Metrics struct {
-	// Registry is the shared Prometheus registry. Pass it to each package's
-	// NewMetrics() function to register package-specific metric collectors.
-	Registry *prometheus.Registry
+	// ConnectionDuration tracks how long it takes to open a database connection.
+	ConnectionDuration prometheus.Histogram
 
-	// internal field — not used outside this package
+	// SeedRowsTotal counts rows inserted during seeding, labelled by table.
+	SeedRowsTotal *prometheus.CounterVec
+
+	// ChecksumDuration tracks how long a table checksum query takes.
+	ChecksumDuration prometheus.Histogram
+
 	server *http.Server
 }
 
-// InitMetrics creates a Prometheus registry, registers all metrics,
-// and starts an HTTP server at /metrics in the background.
-// Use defer tel.Shutdown() on the parent Telemetry to stop the server cleanly.
+// InitMetrics creates and registers all Prometheus metrics, then starts an
+// HTTP server at /metrics in the background.
+// Use Telemetry.Shutdown() to stop it cleanly.
 func InitMetrics(cfg MetricsConfig) *Metrics {
-	// --- Prometheus registry ---
-	// use a custom registry (not the global default) to avoid conflicts
-	// when running multiple tests
 	registry := prometheus.NewRegistry()
 
-	// --- HTTP server ---
-	mux := http.NewServeMux()
+	connectionDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dbtest_adapter_connect_duration_seconds",
+		Help:    "How long it takes to open a connection to the database.",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0},
+	})
+	seedRowsTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "dbtest_benchmark_seed_rows_total",
+		Help: "Total number of rows inserted during seeding, by table.",
+	}, []string{"table"})
+	checksumDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "dbtest_validator_checksum_duration_seconds",
+		Help:    "How long it takes to compute a table checksum.",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0},
+	})
 
-	// promhttp.HandlerFor implements http.Handler (ServeHTTP method)
-	// it reads the registry and formats metrics as Prometheus text
+	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration)
+
+	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
 	server := &http.Server{
@@ -47,25 +60,23 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 		Handler: mux,
 	}
 
-	// run in background — does not block the test
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			// port already in use or other error — log warning, don't crash
 			slog.Warn("metrics server failed to start", "error", err)
 		}
 	}()
 
 	return &Metrics{
-		Registry:  registry,
-		server:    server,
+		ConnectionDuration: connectionDuration,
+		SeedRowsTotal:      seedRowsTotal,
+		ChecksumDuration:   checksumDuration,
+		server:             server,
 	}
 }
 
-// Shutdown stops the HTTP metrics server cleanly, waiting for in-flight
-// requests to finish before returning.
+// shutdown stops the HTTP metrics server cleanly.
 func (m *Metrics) shutdown() {
 	if err := m.server.Shutdown(context.Background()); err != nil {
 		slog.Warn("metrics server shutdown error", "error", err)
 	}
 }
-
