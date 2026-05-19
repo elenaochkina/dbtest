@@ -3,7 +3,6 @@ package benchmark
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/telemetry"
@@ -37,7 +36,7 @@ func SeedWarehouses(ctx context.Context, db *pgxpool.Pool, seeder *seedgen.Seede
 		}
 		if tel != nil {
 			tel.Metrics.SeedRowsTotal.WithLabelValues("warehouse").Inc()
-			slog.Info("seeded row", "table", "warehouse", "id", i)
+			tel.Logger.With("package", "benchmark").Info("seeded row", "table", "warehouse", "id", i)
 		}
 	}
 	return nil
