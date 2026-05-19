@@ -46,9 +46,12 @@ separate.
 
 ## New concepts introduced in Stage 3
 
-**State store** — a Postgres database owned by the framework itself, not the
-database under test. Think of it as a logbook. Every run gets a row. Every
-checkpoint gets a row. The tested database never knows the state store exists.
+**State store** — a second Postgres database that belongs to the framework,
+not to the application being tested. It is a separate Docker container on a
+different port. Your warehouses and orders never go in there. The framework
+writes its own bookkeeping rows: which runs happened, which seeds were used,
+what the checksums looked like at each checkpoint. The tested database never
+knows the state store exists.
 
 **Run** — one execution of a test scenario. A run record stores: the scenario
 name, the seed used for data generation, start time, end time, and whether it
@@ -60,14 +63,15 @@ Example: `"after_seed"` stores the checksum right after seeding completes.
 what you compare across runs: "did the warehouse table look the same after
 seeding today as it did yesterday?"
 
-**Auto-migrating schema** — instead of running SQL scripts by hand before
-every test, the state store client creates its own tables automatically the
-first time it connects. You call `state.Connect(dsn)` and the schema appears
-if it doesn't exist yet. No migration tool, no manual SQL, no extra setup step.
-This matters especially in CI where a fresh Postgres appears for every run.
+**Auto-migrating schema** — the state store creates its own tables automatically
+the first time `Connect` is called. You do not run SQL scripts by hand, there
+is no migration tool, no extra setup step. `CREATE TABLE IF NOT EXISTS` means
+the migration is safe to run on every startup — it is a no-op when the tables
+already exist. This matters especially in CI where a fresh Postgres appears for
+every run.
 
-**Historical comparison** — after loading the previous run, the validator can
-compare a checkpoint from today against the same checkpoint from yesterday.
+**Historical comparison** — after loading the previous run, the validator
+compares a checkpoint from today against the same checkpoint from yesterday.
 If they match: the data is stable. If they differ: something changed that
 shouldn't have, and the test fails with a clear message.
 
@@ -76,14 +80,15 @@ shouldn't have, and the test fails with a clear message.
 ## New local infrastructure
 
 You need a second Docker container running Postgres for the state store.
-It should be on a different port (5433) so it doesn't conflict with the
-existing `dbtest-postgres` container on port 5432.
+It runs on port 5433 so it does not conflict with the existing `dbtest-postgres`
+container on port 5432. Same Docker image, same Postgres — just a different
+port and a different purpose.
 
 ```
-Container name: dbtest-state
-Port:           5433 → 5432
+Container name:  dbtest-state
+Port:            5433 → 5432
 State store DSN: postgres://postgres:test@localhost:5433/postgres
-Start command:  docker start dbtest-state
+Start command:   docker start dbtest-state
 ```
 
 ---
@@ -92,7 +97,7 @@ Start command:  docker start dbtest-state
 
 ```
 state/
-└── state.go        ← Store, Run, RunConfig types; Connect, StartRun, LastRun,
+└── state.go        ← Run, RunConfig types; Connect, StartRun, LastRun,
                       Run.Checkpoint, Run.End, Run.GetCheckpoint
 
 pkg/checksum/
@@ -141,64 +146,73 @@ explaining what each field means.
 
 ## Task 2 — `state/state.go`
 
+### Design note
+
+This package follows the same pattern as `pgadapter`. `Connect` returns a plain
+`*pgxpool.Pool` — no wrapper struct. All state functions take the pool as an
+explicit parameter. `Run` is a flat struct with all its fields exported; no
+hidden fields, no back-pointers.
+
 ### Types
 
 **`RunConfig`** — input parameters for starting a run. Fields: `Seed int64`,
 `Scenario string`, `Provider string`. The scenario name must be consistent
-across runs so that `LastRun` can find the previous one.
+across runs so that `LastRun` can find the previous one by querying
+`WHERE scenario = ?`.
 
-**`Store`** — the state store client. Holds an unexported pgx connection pool.
-One instance is created per test binary via `Connect`.
-
-**`Run`** — represents one active or completed test run. Exported fields: `ID int64`
-and `Config RunConfig`. Has an unexported back-pointer to the `Store` so its
-methods can write to the database without the caller passing the store around.
+**`Run`** — a flat struct representing one row in the `runs` table. Fields:
+`Pool *pgxpool.Pool`, `ID int64`, `Scenario string`, `Seed int64`,
+`Provider string`. `Pool` is the connection to the state store database —
+`Run` methods use it directly to execute queries. `ID` is the database row ID
+assigned on insert — it links this run to its checkpoint rows via foreign key.
 
 ### Functions
 
-**`Connect(dsn string) (*Store, error)`**
+**`Connect(dsn string) (*pgxpool.Pool, error)`**
 
-Opens a pgx connection pool to the state store DSN. Immediately calls the
-internal `migrate` helper to create tables if they don't exist. Logs a
-confirmation line. Returns an error (not a panic) if the database is
-unreachable.
+Opens a pgx connection pool to the state store DSN. Identical pattern to
+`pgadapter.Connect`. Additionally runs the internal `migrate` function before
+returning to create tables if they don't exist. Logs a confirmation line.
+Returns an error if the database is unreachable.
 
-**`(s *Store) migrate(ctx context.Context) error`** — unexported.
+**`migrate(ctx context.Context, pool *pgxpool.Pool) error`** — unexported.
 
 Runs both `CREATE TABLE IF NOT EXISTS` statements. Called only from `Connect`.
 Safe to call on every startup.
 
-**`(s *Store) StartRun(ctx context.Context, cfg RunConfig) (*Run, error)`**
+**`StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig) (*Run, error)`**
 
-Inserts a row into `runs` with `started_at = now()` and returns a `Run`
-containing the new database ID. Logs the run ID, scenario, and seed.
-`ended_at` and `passed` are left NULL until `End` is called.
+Inserts a row into `runs` with `started_at = now()`. Returns a `Run` with
+`Pool`, `ID`, and all config fields populated. `ended_at` and `passed` are
+left NULL until `End` is called. Logs the run ID, scenario, and seed.
+
+**`LastRun(ctx context.Context, pool *pgxpool.Pool, scenario string) (*Run, error)`**
+
+Queries for the most recently completed, passing run of a given scenario.
+Filters `WHERE scenario = ? AND ended_at IS NOT NULL AND passed = true`,
+orders by `ended_at DESC`, takes `LIMIT 1`. Returns `nil, nil` (not an error)
+when no previous run exists — this is the normal first-run case and must be
+documented clearly in the function comment. Returns an error only if the
+query itself fails.
 
 **`(r *Run) Checkpoint(ctx context.Context, name string, cs checksum.Checksum) error`**
 
-Inserts a row into `checkpoints` linked to this run. `name` is the label the
-caller chooses (e.g. `"after_seed"`). Logs the checkpoint name and both
-checksum fields.
+Inserts a row into `checkpoints` using `r.Pool` and `r.ID`. `name` is the
+label the caller chooses (e.g. `"after_seed"`). Logs the checkpoint name and
+both checksum fields.
 
 **`(r *Run) End(ctx context.Context, passed bool) error`**
 
-Sets `ended_at = now()` and `passed` on the run's row. Should be called with
-`passed = !t.Failed()` so the result reflects whether any assertion fired.
-The right pattern is a deferred call immediately after `StartRun` — that way
-it runs even if the test panics or returns early.
+Updates the run's row using `r.Pool` and `r.ID`: sets `ended_at = now()` and
+`passed`. Call with `passed = !t.Failed()` so the result reflects whether any
+assertion fired. Use as a deferred call immediately after `StartRun` — that
+way it runs even if the test panics or returns early.
 
 **`(r *Run) GetCheckpoint(ctx context.Context, name string) (checksum.Checksum, error)`**
 
-Loads a named checkpoint from the database for this run. Used internally by
-`AssertMatchesPrior` — the test itself never calls this directly. Returns an
-error if the checkpoint name doesn't exist for this run.
-
-**`(s *Store) LastRun(ctx context.Context, scenario string) (*Run, error)`**
-
-Queries for the most recently completed, passing run of a given scenario.
-Returns `nil, nil` (not an error) when no previous run exists — this is the
-expected case on first run ever, and must be documented clearly in the function
-comment. Returns an error only if the query itself fails.
+Loads a named checkpoint row using `r.Pool` and `r.ID`. Used internally by
+`AssertMatchesPrior` in the validator — the test itself never calls this
+directly. Returns an error if the checkpoint name does not exist for this run.
 
 ---
 
@@ -212,10 +226,9 @@ Add one new function:
 
 **`AssertMatchesPrior(t *testing.T, ctx context.Context, current *state.Run, prior *state.Run, checkpointName string)`**
 
-Loads the named checkpoint from both runs via `GetCheckpoint` and compares
-them field by field. If they differ, calls `t.Errorf` with a message showing
-the checkpoint name, both run IDs, and the differing values. If they match,
-logs a confirmation line.
+Calls `GetCheckpoint` on both runs and compares the results field by field.
+If they differ, calls `t.Errorf` with a message showing the checkpoint name,
+both run IDs, and the differing values. If they match, logs a confirmation line.
 
 Do not change `ComputeChecksum`, `AssertDelta`, or the `Checksum` fields —
 Stage 2 tests must still pass unchanged.
@@ -226,10 +239,10 @@ Stage 2 tests must still pass unchanged.
 
 The structure of the test grows but the existing logic does not change.
 
-**At the top:** connect to the state store using `STATE_DSN` from the
-environment. If `STATE_DSN` is not set, skip state tracking entirely — all
-state store calls are guarded with `if ss != nil` / `if run != nil`. This
-keeps the test runnable without the second Postgres for quick local iteration.
+**At the top:** call `state.Connect` using `STATE_DSN` from the environment.
+If `STATE_DSN` is not set, skip state tracking entirely — all state store calls
+are guarded with `if pool != nil` / `if run != nil`. This keeps the test
+runnable without the second Postgres for quick local iteration.
 
 **After connecting:** call `StartRun` with seed 42, scenario
 `"warehouse-consistency"`, provider `"manual"`. Register a deferred `End`
@@ -342,3 +355,5 @@ already present from Stage 1.
 - Use `context.Context` as the first parameter on every new function,
   consistent with existing code
 - Do not change `AssertDelta`, `ComputeChecksum`, or the `Checksum` fields
+- `Run.Pool` is the state store connection — never use it to query the
+  database under test
