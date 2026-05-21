@@ -70,10 +70,25 @@ the migration is safe to run on every startup — it is a no-op when the tables
 already exist. This matters especially in CI where a fresh Postgres appears for
 every run.
 
-**Historical comparison** — after loading the previous run, the validator
+**Historical comparison** — after loading the previous run, the state package
 compares a checkpoint from today against the same checkpoint from yesterday.
 If they match: the data is stable. If they differ: something changed that
 shouldn't have, and the test fails with a clear message.
+
+---
+
+## Package responsibilities
+
+```
+validator  ← works with the tested database only: computes checksums, asserts deltas
+state      ← works with the state store only: tracks runs, saves checkpoints,
+             compares runs across executions
+```
+
+These two packages have a one-way dependency: `state` imports `validator` to
+use the `Checksum` type. `validator` does not import `state`. No circular
+import, no shared package needed. `Checksum` stays in `validator` where it
+already lives.
 
 ---
 
@@ -97,20 +112,17 @@ Start command:   docker start dbtest-state
 
 ```
 state/
-└── state.go        ← Run, RunConfig types; Connect, StartRun, LastRun,
-                      Run.Checkpoint, Run.End, Run.GetCheckpoint
-
-pkg/checksum/
-└── checksum.go     ← Checksum struct moved here (see dependency rules below)
+└── state.go   ← Run, RunConfig types; Connect, migrate, StartRun, LastRun,
+                 Run.Checkpoint, Run.End, Run.GetCheckpoint, AssertMatchesPrior
 ```
 
 ## Files to modify
 
 ```
-validator/validator.go      ← add AssertMatchesPrior; replace Checksum struct
-                              with a type alias pointing at pkg/checksum
 benchmark/warehouse_test.go ← open a run, save checkpoints, compare to previous run
 ```
+
+`validator/validator.go` is not changed. `Checksum` stays where it is.
 
 ---
 
@@ -133,18 +145,7 @@ times is always safe — it is a no-op when the tables already exist.
 
 ---
 
-## Task 1 — `pkg/checksum/checksum.go`
-
-A tiny new package containing only the `Checksum` struct (currently defined
-in `validator`). Moving it here breaks a circular import that would otherwise
-occur when `validator` imports `state` and `state` imports `validator`.
-
-No functions, no logic — just the struct definition and a short comment
-explaining what each field means.
-
----
-
-## Task 2 — `state/state.go`
+## Task 1 — `state/state.go`
 
 ### Design note
 
@@ -171,7 +172,7 @@ assigned on insert — it links this run to its checkpoint rows via foreign key.
 **`Connect(dsn string) (*pgxpool.Pool, error)`**
 
 Opens a pgx connection pool to the state store DSN. Identical pattern to
-`pgadapter.Connect`. Additionally runs the internal `migrate` function before
+`pgadapter.Connect`. Additionally calls the internal `migrate` function before
 returning to create tables if they don't exist. Logs a confirmation line.
 Returns an error if the database is unreachable.
 
@@ -195,7 +196,7 @@ when no previous run exists — this is the normal first-run case and must be
 documented clearly in the function comment. Returns an error only if the
 query itself fails.
 
-**`(r *Run) Checkpoint(ctx context.Context, name string, cs checksum.Checksum) error`**
+**`(r *Run) Checkpoint(ctx context.Context, name string, cs validator.Checksum) error`**
 
 Inserts a row into `checkpoints` using `r.Pool` and `r.ID`. `name` is the
 label the caller chooses (e.g. `"after_seed"`). Logs the checkpoint name and
@@ -208,34 +209,23 @@ Updates the run's row using `r.Pool` and `r.ID`: sets `ended_at = now()` and
 assertion fired. Use as a deferred call immediately after `StartRun` — that
 way it runs even if the test panics or returns early.
 
-**`(r *Run) GetCheckpoint(ctx context.Context, name string) (checksum.Checksum, error)`**
+**`(r *Run) GetCheckpoint(ctx context.Context, name string) (validator.Checksum, error)`**
 
 Loads a named checkpoint row using `r.Pool` and `r.ID`. Used internally by
-`AssertMatchesPrior` in the validator — the test itself never calls this
-directly. Returns an error if the checkpoint name does not exist for this run.
+`AssertMatchesPrior`. The test itself never calls this directly. Returns an
+error if the checkpoint name does not exist for this run.
 
----
-
-## Task 3 — modify `validator/validator.go`
-
-Replace `type Checksum struct { ... }` with a type alias:
-`type Checksum = checksum.Checksum`. This keeps all existing call sites working
-without changes while moving the canonical definition to `pkg/checksum`.
-
-Add one new function:
-
-**`AssertMatchesPrior(t *testing.T, ctx context.Context, current *state.Run, prior *state.Run, checkpointName string)`**
+**`AssertMatchesPrior(t *testing.T, ctx context.Context, current *Run, prior *Run, checkpointName string)`**
 
 Calls `GetCheckpoint` on both runs and compares the results field by field.
 If they differ, calls `t.Errorf` with a message showing the checkpoint name,
 both run IDs, and the differing values. If they match, logs a confirmation line.
-
-Do not change `ComputeChecksum`, `AssertDelta`, or the `Checksum` fields —
-Stage 2 tests must still pass unchanged.
+This function belongs in `state` because it queries the state store — it never
+touches the tested database.
 
 ---
 
-## Task 4 — modify `benchmark/warehouse_test.go`
+## Task 2 — modify `benchmark/warehouse_test.go`
 
 The structure of the test grows but the existing logic does not change.
 
@@ -253,7 +243,7 @@ call immediately.
 **After computing `after` checksum:** save a checkpoint named `"after_orders"`.
 
 **After `AssertDelta`:** call `LastRun` for the scenario. If a previous run is
-found and its ID differs from the current run's ID, call `AssertMatchesPrior`
+found and its ID differs from the current run's ID, call `state.AssertMatchesPrior`
 for both checkpoints. The ID check prevents a run from comparing itself against
 itself when the test binary is reused within a session.
 
@@ -322,22 +312,12 @@ run ended  run_id=2  passed=true
 ## Package dependency rules
 
 ```
-pkg/checksum/  ← Checksum struct only; imports nothing from this project
-telemetry/     ← imports only stdlib + prometheus client
-state/         ← imports pkg/checksum, telemetry, pgx
-adapter/       ← imports telemetry
-validator/     ← imports pkg/checksum, state, telemetry
-benchmark/     ← imports adapter, pkg/seedgen, validator, state, telemetry
+telemetry/  ← imports only stdlib + prometheus client
+validator/  ← imports telemetry (no state import)
+state/      ← imports validator (for Checksum type), telemetry, pgx
+adapter/    ← imports telemetry
+benchmark/  ← imports adapter, pkg/seedgen, validator, state, telemetry
 ```
-
-**Why `pkg/checksum` is new:** `state` needs the `Checksum` type to store and
-retrieve checkpoints. `validator` needs the `state.Run` type to implement
-`AssertMatchesPrior`. If each package imported the other, Go would refuse to
-compile — circular imports are forbidden. Moving `Checksum` to a neutral shared
-package that both can import breaks the cycle cleanly.
-
-No new Go dependencies are needed. `state` uses the same `pgxpool` package
-already present from Stage 1.
 
 ---
 
@@ -354,6 +334,6 @@ already present from Stage 1.
   correct form; never use `CREATE TABLE`
 - Use `context.Context` as the first parameter on every new function,
   consistent with existing code
-- Do not change `AssertDelta`, `ComputeChecksum`, or the `Checksum` fields
+- Do not change `AssertDelta`, `ComputeChecksum`, or the `Checksum` struct
 - `Run.Pool` is the state store connection — never use it to query the
   database under test
