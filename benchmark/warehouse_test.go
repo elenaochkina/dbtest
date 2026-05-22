@@ -11,7 +11,7 @@ import (
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 )
 
 func TestWarehouseChecksum(t *testing.T) {
@@ -31,14 +31,14 @@ func TestWarehouseChecksum(t *testing.T) {
 
 	// State store is optional. If STATE_DSN is not set, all state tracking is
 	// skipped and the test behaves exactly as it did in Stage 2.
-	var ss *pgxpool.Pool
+	var ss *pgx.Conn
 	if stateDSN := os.Getenv("STATE_DSN"); stateDSN != "" {
 		var err error
 		ss, err = state.Connect(stateDSN, tel)
 		if err != nil {
 			t.Fatalf("state connect: %v", err)
 		}
-		defer ss.Close()
+		defer ss.Close(ctx)
 	}
 
 	// Start a run in the state store so this execution is recorded.

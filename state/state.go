@@ -10,7 +10,6 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // RunConfig holds the input parameters for starting a new test run.
@@ -25,14 +24,14 @@ type RunConfig struct {
 }
 
 // Run represents one row in the runs table of the state store.
-// Pool is the connection to the state store — Run methods use it to execute
-// queries. Never use Pool to query the database under test.
+// Conn is the connection to the state store — Run methods use it to execute
+// queries. Never use Conn to query the database under test.
 // ID is the primary key assigned by the database on insert; it links this run
 // to its checkpoint rows.
 // Logger is a structured logger scoped to this package, created from tel.Logger
 // in StartRun. All Run methods write log lines through it.
 type Run struct {
-	Pool     *pgxpool.Pool
+	Conn     *pgx.Conn
 	ID       int64
 	Scenario string
 	Seed     int64
@@ -40,33 +39,29 @@ type Run struct {
 	Logger   *slog.Logger
 }
 
-// Connect opens a pgx connection pool to the state store at dsn and creates
+// Connect opens a single connection to the state store at dsn and creates
 // the runs and checkpoints tables if they do not already exist.
 // tel is used for the "state store connected" log line.
 // Returns an error if the database is unreachable or migration fails.
-// Call pool.Close() when the test finishes to release connections.
-func Connect(dsn string, tel *telemetry.Telemetry) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(context.Background(), dsn)
+// Call conn.Close(ctx) when the test finishes to release the connection.
+func Connect(dsn string, tel *telemetry.Telemetry) (*pgx.Conn, error) {
+	conn, err := pgx.Connect(context.Background(), dsn)
 	if err != nil {
 		return nil, fmt.Errorf("state connect: %w", err)
 	}
-	if err := pool.Ping(context.Background()); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("state ping: %w", err)
-	}
-	if err := migrate(context.Background(), pool); err != nil {
-		pool.Close()
+	if err := migrate(context.Background(), conn); err != nil {
+		conn.Close(context.Background())
 		return nil, err
 	}
 	tel.Logger.Info("state store connected")
-	return pool, nil
+	return conn, nil
 }
 
 // migrate creates the runs and checkpoints tables if they do not already exist.
 // Safe to call on every startup — CREATE TABLE IF NOT EXISTS is a no-op when
 // the tables are already there.
-func migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, `
+func migrate(ctx context.Context, conn *pgx.Conn) error {
+	_, err := conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS runs (
 			id         BIGSERIAL    PRIMARY KEY,
 			scenario   TEXT         NOT NULL,
@@ -81,7 +76,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("migrate runs table: %w", err)
 	}
 
-	_, err = pool.Exec(ctx, `
+	_, err = conn.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS checkpoints (
 			id          BIGSERIAL   PRIMARY KEY,
 			run_id      BIGINT      NOT NULL,
@@ -105,9 +100,9 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 // Run method calls write through that logger without needing tel again.
 // Call defer run.End(ctx, !t.Failed()) immediately after this function so the
 // run is always closed even if the test panics or returns early.
-func StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig, tel *telemetry.Telemetry) (*Run, error) {
+func StartRun(ctx context.Context, conn *pgx.Conn, cfg RunConfig, tel *telemetry.Telemetry) (*Run, error) {
 	var id int64
-	err := pool.QueryRow(ctx,
+	err := conn.QueryRow(ctx,
 		`INSERT INTO runs (scenario, seed, provider, started_at)
 		 VALUES ($1, $2, $3, now())
 		 RETURNING id`,
@@ -121,7 +116,7 @@ func StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig, tel *telem
 	logger.Info("run started", "run_id", id, "scenario", cfg.Scenario, "seed", cfg.Seed)
 
 	return &Run{
-		Pool:     pool,
+		Conn:     conn,
 		ID:       id,
 		Scenario: cfg.Scenario,
 		Seed:     cfg.Seed,
@@ -134,10 +129,10 @@ func StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig, tel *telem
 // scenario. Returns nil, nil — not an error — when no previous run exists.
 // This is the normal case on the first ever run; always check for nil before
 // using the result. Returns an error only if the database query fails.
-func LastRun(ctx context.Context, pool *pgxpool.Pool, scenario string) (*Run, error) {
+func LastRun(ctx context.Context, conn *pgx.Conn, scenario string) (*Run, error) {
 	var r Run
-	r.Pool = pool
-	err := pool.QueryRow(ctx,
+	r.Conn = conn
+	err := conn.QueryRow(ctx,
 		`SELECT id, scenario, seed, provider
 		 FROM runs
 		 WHERE scenario = $1
@@ -160,7 +155,7 @@ func LastRun(ctx context.Context, pool *pgxpool.Pool, scenario string) (*Run, er
 // run. name is the label you choose, e.g. "after_seed" or "after_orders".
 // cs is the checksum captured at this point in the test.
 func (r *Run) Checkpoint(ctx context.Context, name string, cs validator.Checksum) error {
-	_, err := r.Pool.Exec(ctx,
+	_, err := r.Conn.Exec(ctx,
 		`INSERT INTO checkpoints (run_id, name, row_count, stock_sum, captured_at)
 		 VALUES ($1, $2, $3, $4, now())`,
 		r.ID, name, cs.RowCount, cs.StockSum,
@@ -176,7 +171,7 @@ func (r *Run) Checkpoint(ctx context.Context, name string, cs validator.Checksum
 // Call with passed = !t.Failed() so the stored result reflects whether any
 // test assertion fired during this run.
 func (r *Run) End(ctx context.Context, passed bool) error {
-	_, err := r.Pool.Exec(ctx,
+	_, err := r.Conn.Exec(ctx,
 		`UPDATE runs SET ended_at = now(), passed = $1 WHERE id = $2`,
 		passed, r.ID,
 	)
@@ -192,7 +187,7 @@ func (r *Run) End(ctx context.Context, passed bool) error {
 // Used internally by AssertMatchesPrior — the test itself never calls this directly.
 func (r *Run) GetCheckpoint(ctx context.Context, name string) (validator.Checksum, error) {
 	var cs validator.Checksum
-	err := r.Pool.QueryRow(ctx,
+	err := r.Conn.QueryRow(ctx,
 		`SELECT row_count, stock_sum
 		 FROM checkpoints
 		 WHERE run_id = $1 AND name = $2`,
