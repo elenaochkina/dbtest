@@ -11,7 +11,7 @@ import (
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestWarehouseChecksum(t *testing.T) {
@@ -31,22 +31,22 @@ func TestWarehouseChecksum(t *testing.T) {
 
 	// State store is optional. If STATE_DSN is not set, all state tracking is
 	// skipped and the test behaves exactly as it did in Stage 2.
-	var ss *pgx.Conn
+	var stateConnectPool *pgxpool.Pool
 	if stateDSN := os.Getenv("STATE_DSN"); stateDSN != "" {
 		var err error
-		ss, err = state.Connect(stateDSN, tel)
+		stateConnectPool, err = state.Connect(stateDSN, tel)
 		if err != nil {
 			t.Fatalf("state connect: %v", err)
 		}
-		defer ss.Close(ctx)
+		defer stateConnectPool.Close()
 	}
 
 	// Start a run in the state store so this execution is recorded.
 	// The deferred End call marks the run as passed or failed once the test returns.
 	var run *state.Run
-	if ss != nil {
+	if stateConnectPool != nil {
 		var err error
-		run, err = state.StartRun(ctx, ss, state.RunConfig{
+		run, err = state.StartRun(ctx, stateConnectPool, state.RunConfig{
 			Seed:     42,
 			Scenario: "warehouse-consistency",
 			Provider: "manual",
@@ -123,7 +123,7 @@ func TestWarehouseChecksum(t *testing.T) {
 	// The ID check prevents a run from comparing against itself when the test
 	// binary is reused within a session.
 	if run != nil {
-		prior, err := state.LastRun(ctx, ss, "warehouse-consistency")
+		prior, err := state.LastRun(ctx, stateConnectPool, "warehouse-consistency")
 		if err != nil {
 			t.Fatalf("last run: %v", err)
 		}
