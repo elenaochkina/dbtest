@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"testing"
 	"time"
 
@@ -32,7 +31,7 @@ func ComputeChecksum(ctx context.Context, db *pgxpool.Pool, table string, tel *t
 	duration := time.Since(start).Seconds()
 	if tel != nil {
 		tel.Metrics.ChecksumDuration.Observe(duration)
-		slog.Info("checksum computed", "table", table, "latency_seconds", duration)
+		tel.Logger.With("package", "validator").Info("checksum computed", "table", table, "latency_seconds", duration)
 	}
 	return c, nil
 }
