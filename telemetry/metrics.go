@@ -26,6 +26,15 @@ type Metrics struct {
 	// ChecksumDuration tracks how long a table checksum query takes.
 	ChecksumDuration prometheus.Histogram
 
+	// BenchmarkTPS holds the latest TPS from the most recent pgbench run, labelled by provider.
+	BenchmarkTPS *prometheus.GaugeVec
+
+	// BenchmarkLatencyAvgMs holds the latest average transaction latency (ms) from pgbench, labelled by provider.
+	BenchmarkLatencyAvgMs *prometheus.GaugeVec
+
+	// BenchmarkLatencyStddevMs holds the latest latency standard deviation (ms) from pgbench, labelled by provider.
+	BenchmarkLatencyStddevMs *prometheus.GaugeVec
+
 	server *http.Server
 }
 
@@ -50,7 +59,20 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0},
 	})
 
-	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration)
+	benchmarkTPS := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "dbtest_benchmark_tps",
+		Help: "Transactions per second from the most recent pgbench run.",
+	}, []string{"provider"})
+	benchmarkLatencyAvgMs := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "dbtest_benchmark_latency_avg_ms",
+		Help: "Average transaction latency in milliseconds from the most recent pgbench run.",
+	}, []string{"provider"})
+	benchmarkLatencyStddevMs := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "dbtest_benchmark_latency_stddev_ms",
+		Help: "Standard deviation of transaction latency in milliseconds from the most recent pgbench run.",
+	}, []string{"provider"})
+
+	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration, benchmarkTPS, benchmarkLatencyAvgMs, benchmarkLatencyStddevMs)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
@@ -67,10 +89,13 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 	}()
 
 	return &Metrics{
-		ConnectionDuration: connectionDuration,
-		SeedRowsTotal:      seedRowsTotal,
-		ChecksumDuration:   checksumDuration,
-		server:             server,
+		ConnectionDuration:       connectionDuration,
+		SeedRowsTotal:            seedRowsTotal,
+		ChecksumDuration:         checksumDuration,
+		BenchmarkTPS:             benchmarkTPS,
+		BenchmarkLatencyAvgMs:    benchmarkLatencyAvgMs,
+		BenchmarkLatencyStddevMs: benchmarkLatencyStddevMs,
+		server:                   server,
 	}
 }
 
