@@ -75,26 +75,30 @@ func TestPgbenchLocal(t *testing.T) {
 		t.Errorf("expected LatencyAvgMs > 0, got %.2f", result.LatencyAvgMs)
 	}
 
-	// Step 6: persist the result.
+	// Step 6: load the previous result before saving so the comparison is against a prior run.
+	var prev *pgbench.Result
+	if statePool != nil {
+		var err error
+		prev, err = state.GetLastBenchmarkResult(ctx, statePool, "local", tel)
+		if err != nil {
+			t.Fatalf("GetLastBenchmarkResult: %v", err)
+		}
+	}
+
+	// Step 7: persist the current result.
 	if statePool != nil {
 		if err := state.SaveBenchmarkResult(ctx, statePool, run.ID, result, tel); err != nil {
 			t.Fatalf("SaveBenchmarkResult: %v", err)
 		}
 	}
 
-	// Step 7: load the previous result and warn on regression.
-	if statePool != nil {
-		prev, err := state.GetLastBenchmarkResult(ctx, statePool, "local", tel)
-		if err != nil {
-			t.Fatalf("GetLastBenchmarkResult: %v", err)
-		}
-		if prev != nil {
-			cmp := pgbench.Compare(*prev, result)
-			cmp.Print(os.Stdout)
-			if cmp.TPSDeltaPct < -20 {
-				t.Logf("WARNING: TPS dropped %.1f%% vs previous run (%.1f → %.1f)",
-					-cmp.TPSDeltaPct, prev.TPS, result.TPS)
-			}
+	// Step 8: compare against the previous run and warn on regression.
+	if prev != nil {
+		cmp := pgbench.Compare(*prev, result)
+		cmp.Print(os.Stdout)
+		if cmp.TPSDeltaPct < -20 {
+			t.Logf("WARNING: TPS dropped %.1f%% vs previous run (%.1f → %.1f)",
+				-cmp.TPSDeltaPct, prev.TPS, result.TPS)
 		}
 	}
 }
