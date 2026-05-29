@@ -3,12 +3,15 @@ package state
 import (
 	"context"
 	"errors"
-	"fmt"          
+	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -34,7 +37,7 @@ type RunConfig struct {
 // in StartRun. All Run methods write log lines through it.
 type Run struct {
 	Pool     *pgxpool.Pool
-	ID       int64
+	ID       uuid.UUID
 	Scenario string
 	Seed     int64
 	Provider string
@@ -72,7 +75,7 @@ func Connect(dsn string, tel *telemetry.Telemetry) (*pgxpool.Pool, error) {
 func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS runs (
-			id         BIGSERIAL    PRIMARY KEY,
+			id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
 			scenario   TEXT         NOT NULL,
 			seed       BIGINT       NOT NULL,
 			provider   TEXT         NOT NULL,
@@ -87,8 +90,8 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS checkpoints (
-			id          BIGSERIAL   PRIMARY KEY,
-			run_id      BIGINT      NOT NULL,
+			id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id      UUID        NOT NULL,
 			name        TEXT        NOT NULL,
 			row_count   BIGINT      NOT NULL,
 			stock_sum   BIGINT      NOT NULL,
@@ -97,6 +100,24 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("migrate checkpoints table: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS benchmark_results (
+			id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id            UUID        NOT NULL,
+			provider          TEXT        NOT NULL,
+			tps               FLOAT8      NOT NULL,
+			latency_avg_ms    FLOAT8      NOT NULL,
+			latency_stddev_ms FLOAT8      NOT NULL,
+			scale_factor      INT         NOT NULL,
+			clients           INT         NOT NULL,
+			duration_seconds  FLOAT8      NOT NULL,
+			created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate benchmark_results table: %w", err)
 	}
 
 	return nil
@@ -110,7 +131,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 // Call defer run.End(ctx, !t.Failed()) immediately after this function so the
 // run is always closed even if the test panics or returns early.
 func StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig, tel *telemetry.Telemetry) (*Run, error) {
-	var id int64
+	var id uuid.UUID
 	err := pool.QueryRow(ctx,
 		`INSERT INTO runs (scenario, seed, provider, started_at)
 		 VALUES ($1, $2, $3, now())
@@ -185,7 +206,7 @@ func (r *Run) End(ctx context.Context, passed bool) error {
 		passed, r.ID,
 	)
 	if err != nil {
-		return fmt.Errorf("End run %d: %w", r.ID, err)
+		return fmt.Errorf("End run %s: %w", r.ID, err)
 	}
 	r.Logger.Info("run ended", "run_id", r.ID, "passed", passed)
 	return nil
@@ -203,7 +224,7 @@ func (r *Run) GetCheckpoint(ctx context.Context, name string) (validator.Checksu
 		r.ID, name,
 	).Scan(&cs.RowCount, &cs.StockSum)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return validator.Checksum{}, fmt.Errorf("checkpoint %q not found for run %d", name, r.ID)
+		return validator.Checksum{}, fmt.Errorf("checkpoint %q not found for run %s", name, r.ID)
 	}
 	if err != nil {
 		return validator.Checksum{}, fmt.Errorf("GetCheckpoint %q: %w", name, err)
@@ -231,7 +252,7 @@ func AssertMatchesPrior(t *testing.T, ctx context.Context, current *Run, prior *
 	}
 
 	if cur.RowCount != priorCs.RowCount || cur.StockSum != priorCs.StockSum {
-		t.Errorf("checkpoint %q differs from prior run: current run_id=%d (row_count=%d stock_sum=%d) prior run_id=%d (row_count=%d stock_sum=%d)",
+		t.Errorf("checkpoint %q differs from prior run: current run_id=%s (row_count=%d stock_sum=%d) prior run_id=%s (row_count=%d stock_sum=%d)",
 			checkpointName,
 			current.ID, cur.RowCount, cur.StockSum,
 			prior.ID, priorCs.RowCount, priorCs.StockSum,
@@ -244,4 +265,49 @@ func AssertMatchesPrior(t *testing.T, ctx context.Context, current *Run, prior *
 		"current_run_id", current.ID,
 		"prior_run_id", prior.ID,
 	)
+}
+
+// SaveBenchmarkResult inserts one row into benchmark_results for the given run.
+// runID comes from state.StartRun, result comes from pgbench.RunLocal.
+func SaveBenchmarkResult(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, result pgbench.Result, tel *telemetry.Telemetry) error {
+	_, err := pool.Exec(ctx,
+		`INSERT INTO benchmark_results
+			(run_id, provider, tps, latency_avg_ms, latency_stddev_ms, scale_factor, clients, duration_seconds)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		runID, result.Provider, result.TPS, result.LatencyAvgMs, result.LatencyStddevMs,
+		result.ScaleFactor, result.Clients, result.Duration.Seconds(),
+	)
+	if err != nil {
+		return fmt.Errorf("SaveBenchmarkResult: %w", err)
+	}
+	if tel != nil {
+		tel.Logger.With("package", "state").Info("saved benchmark result", "provider", result.Provider, "tps", result.TPS)
+	}
+	return nil
+}
+
+// GetLastBenchmarkResult returns the most recent result for the given provider.
+// Returns nil, nil — not an error — when no previous result exists.
+func GetLastBenchmarkResult(ctx context.Context, pool *pgxpool.Pool, provider string, tel *telemetry.Telemetry) (*pgbench.Result, error) {
+	var r pgbench.Result
+	var durationSeconds float64
+	err := pool.QueryRow(ctx,
+		`SELECT provider, tps, latency_avg_ms, latency_stddev_ms, scale_factor, clients, duration_seconds
+		 FROM benchmark_results
+		 WHERE provider = $1
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		provider,
+	).Scan(&r.Provider, &r.TPS, &r.LatencyAvgMs, &r.LatencyStddevMs, &r.ScaleFactor, &r.Clients, &durationSeconds)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("GetLastBenchmarkResult: %w", err)
+	}
+	r.Duration = time.Duration(durationSeconds * float64(time.Second))
+	if tel != nil {
+		tel.Logger.With("package", "state").Info("loaded previous benchmark result", "provider", r.Provider, "tps", r.TPS)
+	}
+	return &r, nil
 }
