@@ -1,6 +1,7 @@
 # Binaries
 *.exe
 *.out
+runbenchmark
 
 # Test cache
 *.test
