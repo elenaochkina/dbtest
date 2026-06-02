@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
-	"github.com/elenaochkina/dbtest/pgadapter"
 	"github.com/elenaochkina/dbtest/benchmark"
+	"github.com/elenaochkina/dbtest/pgadapter"
+	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
@@ -81,6 +83,20 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("after:  rows=%d stock_sum=%d  (delta=%d)\n", after.RowCount, after.StockSum, after.StockSum-before.StockSum)
+
+	fmt.Println("\n--- pgbench ---")
+	result, err := pgbench.RunLocal(ctx, dsn, pgbench.Config{
+		ScaleFactor: 1,
+		Clients:     4,
+		Duration:    15 * time.Second,
+		Provider:    "local",
+	}, tel)
+	if err != nil {
+		slog.Error("pgbench failed", "error", err)
+		os.Exit(1)
+	}
+	fmt.Printf("tps=%.1f  latency_avg=%.2f ms  latency_stddev=%.2f ms\n",
+		result.TPS, result.LatencyAvgMs, result.LatencyStddevMs)
 
 	fmt.Println("\npress Enter to shut down the metrics server and exit...")
 	bufio.NewReader(os.Stdin).ReadString('\n')
