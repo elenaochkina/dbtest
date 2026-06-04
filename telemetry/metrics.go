@@ -35,6 +35,12 @@ type Metrics struct {
 	// BenchmarkLatencyStddevMs holds the latest latency standard deviation (ms) from pgbench, labelled by provider.
 	BenchmarkLatencyStddevMs *prometheus.GaugeVec
 
+	// ProviderProvisionDuration tracks how long it takes to provision a database cluster, labelled by provider.
+	ProviderProvisionDuration *prometheus.HistogramVec
+
+	// ProviderDeprovisionTotal counts cluster deprovisions, labelled by provider.
+	ProviderDeprovisionTotal *prometheus.CounterVec
+
 	server *http.Server
 }
 
@@ -72,7 +78,17 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 		Help: "Standard deviation of transaction latency in milliseconds from the most recent pgbench run.",
 	}, []string{"provider"})
 
-	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration, benchmarkTPS, benchmarkLatencyAvgMs, benchmarkLatencyStddevMs)
+	providerProvisionDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "dbtest_provider_provision_duration_seconds",
+		Help:    "How long it takes to provision a database cluster.",
+		Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60},
+	}, []string{"provider"})
+	providerDeprovisionTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "dbtest_provider_deprovision_total",
+		Help: "Total number of cluster deprovisions.",
+	}, []string{"provider"})
+
+	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration, benchmarkTPS, benchmarkLatencyAvgMs, benchmarkLatencyStddevMs, providerProvisionDuration, providerDeprovisionTotal)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
@@ -92,10 +108,12 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 		ConnectionDuration:       connectionDuration,
 		SeedRowsTotal:            seedRowsTotal,
 		ChecksumDuration:         checksumDuration,
-		BenchmarkTPS:             benchmarkTPS,
-		BenchmarkLatencyAvgMs:    benchmarkLatencyAvgMs,
-		BenchmarkLatencyStddevMs: benchmarkLatencyStddevMs,
-		server:                   server,
+		BenchmarkTPS:              benchmarkTPS,
+		BenchmarkLatencyAvgMs:     benchmarkLatencyAvgMs,
+		BenchmarkLatencyStddevMs:  benchmarkLatencyStddevMs,
+		ProviderProvisionDuration: providerProvisionDuration,
+		ProviderDeprovisionTotal:  providerDeprovisionTotal,
+		server:                    server,
 	}
 }
 
