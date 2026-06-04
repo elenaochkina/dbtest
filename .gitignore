@@ -1,7 +1,7 @@
 # Binaries
 *.exe
 *.out
-cmd/runbenchmark/runbenchmark
+
 
 # Test cache
 *.test
