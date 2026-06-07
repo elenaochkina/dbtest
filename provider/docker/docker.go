@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	dockerclient "github.com/docker/docker/client"
@@ -114,21 +115,50 @@ func (p *dockerProvider) WaitForReady(ctx context.Context, cluster provider.Clus
 }
 
 func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) error {
-	timeout := 5
-	if err := p.client.ContainerStop(ctx, clusterID, container.StopOptions{Timeout: &timeout}); err != nil {
-		return fmt.Errorf("container stop: %w", err)
+	var lastErr error
+	for attempt := range 3 {
+		lastErr = p.deprovision(ctx, clusterID)
+		if lastErr == nil {
+			break
+		}
+		if errdefs.IsNotFound(lastErr) {
+			lastErr = nil // container already gone — treat as success
+			break
+		}
+		if p.tel != nil {
+			p.tel.Logger.Warn("deprovision attempt failed",
+				slog.Int("attempt", attempt+1),
+				slog.String("container_id", clusterID),
+				slog.Any("error", lastErr),
+			)
+		}
+		time.Sleep(2 * time.Second)
 	}
-	if err := p.client.ContainerRemove(ctx, clusterID, container.RemoveOptions{
-		RemoveVolumes: true,
-		Force:         true,
-	}); err != nil {
-		return fmt.Errorf("container remove: %w", err)
+	if lastErr != nil {
+		return lastErr
 	}
 	if p.tel != nil {
 		p.tel.Metrics.ProviderDeprovisionTotal.WithLabelValues("docker").Inc()
 		p.tel.Logger.Info("deprovisioned cluster",
 			slog.String("container_id", clusterID),
 		)
+	}
+	return nil
+}
+
+// deprovision performs a single stop+remove attempt.
+func (p *dockerProvider) deprovision(ctx context.Context, clusterID string) error {
+	timeout := 5
+	if err := p.client.ContainerStop(ctx, clusterID, container.StopOptions{Timeout: &timeout}); err != nil {
+		if !errdefs.IsNotFound(err) {
+			return fmt.Errorf("container stop: %w", err)
+		}
+	}
+	if err := p.client.ContainerRemove(ctx, clusterID, container.RemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	}); err != nil {
+		return fmt.Errorf("container remove: %w", err)
 	}
 	return nil
 }

@@ -153,7 +153,17 @@ func TestWarehouseChecksumDocker(t *testing.T) {
 	})
 	defer tel.Shutdown()
 
-	p, err := factory.Run(*providerFlag, tel)
+	var statePool *pgxpool.Pool
+	if stateDSN := os.Getenv("STATE_DSN"); stateDSN != "" {
+		var err error
+		statePool, err = state.Connect(stateDSN, tel)
+		if err != nil {
+			t.Fatalf("state connect: %v", err)
+		}
+		defer statePool.Close()
+	}
+
+	p, err := factory.Run(factory.ProviderName(*providerFlag), tel)
 	if err != nil {
 		t.Fatalf("factory.Run: %v", err)
 	}
@@ -162,9 +172,22 @@ func TestWarehouseChecksumDocker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provision: %v", err)
 	}
+
+	if statePool != nil {
+		if err := state.RecordCluster(ctx, statePool, cluster, *providerFlag, tel); err != nil {
+			t.Logf("record cluster: %v", err)
+		}
+	}
+
 	defer func() {
-		if err := p.Deprovision(context.Background(), cluster.ID); err != nil {
+		depCtx := context.Background()
+		if err := p.Deprovision(depCtx, cluster.ID); err != nil {
 			t.Logf("deprovision: %v", err)
+		}
+		if statePool != nil {
+			if err := state.MarkDeprovisioned(depCtx, statePool, cluster.ID, tel); err != nil {
+				t.Logf("mark deprovisioned: %v", err)
+			}
 		}
 	}()
 

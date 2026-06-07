@@ -14,8 +14,10 @@ import (
 	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/provider/factory"
+	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -32,7 +34,19 @@ func main() {
 
 	ctx := context.Background()
 
-	p, err := factory.Run(*providerName, tel)
+	// State DB is optional — orphan tracking is skipped if STATE_DSN is not set.
+	var statePool *pgxpool.Pool
+	if stateDSN := os.Getenv("STATE_DSN"); stateDSN != "" {
+		var err error
+		statePool, err = state.Connect(stateDSN, tel)
+		if err != nil {
+			slog.Error("state connect failed", "error", err)
+			os.Exit(1)
+		}
+		defer statePool.Close()
+	}
+
+	p, err := factory.Run(factory.ProviderName(*providerName), tel)
 	if err != nil {
 		slog.Error("factory.Run failed", "error", err)
 		os.Exit(1)
@@ -43,9 +57,24 @@ func main() {
 		slog.Error("provision failed", "error", err)
 		os.Exit(1)
 	}
+
+	// Record cluster immediately so a future cleanup job can find it if the process crashes.
+	if statePool != nil {
+		if err := state.RecordCluster(ctx, statePool, cluster, *providerName, tel); err != nil {
+			slog.Error("record cluster failed", "error", err)
+		}
+	}
+
+	// Single defer keeps Deprovision and MarkDeprovisioned in guaranteed order.
 	defer func() {
-		if err := p.Deprovision(context.Background(), cluster.ID); err != nil {
+		depCtx := context.Background()
+		if err := p.Deprovision(depCtx, cluster.ID); err != nil {
 			slog.Error("deprovision failed", "error", err)
+		}
+		if statePool != nil {
+			if err := state.MarkDeprovisioned(depCtx, statePool, cluster.ID, tel); err != nil {
+				slog.Error("mark deprovisioned failed", "error", err)
+			}
 		}
 	}()
 

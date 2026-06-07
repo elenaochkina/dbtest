@@ -9,12 +9,19 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
+// ProviderName is the typed identifier for a provider implementation.
+type ProviderName string
+
+const (
+	Docker ProviderName = "docker"
+	AWS    ProviderName = "aws" // TODO (Stage 8/9): implement
+)
+
 // Run returns a Provider for the given name.
 // tel may be nil — metrics and logs are skipped when nil.
-// TODO (Stage 8/9): add "aws" case importing provider/aws.
-func Run(providerName string, tel *telemetry.Telemetry) (provider.Provider, error) {
+func Run(providerName ProviderName, tel *telemetry.Telemetry) (provider.Provider, error) {
 	switch providerName {
-	case "docker":
+	case Docker:
 		return docker.New(tel)
 	default:
 		return nil, fmt.Errorf("unknown provider %q", providerName)
