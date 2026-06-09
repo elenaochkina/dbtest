@@ -2,17 +2,22 @@ package benchmark_test
 
 import (
 	"context"
+	"flag"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/elenaochkina/dbtest/benchmark"
 	"github.com/elenaochkina/dbtest/pgadapter"
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
+	"github.com/elenaochkina/dbtest/provider/factory"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var providerFlag = flag.String("provider", "docker", "provider name (docker)")
 
 func TestWarehouseChecksum(t *testing.T) {
 	dsn := os.Getenv("DSN")
@@ -132,4 +137,101 @@ func TestWarehouseChecksum(t *testing.T) {
 			state.AssertMatchesPrior(t, ctx, run, prior, "after_orders")
 		}
 	}
+}
+
+func TestWarehouseChecksumDocker(t *testing.T) {
+	if os.Getenv("DOCKER_TEST") != "1" {
+		t.Skip("DOCKER_TEST not set — skipping docker provider test")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	tel := telemetry.Init(telemetry.Config{
+		Log:     telemetry.LogConfig{LogLevel: "info", Output: nil},
+		Metrics: telemetry.MetricsConfig{MetricsPort: 9091},
+	})
+	defer tel.Shutdown()
+
+	var statePool *pgxpool.Pool
+	if stateDSN := os.Getenv("STATE_DSN"); stateDSN != "" {
+		var err error
+		statePool, err = state.Connect(stateDSN, tel)
+		if err != nil {
+			t.Fatalf("state connect: %v", err)
+		}
+		defer statePool.Close()
+	}
+
+	p, err := factory.Run(factory.ProviderName(*providerFlag), tel)
+	if err != nil {
+		t.Fatalf("factory.Run: %v", err)
+	}
+
+	cluster, err := p.Provision(ctx)
+	if err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	if statePool != nil {
+		if err := state.RecordCluster(ctx, statePool, cluster, *providerFlag, tel); err != nil {
+			t.Logf("record cluster: %v", err)
+		}
+	}
+
+	defer func() {
+		depCtx := context.Background()
+		if err := p.Deprovision(depCtx, cluster.ID); err != nil {
+			t.Logf("deprovision: %v", err)
+		}
+		if statePool != nil {
+			if err := state.MarkDeprovisioned(depCtx, statePool, cluster.ID, tel); err != nil {
+				t.Logf("mark deprovisioned: %v", err)
+			}
+		}
+	}()
+
+	if err := p.WaitForReady(ctx, cluster); err != nil {
+		t.Fatalf("wait for ready: %v", err)
+	}
+
+	pool, err := pgadapter.Connect(cluster.DSN, tel)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+
+	if err := benchmark.DropOrdersTable(ctx, pool); err != nil {
+		t.Fatalf("drop orders: %v", err)
+	}
+	if err := benchmark.DropWarehouseTable(ctx, pool); err != nil {
+		t.Fatalf("drop warehouse: %v", err)
+	}
+	if err := benchmark.CreateWarehouseTable(ctx, pool); err != nil {
+		t.Fatalf("create warehouse: %v", err)
+	}
+	if err := benchmark.CreateOrdersTable(ctx, pool); err != nil {
+		t.Fatalf("create orders: %v", err)
+	}
+
+	seeder := seedgen.New(42)
+	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5, tel); err != nil {
+		t.Fatalf("seed warehouses: %v", err)
+	}
+
+	before, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
+	if err != nil {
+		t.Fatalf("checksum before: %v", err)
+	}
+
+	if err := benchmark.RunOrderCycle(ctx, pool); err != nil {
+		t.Fatalf("order cycle: %v", err)
+	}
+
+	after, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
+	if err != nil {
+		t.Fatalf("checksum after: %v", err)
+	}
+
+	validator.AssertDelta(t, before, after, -10)
 }

@@ -1,7 +1,7 @@
 # Binaries
 *.exe
 *.out
-runbenchmark
+
 
 # Test cache
 *.test
@@ -19,4 +19,4 @@ runbenchmark
 .DS_Store
 
 # Docs
-# docs/
+docs/

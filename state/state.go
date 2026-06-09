@@ -76,5 +76,19 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("migrate benchmark_results table: %w", err)
 	}
 
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS clusters (
+			id               TEXT        PRIMARY KEY,
+			provider         TEXT        NOT NULL,
+			dsn              TEXT        NOT NULL,
+			status           TEXT        NOT NULL,
+			provisioned_at   TIMESTAMPTZ NOT NULL,
+			deprovisioned_at TIMESTAMPTZ
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate clusters table: %w", err)
+	}
+
 	return nil
 }
