@@ -146,6 +146,12 @@ func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) erro
 	return nil
 }
 
+func init() {
+	provider.Register(provider.Docker, func(tel *telemetry.Telemetry) (provider.Provider, error) {
+		return New(tel)
+	})
+}
+
 // deprovision performs a single stop+remove attempt.
 func (p *dockerProvider) deprovision(ctx context.Context, clusterID string) error {
 	timeout := 5

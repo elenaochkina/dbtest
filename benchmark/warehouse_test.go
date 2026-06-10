@@ -10,7 +10,8 @@ import (
 	"github.com/elenaochkina/dbtest/benchmark"
 	"github.com/elenaochkina/dbtest/pgadapter"
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
-	"github.com/elenaochkina/dbtest/provider/factory"
+	"github.com/elenaochkina/dbtest/provider"
+	_ "github.com/elenaochkina/dbtest/provider/docker"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
@@ -163,7 +164,7 @@ func TestWarehouseChecksumDocker(t *testing.T) {
 		defer statePool.Close()
 	}
 
-	p, err := factory.Run(factory.ProviderName(*providerFlag), tel)
+	p, err := provider.Run(provider.ProviderName(*providerFlag), tel)
 	if err != nil {
 		t.Fatalf("factory.Run: %v", err)
 	}

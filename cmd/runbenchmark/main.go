@@ -13,7 +13,8 @@ import (
 	"github.com/elenaochkina/dbtest/pgadapter"
 	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
-	"github.com/elenaochkina/dbtest/provider/factory"
+	"github.com/elenaochkina/dbtest/provider"
+	_ "github.com/elenaochkina/dbtest/provider/docker"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
@@ -46,7 +47,7 @@ func main() {
 		defer statePool.Close()
 	}
 
-	p, err := factory.Run(factory.ProviderName(*providerName), tel)
+	p, err := provider.Run(provider.ProviderName(*providerName), tel)
 	if err != nil {
 		slog.Error("factory.Run failed", "error", err)
 		os.Exit(1)
