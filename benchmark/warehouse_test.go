@@ -12,6 +12,7 @@ import (
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/provider"
 	_ "github.com/elenaochkina/dbtest/provider/docker"
+	"github.com/elenaochkina/dbtest/scenario"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
@@ -196,43 +197,14 @@ func TestWarehouseChecksumDocker(t *testing.T) {
 		t.Fatalf("wait for ready: %v", err)
 	}
 
-	pool, err := pgadapter.Connect(cluster.DSN, tel)
+	s, err := scenario.New(scenario.Warehouse, scenario.Config{
+		Seed:       42,
+		Warehouses: 5,
+	})
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatalf("scenario.New: %v", err)
 	}
-	defer pool.Close()
-
-	if err := benchmark.DropOrdersTable(ctx, pool); err != nil {
-		t.Fatalf("drop orders: %v", err)
+	if err := s.Run(ctx, cluster.DSN, tel); err != nil {
+		t.Fatalf("scenario run: %v", err)
 	}
-	if err := benchmark.DropWarehouseTable(ctx, pool); err != nil {
-		t.Fatalf("drop warehouse: %v", err)
-	}
-	if err := benchmark.CreateWarehouseTable(ctx, pool); err != nil {
-		t.Fatalf("create warehouse: %v", err)
-	}
-	if err := benchmark.CreateOrdersTable(ctx, pool); err != nil {
-		t.Fatalf("create orders: %v", err)
-	}
-
-	seeder := seedgen.New(42)
-	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5, tel); err != nil {
-		t.Fatalf("seed warehouses: %v", err)
-	}
-
-	before, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
-	if err != nil {
-		t.Fatalf("checksum before: %v", err)
-	}
-
-	if err := benchmark.RunOrderCycle(ctx, pool); err != nil {
-		t.Fatalf("order cycle: %v", err)
-	}
-
-	after, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
-	if err != nil {
-		t.Fatalf("checksum after: %v", err)
-	}
-
-	validator.AssertDelta(t, before, after, -10)
 }

@@ -9,20 +9,22 @@ import (
 	"os"
 	"time"
 
-	"github.com/elenaochkina/dbtest/benchmark"
-	"github.com/elenaochkina/dbtest/pgadapter"
-	"github.com/elenaochkina/dbtest/pgbench"
-	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/provider"
 	_ "github.com/elenaochkina/dbtest/provider/docker"
+	"github.com/elenaochkina/dbtest/scenario"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
-	"github.com/elenaochkina/dbtest/validator"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	providerName := flag.String("provider", "docker", "provider name (docker)")
+	providerName  := flag.String("provider",  "docker", "provider name (docker)")
+	scenarioName  := flag.String("scenario",  "all",    "scenario to run (warehouse, pgbench, all)")
+	seed          := flag.Int64("seed",         42,     "random seed for warehouse data")
+	warehouses    := flag.Int("warehouses",      5,     "number of warehouse rows to seed")
+	scaleFactor   := flag.Int("scale",           1,     "pgbench scale factor")
+	clients       := flag.Int("clients",         4,     "pgbench client count")
+	duration      := flag.Duration("duration", 15*time.Second, "pgbench run duration")
 	flag.Parse()
 
 	tel := telemetry.Init(telemetry.Config{
@@ -49,7 +51,7 @@ func main() {
 
 	p, err := provider.Run(provider.ProviderName(*providerName), tel)
 	if err != nil {
-		slog.Error("factory.Run failed", "error", err)
+		slog.Error("provider.Run failed", "error", err)
 		os.Exit(1)
 	}
 
@@ -59,7 +61,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Record cluster immediately so a future cleanup job can find it if the process crashes.
 	if statePool != nil {
 		if err := state.RecordCluster(ctx, statePool, cluster, *providerName, tel); err != nil {
 			slog.Error("record cluster failed", "error", err)
@@ -84,68 +85,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	pool, err := pgadapter.Connect(cluster.DSN, tel)
+	s, err := scenario.New(scenario.ScenarioName(*scenarioName), scenario.Config{
+		Seed:         *seed,
+		Warehouses:   *warehouses,
+		ScaleFactor:  *scaleFactor,
+		Clients:      *clients,
+		Duration:     *duration,
+		ProviderName: *providerName,
+	})
 	if err != nil {
-		slog.Error("connect failed", "error", err)
-		os.Exit(1)
-	}
-	defer pool.Close()
-
-	if err := benchmark.DropOrdersTable(ctx, pool); err != nil {
-		slog.Error("drop orders", "error", err)
-		os.Exit(1)
-	}
-	if err := benchmark.DropWarehouseTable(ctx, pool); err != nil {
-		slog.Error("drop warehouse", "error", err)
-		os.Exit(1)
-	}
-	if err := benchmark.CreateWarehouseTable(ctx, pool); err != nil {
-		slog.Error("create warehouse", "error", err)
-		os.Exit(1)
-	}
-	if err := benchmark.CreateOrdersTable(ctx, pool); err != nil {
-		slog.Error("create orders", "error", err)
+		slog.Error("scenario.New failed", "error", err)
 		os.Exit(1)
 	}
 
-	seeder := seedgen.New(42)
-	if err := benchmark.SeedWarehouses(ctx, pool, seeder, 5, tel); err != nil {
-		slog.Error("seed warehouses", "error", err)
+	if err := s.Run(ctx, cluster.DSN, tel); err != nil {
+		slog.Error("scenario failed", "scenario", s.Name(), "error", err)
 		os.Exit(1)
 	}
-
-	before, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
-	if err != nil {
-		slog.Error("checksum before", "error", err)
-		os.Exit(1)
-	}
-	fmt.Printf("before: rows=%d stock_sum=%d\n", before.RowCount, before.StockSum)
-
-	if err := benchmark.RunOrderCycle(ctx, pool); err != nil {
-		slog.Error("order cycle", "error", err)
-		os.Exit(1)
-	}
-
-	after, err := validator.ComputeChecksum(ctx, pool, "warehouse", tel)
-	if err != nil {
-		slog.Error("checksum after", "error", err)
-		os.Exit(1)
-	}
-	fmt.Printf("after:  rows=%d stock_sum=%d  (delta=%d)\n", after.RowCount, after.StockSum, after.StockSum-before.StockSum)
-
-	fmt.Println("\n--- pgbench ---")
-	result, err := pgbench.RunLocal(ctx, cluster.DSN, pgbench.Config{
-		ScaleFactor: 1,
-		Clients:     4,
-		Duration:    15 * time.Second,
-		Provider:    *providerName,
-	}, tel)
-	if err != nil {
-		slog.Error("pgbench failed", "error", err)
-		os.Exit(1)
-	}
-	fmt.Printf("tps=%.1f  latency_avg=%.2f ms  latency_stddev=%.2f ms\n",
-		result.TPS, result.LatencyAvgMs, result.LatencyStddevMs)
 
 	fmt.Println("\npress Enter to shut down the metrics server and exit...")
 	bufio.NewReader(os.Stdin).ReadString('\n')
