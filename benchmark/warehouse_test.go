@@ -12,10 +12,11 @@ import (
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/provider"
 	_ "github.com/elenaochkina/dbtest/provider/docker"
-	"github.com/elenaochkina/dbtest/workload"
+	"github.com/elenaochkina/dbtest/scenario"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
+	"github.com/elenaochkina/dbtest/workload"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -165,46 +166,18 @@ func TestWarehouseChecksumDocker(t *testing.T) {
 		defer statePool.Close()
 	}
 
-	p, err := provider.Run(provider.ProviderName(*providerFlag), tel)
-	if err != nil {
-		t.Fatalf("factory.Run: %v", err)
-	}
-
-	cluster, err := p.Provision(ctx)
-	if err != nil {
-		t.Fatalf("provision: %v", err)
-	}
-
-	if statePool != nil {
-		if err := state.RecordCluster(ctx, statePool, cluster, *providerFlag, tel); err != nil {
-			t.Logf("record cluster: %v", err)
-		}
-	}
-
-	defer func() {
-		depCtx := context.Background()
-		if err := p.Deprovision(depCtx, cluster.ID); err != nil {
-			t.Logf("deprovision: %v", err)
-		}
-		if statePool != nil {
-			if err := state.MarkDeprovisioned(depCtx, statePool, cluster.ID, tel); err != nil {
-				t.Logf("mark deprovisioned: %v", err)
-			}
-		}
-	}()
-
-	if err := p.WaitForReady(ctx, cluster); err != nil {
-		t.Fatalf("wait for ready: %v", err)
-	}
-
-	s, err := workload.New(workload.Warehouse, workload.Config{
+	s, err := scenario.New(scenario.Config{
+		Provider:   provider.ProviderName(*providerFlag),
+		Workload:   workload.Warehouse,
+		StatePool:  statePool,
 		Seed:       42,
 		Warehouses: 5,
 	})
 	if err != nil {
-		t.Fatalf("workload.New: %v", err)
+		t.Fatalf("scenario.New: %v", err)
 	}
-	if err := s.Run(ctx, cluster.DSN, tel); err != nil {
+
+	if err := s.Run(ctx, tel); err != nil {
 		t.Fatalf("scenario run: %v", err)
 	}
 }
