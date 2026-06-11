@@ -1,5 +1,5 @@
 
-package scenario
+package workload
 
 import (
 	"context"
@@ -14,16 +14,16 @@ import (
 )
 
 func init() {
-	Register(Warehouse, func(cfg Config) Scenario {
-		return &warehouseScenario{cfg: cfg}
+	Register(Warehouse, func(cfg Config) Workload {
+		return &warehouseWorkload{cfg: cfg}
 	})
 }
 
-type warehouseScenario struct{ cfg Config }
+type warehouseWorkload struct{ cfg Config }
 
-func (s *warehouseScenario) Name() string { return string(Warehouse) }
+func (s *warehouseWorkload) Name() string { return string(Warehouse) }
 
-func (s *warehouseScenario) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
+func (s *warehouseWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
 	pool, err := pgadapter.Connect(dsn, tel)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -64,7 +64,7 @@ func (s *warehouseScenario) Run(ctx context.Context, dsn string, tel *telemetry.
 
 	delta := after.StockSum - before.StockSum
 	if tel != nil {
-		tel.Logger.Info("warehouse scenario complete",
+		tel.Logger.Info("warehouse workload complete",
 			slog.Int64("before_stock", before.StockSum),
 			slog.Int64("after_stock", after.StockSum),
 			slog.Int64("delta", delta),

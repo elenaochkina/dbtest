@@ -1,4 +1,4 @@
-package scenario
+package workload
 
 import (
 	"context"
@@ -9,23 +9,23 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
-// Scenario is the interface every scenario must satisfy.
-type Scenario interface {
+// Workload is the interface every workload must satisfy.
+type Workload interface {
 	Name() string
 	Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error
 }
 
-// ScenarioName is the typed identifier for a scenario.
-type ScenarioName string
+// WorkloadName is the typed identifier for a workload.
+type WorkloadName string
 
 const (
-	Warehouse ScenarioName = "warehouse"
-	Pgbench   ScenarioName = "pgbench"
-	All       ScenarioName = "all"
+	Warehouse WorkloadName = "warehouse"
+	Pgbench   WorkloadName = "pgbench"
+	All       WorkloadName = "all"
 )
 
-// Config holds all parameters for any scenario.
-// Each scenario reads only the fields it needs.
+// Config holds all parameters for any workload.
+// Each workload reads only the fields it needs.
 type Config struct {
 	// warehouse
 	Seed       int64
@@ -37,20 +37,20 @@ type Config struct {
 	ProviderName string
 }
 
-// registry maps scenario names to constructor functions.
-// Populated by each scenario file via init() + Register().
-var registry = map[ScenarioName]func(Config) Scenario{}
+// registry maps workload names to constructor functions.
+// Populated by each workload file via init() + Register().
+var registry = map[WorkloadName]func(Config) Workload{}
 
-// Register adds a scenario constructor to the registry.
-// Call this from init() in each scenario file.
-func Register(name ScenarioName, fn func(Config) Scenario) {
+// Register adds a workload constructor to the registry.
+// Call this from init() in each workload file.
+func Register(name WorkloadName, fn func(Config) Workload) {
 	registry[name] = fn
 }
 
-// New returns a Scenario for the given name.
+// New returns a Workload for the given name.
 // All is a special case that composes Warehouse and Pgbench sequentially —
 // it is not in the registry since its definition depends on other entries.
-func New(name ScenarioName, cfg Config) (Scenario, error) {
+func New(name WorkloadName, cfg Config) (Workload, error) {
 	if name == All {
 		w, err := New(Warehouse, cfg)
 		if err != nil {
@@ -64,7 +64,7 @@ func New(name ScenarioName, cfg Config) (Scenario, error) {
 	}
 	fn, ok := registry[name]
 	if !ok {
-		return nil, fmt.Errorf("unknown scenario %q; registered: %v", name, registeredNames())
+		return nil, fmt.Errorf("unknown workload %q; registered: %v", name, registeredNames())
 	}
 	return fn(cfg), nil
 }

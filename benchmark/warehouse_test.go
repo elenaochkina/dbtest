@@ -12,7 +12,7 @@ import (
 	"github.com/elenaochkina/dbtest/pkg/seedgen"
 	"github.com/elenaochkina/dbtest/provider"
 	_ "github.com/elenaochkina/dbtest/provider/docker"
-	"github.com/elenaochkina/dbtest/scenario"
+	"github.com/elenaochkina/dbtest/workload"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
@@ -125,7 +125,7 @@ func TestWarehouseChecksum(t *testing.T) {
 	// The number of warehouse rows must be unchanged; total stock must be exactly 10 less.
 	validator.AssertDelta(t, before, after, -10)
 
-	// Compare both checkpoints against the previous passing run for this scenario.
+	// Compare both checkpoints against the previous passing run for this workload.
 	// If no prior run exists (first ever run), LastRun returns nil and we skip.
 	// The ID check prevents a run from comparing against itself when the test
 	// binary is reused within a session.
@@ -197,12 +197,12 @@ func TestWarehouseChecksumDocker(t *testing.T) {
 		t.Fatalf("wait for ready: %v", err)
 	}
 
-	s, err := scenario.New(scenario.Warehouse, scenario.Config{
+	s, err := workload.New(workload.Warehouse, workload.Config{
 		Seed:       42,
 		Warehouses: 5,
 	})
 	if err != nil {
-		t.Fatalf("scenario.New: %v", err)
+		t.Fatalf("workload.New: %v", err)
 	}
 	if err := s.Run(ctx, cluster.DSN, tel); err != nil {
 		t.Fatalf("scenario run: %v", err)

@@ -1,4 +1,4 @@
-package scenario
+package workload
 
 import (
 	"context"
@@ -10,16 +10,16 @@ import (
 )
 
 func init() {
-	Register(Pgbench, func(cfg Config) Scenario {
-		return &pgbenchScenario{cfg: cfg}
+	Register(Pgbench, func(cfg Config) Workload {
+		return &pgbenchWorkload{cfg: cfg}
 	})
 }
 
-type pgbenchScenario struct{ cfg Config }
+type pgbenchWorkload struct{ cfg Config }
 
-func (s *pgbenchScenario) Name() string { return string(Pgbench) }
+func (s *pgbenchWorkload) Name() string { return string(Pgbench) }
 
-func (s *pgbenchScenario) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
+func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
 	result, err := pgbench.RunLocal(ctx, dsn, pgbench.Config{
 		ScaleFactor: s.cfg.ScaleFactor,
 		Clients:     s.cfg.Clients,

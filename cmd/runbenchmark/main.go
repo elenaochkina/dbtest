@@ -11,7 +11,7 @@ import (
 
 	"github.com/elenaochkina/dbtest/provider"
 	_ "github.com/elenaochkina/dbtest/provider/docker"
-	"github.com/elenaochkina/dbtest/scenario"
+	"github.com/elenaochkina/dbtest/workload"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -85,7 +85,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	s, err := scenario.New(scenario.ScenarioName(*scenarioName), scenario.Config{
+	s, err := workload.New(workload.WorkloadName(*scenarioName), workload.Config{
 		Seed:         *seed,
 		Warehouses:   *warehouses,
 		ScaleFactor:  *scaleFactor,
@@ -94,7 +94,7 @@ func main() {
 		ProviderName: *providerName,
 	})
 	if err != nil {
-		slog.Error("scenario.New failed", "error", err)
+		slog.Error("workload.New failed", "error", err)
 		os.Exit(1)
 	}
 

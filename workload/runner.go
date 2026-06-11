@@ -1,4 +1,4 @@
-package scenario
+package workload
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 
 type sequentialRunner struct {
 	name      string
-	scenarios []Scenario
+	workloads []Workload
 }
 
-// Sequential runs scenarios one after another, stopping on the first error.
-func Sequential(name string, scenarios ...Scenario) Scenario {
-	return &sequentialRunner{name: name, scenarios: scenarios}
+// Sequential runs workloads one after another, stopping on the first error.
+func Sequential(name string, workloads ...Workload) Workload {
+	return &sequentialRunner{name: name, workloads: workloads}
 }
 
 func (r *sequentialRunner) Name() string { return r.name }
 
 func (r *sequentialRunner) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
-	for _, s := range r.scenarios {
+	for _, s := range r.workloads {
 		if err := s.Run(ctx, dsn, tel); err != nil {
-			return fmt.Errorf("scenario %q: %w", s.Name(), err)
+			return fmt.Errorf("workload %q: %w", s.Name(), err)
 		}
 	}
 	return nil
@@ -31,24 +31,24 @@ func (r *sequentialRunner) Run(ctx context.Context, dsn string, tel *telemetry.T
 
 type parallelRunner struct {
 	name      string
-	scenarios []Scenario
+	workloads []Workload
 }
 
-// Parallel runs all scenarios concurrently via errgroup, cancelling all on the first error.
-// Each scenario must manage its own pool — parallel scenarios share the DSN
+// Parallel runs all workloads concurrently via errgroup, cancelling all on the first error.
+// Each workload must manage its own pool — parallel workloads share the DSN
 // but must not share a *pgxpool.Pool or write to the same tables.
-func Parallel(name string, scenarios ...Scenario) Scenario {
-	return &parallelRunner{name: name, scenarios: scenarios}
+func Parallel(name string, workloads ...Workload) Workload {
+	return &parallelRunner{name: name, workloads: workloads}
 }
 
 func (r *parallelRunner) Name() string { return r.name }
 
 func (r *parallelRunner) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, s := range r.scenarios {
+	for _, s := range r.workloads {
 		eg.Go(func() error {
 			if err := s.Run(ctx, dsn, tel); err != nil {
-				return fmt.Errorf("scenario %q: %w", s.Name(), err)
+				return fmt.Errorf("workload %q: %w", s.Name(), err)
 			}
 			return nil
 		})
@@ -57,22 +57,22 @@ func (r *parallelRunner) Run(ctx context.Context, dsn string, tel *telemetry.Tel
 }
 
 type repeatRunner struct {
-	scenario Scenario
+	workload Workload
 	times    int
 }
 
-// Repeat runs a single scenario N times, reporting which repetition failed.
-func Repeat(scenario Scenario, times int) Scenario {
-	return &repeatRunner{scenario: scenario, times: times}
+// Repeat runs a single workload N times, reporting which repetition failed.
+func Repeat(workload Workload, times int) Workload {
+	return &repeatRunner{workload: workload, times: times}
 }
 
 func (r *repeatRunner) Name() string {
-	return fmt.Sprintf("%s(x%d)", r.scenario.Name(), r.times)
+	return fmt.Sprintf("%s(x%d)", r.workload.Name(), r.times)
 }
 
 func (r *repeatRunner) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
 	for i := range r.times {
-		if err := r.scenario.Run(ctx, dsn, tel); err != nil {
+		if err := r.workload.Run(ctx, dsn, tel); err != nil {
 			return fmt.Errorf("repetition %d/%d: %w", i+1, r.times, err)
 		}
 	}
