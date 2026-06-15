@@ -12,11 +12,12 @@ var durabilityTables = []string{"warehouse", "orders"}
 
 func init() {
 	Register("warehouse", provisionStep{}, workloadStep{workload.Warehouse})
-	Register("benchmark", provisionStep{}, workloadStep{workload.Pgbench})
+	Register("benchmark", provisionStep{}, workloadStep{workload.Pgbench}, saveResultStep{})
 	Register("all",
 		provisionStep{},
 		workloadStep{workload.Warehouse},
 		workloadStep{workload.Pgbench},
+		saveResultStep{},
 	)
 	Register("restart",
 		provisionStep{},

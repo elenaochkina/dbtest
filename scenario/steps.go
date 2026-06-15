@@ -6,7 +6,9 @@ import (
 	"log/slog"
 
 	"github.com/elenaochkina/dbtest/pgadapter"
+	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/validator"
 	"github.com/elenaochkina/dbtest/workload"
 )
@@ -62,6 +64,34 @@ func (s workloadStep) Run(ctx context.Context, rc *RunContext) error {
 	}
 	rc.Result = result
 	return nil
+}
+
+// saveResultStep persists the last workload's result to its typed table in the
+// state DB — currently benchmark (pgbench) results to benchmark_results. It is
+// the persistence counterpart to workloadStep's compute: the workload returns a
+// Result; the scenario layer, which owns the run and the state pool, stores it
+// (the same split as Fingerprint vs snapshot/verify). Skipped when no state DB
+// is configured or the result has no typed home yet.
+type saveResultStep struct{}
+
+func (saveResultStep) Name() string { return "save-result" }
+
+func (saveResultStep) Run(ctx context.Context, rc *RunContext) error {
+	if rc.StateRun == nil {
+		return nil
+	}
+	switch r := rc.Result.(type) {
+	case nil:
+		return nil
+	case pgbench.Result:
+		return state.SaveBenchmarkResult(ctx, rc.StatePool, rc.StateRun.ID, r, rc.Tel)
+	default:
+		if rc.Tel != nil {
+			rc.Tel.Logger.Info("save-result: no typed persistence for result",
+				slog.String("type", fmt.Sprintf("%T", r)))
+		}
+		return nil
+	}
 }
 
 // restartStep adapts the provider's optional Restarter capability into a step.
