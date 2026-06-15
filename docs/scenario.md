@@ -492,12 +492,13 @@ original design and have partly diverged.
 | `snapshotStep{label, tables}` | `validator.Fingerprint` + `state` | persists a baseline digest per table; **requires a state DB** |
 | `verifyStep{label, baseline, tables}` | `validator.Fingerprint` + `state` | re-fingerprints, persists, asserts `== baseline` read back from the DB |
 | `restartStep` | `provider.Restarter` (type assertion) | forced restart, updates `rc.Cluster`, re-`WaitForReady` |
+| `saveResultStep` | `state.SaveBenchmarkResult` | persists `rc.Result` when it is a `pgbench.Result`; no-op without state or for other types |
 
 ### Registered scenarios (`scenario/scenarios.go`)
 
 - `warehouse` — provision → warehouse
-- `benchmark` — provision → pgbench
-- `all` — provision → warehouse → pgbench
+- `benchmark` — provision → pgbench → save-result
+- `all` — provision → warehouse → pgbench → save-result
 - `restart` — provision → warehouse → `snapshot(before_restart)` → restart → `verify(after_restart)`,
   over `durabilityTables = ["warehouse", "orders"]`. **Requires `STATE_DSN`.**
 
@@ -542,8 +543,5 @@ STATE_DSN=postgres://… go run ./cmd/runbenchmark/ -scenario restart -provider 
 
 ### Still pending
 
-- **`save-result` step** — benchmark results → `benchmark_results` via `rc.StateRun`. (`Result`
-  already flows to `rc.Result`; the persisting step is not built. Fingerprints are persisted
-  directly by snapshot/verify, not via a generic save-result.)
 - **`provider.Scaler`** capability + a `scale` step (the original Scenario C).
 - **Integration test** for the `restart` scenario (gated like the docker test).
