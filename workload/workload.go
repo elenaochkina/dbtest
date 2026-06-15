@@ -9,10 +9,20 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
+// Result is the outcome of a workload run. It is domain-neutral: each workload
+// returns its own concrete result type (e.g. pgbench.Result, validator.Checksum)
+// which satisfies this interface structurally — the primitive packages do not
+// import workload. The Metrics map is the observability view (telemetry, logs,
+// dashboards); typed persistence still uses the concrete types. Workloads with
+// no numeric output may return nil.
+type Result interface {
+	Metrics() map[string]float64
+}
+
 // Workload is the interface every workload must satisfy.
 type Workload interface {
 	Name() string
-	Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error
+	Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) (Result, error)
 }
 
 // WorkloadName is the typed identifier for a workload.
@@ -21,7 +31,6 @@ type WorkloadName string
 const (
 	Warehouse WorkloadName = "warehouse"
 	Pgbench   WorkloadName = "pgbench"
-	All       WorkloadName = "all"
 )
 
 // Config holds all parameters for any workload.
@@ -47,21 +56,10 @@ func Register(name WorkloadName, fn func(Config) Workload) {
 	registry[name] = fn
 }
 
-// New returns a Workload for the given name.
-// All is a special case that composes Warehouse and Pgbench sequentially —
-// it is not in the registry since its definition depends on other entries.
+// New returns a Workload for the given name. Composing several workloads is the
+// scenario layer's job (an ordered list of steps), so workload itself only ever
+// resolves a single workload by name.
 func New(name WorkloadName, cfg Config) (Workload, error) {
-	if name == All {
-		w, err := New(Warehouse, cfg)
-		if err != nil {
-			return nil, err
-		}
-		p, err := New(Pgbench, cfg)
-		if err != nil {
-			return nil, err
-		}
-		return Sequential("all", w, p), nil
-	}
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown workload %q; registered: %v", name, registeredNames())

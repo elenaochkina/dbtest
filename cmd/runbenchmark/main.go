@@ -14,13 +14,12 @@ import (
 	"github.com/elenaochkina/dbtest/scenario"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
-	"github.com/elenaochkina/dbtest/workload"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
 	providerName := flag.String("provider",  "docker",        "provider name (docker)")
-	workloadName := flag.String("workload",  "all",           "workload to run (warehouse, pgbench, all)")
+	scenarioName := flag.String("scenario",  "all",           "scenario to run (warehouse, benchmark, all)")
 	seed         := flag.Int64("seed",        42,             "random seed for warehouse data")
 	warehouses   := flag.Int("warehouses",     5,             "number of warehouse rows to seed")
 	scaleFactor  := flag.Int("scale",          1,             "pgbench scale factor")
@@ -49,23 +48,28 @@ func main() {
 		}
 		defer statePool.Close()
 	}
-
-	s, err := scenario.New(scenario.Config{
-		Provider:    provider.ProviderName(*providerName),
-		Workload:    workload.WorkloadName(*workloadName),
-		StatePool:   statePool,
-		Seed:        *seed,
-		Warehouses:  *warehouses,
-		ScaleFactor: *scaleFactor,
-		Clients:     *clients,
-		Duration:    *duration,
-	})
+	//Хер
+	p, err := provider.Run(provider.ProviderName(*providerName), tel)
 	if err != nil {
-		slog.Error("scenario.New failed", "error", err)
+		slog.Error("provider init failed", "error", err)
 		os.Exit(1)
 	}
 
-	if err := s.Run(ctx, tel); err != nil {
+	rc := &scenario.RunContext{
+		Cfg: scenario.Config{
+			Provider:    provider.ProviderName(*providerName),
+			Seed:        *seed,
+			Warehouses:  *warehouses,
+			ScaleFactor: *scaleFactor,
+			Clients:     *clients,
+			Duration:    *duration,
+		},
+		Provider:  p,
+		StatePool: statePool,
+		Tel:       tel,
+	}
+
+	if err := scenario.Run(ctx, *scenarioName, rc); err != nil {
 		slog.Error("scenario failed", "error", err)
 		os.Exit(1)
 	}

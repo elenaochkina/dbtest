@@ -77,6 +77,20 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS fingerprints (
+			id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id      UUID        NOT NULL,
+			name        TEXT        NOT NULL,
+			table_name  TEXT        NOT NULL,
+			digest      TEXT        NOT NULL,
+			captured_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate fingerprints table: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS clusters (
 			id               TEXT        PRIMARY KEY,
 			provider         TEXT        NOT NULL,

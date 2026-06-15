@@ -19,7 +19,7 @@ type pgbenchWorkload struct{ cfg Config }
 
 func (s *pgbenchWorkload) Name() string { return string(Pgbench) }
 
-func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) error {
+func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) (Result, error) {
 	result, err := pgbench.RunLocal(ctx, dsn, pgbench.Config{
 		ScaleFactor: s.cfg.ScaleFactor,
 		Clients:     s.cfg.Clients,
@@ -27,7 +27,7 @@ func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Te
 		Provider:    s.cfg.ProviderName,
 	}, tel)
 	if err != nil {
-		return fmt.Errorf("pgbench: %w", err)
+		return nil, fmt.Errorf("pgbench: %w", err)
 	}
 	if tel != nil {
 		tel.Logger.Info("pgbench complete",
@@ -36,5 +36,5 @@ func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Te
 			slog.Float64("latency_stddev_ms", result.LatencyStddevMs),
 		)
 	}
-	return nil
+	return result, nil
 }

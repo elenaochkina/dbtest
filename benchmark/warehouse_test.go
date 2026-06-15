@@ -16,7 +16,6 @@ import (
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
-	"github.com/elenaochkina/dbtest/workload"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -166,18 +165,23 @@ func TestWarehouseChecksumDocker(t *testing.T) {
 		defer statePool.Close()
 	}
 
-	s, err := scenario.New(scenario.Config{
-		Provider:   provider.ProviderName(*providerFlag),
-		Workload:   workload.Warehouse,
-		StatePool:  statePool,
-		Seed:       42,
-		Warehouses: 5,
-	})
+	p, err := provider.Run(provider.ProviderName(*providerFlag), tel)
 	if err != nil {
-		t.Fatalf("scenario.New: %v", err)
+		t.Fatalf("provider init: %v", err)
 	}
 
-	if err := s.Run(ctx, tel); err != nil {
+	rc := &scenario.RunContext{
+		Cfg: scenario.Config{
+			Provider:   provider.ProviderName(*providerFlag),
+			Seed:       42,
+			Warehouses: 5,
+		},
+		Provider:  p,
+		StatePool: statePool,
+		Tel:       tel,
+	}
+
+	if err := scenario.Run(ctx, "warehouse", rc); err != nil {
 		t.Fatalf("scenario run: %v", err)
 	}
 }

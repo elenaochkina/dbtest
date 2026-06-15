@@ -16,6 +16,16 @@ type Checksum struct {
 	StockSum int64
 }
 
+// Metrics is the domain-neutral observability view over a Checksum, satisfying
+// workload.Result so the warehouse workload can report numbers, not just
+// pass/fail. Typed callers keep using RowCount / StockSum directly.
+func (c Checksum) Metrics() map[string]float64 {
+	return map[string]float64{
+		"row_count": float64(c.RowCount),
+		"stock_sum": float64(c.StockSum),
+	}
+}
+
 // ComputeChecksum reads COUNT(*) and SUM(stock_count) from the named table.
 // The table name is provided as a string because pgx does not support parameterised
 // identifiers — only use this with trusted, hardcoded table names in tests.
@@ -34,6 +44,27 @@ func ComputeChecksum(ctx context.Context, db *pgxpool.Pool, table string, tel *t
 		tel.Logger.With("package", "validator").Info("checksum computed", "table", table, "latency_seconds", duration)
 	}
 	return c, nil
+}
+
+// Fingerprint returns a content hash over every row of the named table, in
+// deterministic order. 
+// Like ComputeChecksum, the table name is interpolated rather than
+// parameterised (pgx has no identifier parameters), so only call this with
+// trusted, hardcoded table names.
+func Fingerprint(ctx context.Context, db *pgxpool.Pool, table string, tel *telemetry.Telemetry) (string, error) {
+	start := time.Now()
+	// #nosec G201 — table name comes from trusted code, not user input
+	query := fmt.Sprintf(`SELECT COALESCE(md5(string_agg(t::text, ',' ORDER BY t::text)), '') FROM %s t`, table)
+	var digest string
+	if err := db.QueryRow(ctx, query).Scan(&digest); err != nil {
+		return "", fmt.Errorf("fingerprint %s: %w", table, err)
+	}
+	if tel != nil {
+		tel.Metrics.ChecksumDuration.Observe(time.Since(start).Seconds())
+		tel.Logger.With("package", "validator").Info("fingerprint computed",
+			"table", table, "digest", digest, "latency_seconds", time.Since(start).Seconds())
+	}
+	return digest, nil
 }
 
 // AssertDelta checks two invariants after an operation:

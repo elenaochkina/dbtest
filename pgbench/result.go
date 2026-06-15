@@ -18,6 +18,17 @@ type Result struct {
 	Provider        string
 }
 
+// Metrics is the domain-neutral observability view over a Result, satisfying
+// workload.Result. It carries the benchmark numbers as named values; typed
+// persistence keeps using the struct fields directly.
+func (r Result) Metrics() map[string]float64 {
+	return map[string]float64{
+		"tps":               r.TPS,
+		"latency_avg_ms":    r.LatencyAvgMs,
+		"latency_stddev_ms": r.LatencyStddevMs,
+	}
+}
+
 // CompareResult holds two Results and their relative deltas.
 type CompareResult struct {
 	A           Result

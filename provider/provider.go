@@ -21,6 +21,14 @@ type Provider interface {
 	Deprovision(ctx context.Context, clusterID string) error
 }
 
+// Restarter is an optional provider capability: providers that can restart a
+// running cluster in place implement it. Restart must be an ungraceful, forced
+// restart — it kills the database process abruptly (no clean shutdown) and
+// brings it back, so the cluster comes up through crash recovery. 
+type Restarter interface {
+	Restart(ctx context.Context, cluster ClusterInfo) (ClusterInfo, error)
+}
+
 // ProviderName is the typed identifier for a provider implementation.
 type ProviderName string
 
