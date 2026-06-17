@@ -139,10 +139,15 @@ func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) erro
 	return nil
 }
 
+//uses for init() as a parameter
+// this method is used as a value for
+// var registry = map[ProviderName]func(*telemetry.Telemetry) (Provider, error){}
+func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
+	return New(tel)
+}
+
 func init() {
-	provider.Register(provider.Docker, func(tel *telemetry.Telemetry) (provider.Provider, error) {
-		return New(tel)
-	})
+	provider.Register(provider.Docker, newProvider)
 }
 
 // Restart performs a forced, ungraceful restart: it SIGKILLs the container's
