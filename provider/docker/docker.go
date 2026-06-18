@@ -67,18 +67,11 @@ func (p *dockerProvider) Provision(ctx context.Context) (provider.ClusterInfo, e
 		return provider.ClusterInfo{}, fmt.Errorf("container start: %w", err)
 	}
 
-	info, err := p.client.ContainerInspect(ctx, resp.ID)
+	hostPort, err := p.hostPort(ctx, resp.ID)
 	if err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("container inspect: %w", err)
+		return provider.ClusterInfo{}, err
 	}
-
-	bindings := info.NetworkSettings.Ports[nat.Port("5432/tcp")]
-	if len(bindings) == 0 {
-		return provider.ClusterInfo{}, fmt.Errorf("no host port assigned for 5432/tcp")
-	}
-	hostPort := bindings[0].HostPort
-
-	dsn := fmt.Sprintf("postgres://postgres:test@localhost:%s/postgres", hostPort)
+	dsn := dsnForPort(hostPort)
 
 	if p.tel != nil {
 		p.tel.Metrics.ProviderProvisionDuration.WithLabelValues("docker").Observe(time.Since(start).Seconds())
@@ -144,6 +137,82 @@ func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) erro
 		)
 	}
 	return nil
+}
+
+//uses for init() as a parameter
+// this method is used as a value for
+// var registry = map[ProviderName]func(*telemetry.Telemetry) (Provider, error){}
+func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
+	return New(tel)
+}
+
+func init() {
+	provider.Register(provider.Docker, newProvider)
+}
+
+// KillProcess injects a forced, ungraceful failure: it SIGKILLs the container's
+// main process (postgres) to simulate a crash, waits for it to exit, then starts
+// it again — so the database comes back through WAL crash recovery rather than a
+// clean shutdown. 
+func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.ClusterInfo) (provider.ClusterInfo, error) {
+	start := time.Now()
+
+	if err := p.client.ContainerKill(ctx, cluster.ID, "SIGKILL"); err != nil {
+		return provider.ClusterInfo{}, fmt.Errorf("container kill: %w", err)
+	}
+
+	// Wait for the container to actually exit before starting it, so the start
+	// does not race the kill.
+	statusCh, errCh := p.client.ContainerWait(ctx, cluster.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return provider.ClusterInfo{}, fmt.Errorf("wait for kill: %w", err)
+		}
+	case <-statusCh:
+	case <-ctx.Done():
+		return provider.ClusterInfo{}, ctx.Err()
+	}
+
+	if err := p.client.ContainerStart(ctx, cluster.ID, container.StartOptions{}); err != nil {
+		return provider.ClusterInfo{}, fmt.Errorf("container start: %w", err)
+	}
+
+	hostPort, err := p.hostPort(ctx, cluster.ID)
+	if err != nil {
+		return provider.ClusterInfo{}, err
+	}
+
+	if p.tel != nil {
+		p.tel.Logger.Info("force-restarted cluster (SIGKILL)",
+			slog.String("container_id", cluster.ID),
+			slog.String("host_port", hostPort),
+			slog.Duration("took", time.Since(start)),
+		)
+	}
+	return provider.ClusterInfo{ID: cluster.ID, DSN: dsnForPort(hostPort)}, nil
+}
+
+// Compile-time assertion that the docker provider supports failure injection.
+var _ provider.FailureInjector = (*dockerProvider)(nil)
+
+// hostPort inspects the container and returns the host port mapped to Postgres
+// 5432/tcp. With PublishAllPorts this is assigned at start and can change across
+// a restart, so callers re-read it rather than caching.
+func (p *dockerProvider) hostPort(ctx context.Context, containerID string) (string, error) {
+	info, err := p.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return "", fmt.Errorf("container inspect: %w", err)
+	}
+	bindings := info.NetworkSettings.Ports[nat.Port("5432/tcp")]
+	if len(bindings) == 0 {
+		return "", fmt.Errorf("no host port assigned for 5432/tcp")
+	}
+	return bindings[0].HostPort, nil
+}
+
+func dsnForPort(hostPort string) string {
+	return fmt.Sprintf("postgres://postgres:test@localhost:%s/postgres", hostPort)
 }
 
 // deprovision performs a single stop+remove attempt.

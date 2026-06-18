@@ -77,17 +77,43 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS fingerprints (
+			id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id      UUID        NOT NULL,
+			name        TEXT        NOT NULL,
+			table_name  TEXT        NOT NULL,
+			digest      TEXT        NOT NULL,
+			captured_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate fingerprints table: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS clusters (
 			id               TEXT        PRIMARY KEY,
 			provider         TEXT        NOT NULL,
 			dsn              TEXT        NOT NULL,
+			scenario         TEXT        NOT NULL DEFAULT '',
 			status           TEXT        NOT NULL,
 			provisioned_at   TIMESTAMPTZ NOT NULL,
-			deprovisioned_at TIMESTAMPTZ
+			deprovisioned_at TIMESTAMPTZ,
+			heartbeat_at     TIMESTAMPTZ
 		)
 	`)
 	if err != nil {
 		return fmt.Errorf("migrate clusters table: %w", err)
+	}
+
+	// Add columns for existing installations created before these fields existed.
+	for _, stmt := range []string{
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS scenario TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE clusters ADD COLUMN IF NOT EXISTS heartbeat_at TIMESTAMPTZ`,
+	} {
+		if _, err = pool.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("migrate clusters table: %w", err)
+		}
 	}
 
 	return nil

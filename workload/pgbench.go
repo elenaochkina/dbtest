@@ -1,0 +1,40 @@
+package workload
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+
+	"github.com/elenaochkina/dbtest/pgbench"
+	"github.com/elenaochkina/dbtest/telemetry"
+)
+
+func init() {
+	Register(Pgbench, func(cfg Config) Workload {
+		return &pgbenchWorkload{cfg: cfg}
+	})
+}
+
+type pgbenchWorkload struct{ cfg Config }
+
+func (s *pgbenchWorkload) Name() string { return string(Pgbench) }
+
+func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) (Result, error) {
+	result, err := pgbench.RunLocal(ctx, dsn, pgbench.Config{
+		ScaleFactor: s.cfg.ScaleFactor,
+		Clients:     s.cfg.Clients,
+		Duration:    s.cfg.Duration,
+		Provider:    s.cfg.ProviderName,
+	}, tel)
+	if err != nil {
+		return nil, fmt.Errorf("pgbench: %w", err)
+	}
+	if tel != nil {
+		tel.Logger.Info("pgbench complete",
+			slog.Float64("tps", result.TPS),
+			slog.Float64("latency_avg_ms", result.LatencyAvgMs),
+			slog.Float64("latency_stddev_ms", result.LatencyStddevMs),
+		)
+	}
+	return result, nil
+}
