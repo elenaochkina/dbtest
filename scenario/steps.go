@@ -94,32 +94,33 @@ func (saveResultStep) Run(ctx context.Context, rc *RunContext) error {
 	}
 }
 
-// restartStep adapts the provider's optional Restarter capability into a step.
-// It forces an ungraceful restart of the running cluster, updates rc.Cluster
-// with the refreshed DSN , and waits for the database to accept connections again before later steps run. 
-// Fails clearly if the provider cannot restart.
-type restartStep struct{}
+// killProcessStep adapts the provider's optional FailureInjector capability into
+// a step. It injects an ungraceful failure (a forced process kill) into the
+// running cluster, updates rc.Cluster with the refreshed DSN, and waits for the
+// database to accept connections again before later steps run.
+// Fails clearly if the provider cannot inject failures.
+type killProcessStep struct{}
 
-func (restartStep) Name() string { return "restart" }
+func (killProcessStep) Name() string { return "kill-process" }
 
-func (restartStep) Run(ctx context.Context, rc *RunContext) error {
-	r, ok := rc.Provider.(provider.Restarter)
+func (killProcessStep) Run(ctx context.Context, rc *RunContext) error {
+	r, ok := rc.Provider.(provider.FailureInjector)
 	if !ok {
-		return fmt.Errorf("provider %T does not support restart", rc.Provider)
+		return fmt.Errorf("provider %T does not support failure injection", rc.Provider)
 	}
-	updated, err := r.Restart(ctx, rc.Cluster)
+	updated, err := r.KillProcess(ctx, rc.Cluster)
 	if err != nil {
-		return fmt.Errorf("restart: %w", err)
+		return fmt.Errorf("kill process: %w", err)
 	}
 	rc.Cluster = updated
 	if err := rc.Provider.WaitForReady(ctx, updated); err != nil {
-		return fmt.Errorf("wait for ready after restart: %w", err)
+		return fmt.Errorf("wait for ready after kill: %w", err)
 	}
 	return nil
 }
 
 // snapshotStep captures a content-hash fingerprint of each table under a label
-// (e.g. "before_restart") and persists it to the run, establishing the baseline
+// (e.g. "before_kill_process") and persists it to the run, establishing the baseline
 // a later verifyStep compares against. It requires a state DB: the baseline must
 // be durable, so with no StateRun there is nothing to record and the step fails
 // rather than silently skipping a durability check.
@@ -153,7 +154,7 @@ func (s snapshotStep) Run(ctx context.Context, rc *RunContext) error {
 }
 
 // verifyStep re-fingerprints each table after a control-plane operation, persists
-// the result under its own label (e.g. "after_restart"), and asserts it matches
+// the result under its own label (e.g. "after_kill_process"), and asserts it matches
 // the baseline snapshot took. A mismatch means data did not survive unchanged —
 // the failure the durability scenario exists to catch. The baseline is read back
 // from the state DB, not from memory.

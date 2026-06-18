@@ -7,7 +7,7 @@ import "github.com/elenaochkina/dbtest/workload"
 // runtime behaviour. New scenarios (e.g. save-result, scale) land as those
 // steps are implemented.
 // durabilityTables are the tables holding committed data the warehouse workload
-// populates; the restart scenario fingerprints them on each side of the crash.
+// populates; the crash-recovery scenario fingerprints them on each side of the crash.
 var durabilityTables = []string{"warehouse", "orders"}
 
 func init() {
@@ -19,11 +19,11 @@ func init() {
 		workloadStep{workload.Pgbench},
 		saveResultStep{},
 	)
-	Register("restart",
+	Register("crash-recovery",
 		provisionStep{},
 		workloadStep{workload.Warehouse},
-		snapshotStep{label: "before_restart", tables: durabilityTables},
-		restartStep{},
-		verifyStep{label: "after_restart", baseline: "before_restart", tables: durabilityTables},
+		snapshotStep{label: "before_kill_process", tables: durabilityTables},
+		killProcessStep{},
+		verifyStep{label: "after_kill_process", baseline: "before_kill_process", tables: durabilityTables},
 	)
 }

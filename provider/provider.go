@@ -21,13 +21,10 @@ type Provider interface {
 	Deprovision(ctx context.Context, clusterID string) error
 }
 
-// Restarter is an optional provider capability: providers that can restart a
-// running cluster in place implement it. Restart returns the (possibly updated)
-// ClusterInfo, since a restart can change the DSN — e.g. a re-published host
-// port. Other control-plane capabilities (e.g. a future Scaler) follow the same
-// pattern.
-type Restarter interface {
-	Restart(ctx context.Context, cluster ClusterInfo) (ClusterInfo, error)
+// FailureInjector is an optional provider capability: providers that can inject
+// a forced, ungraceful failure into a running cluster implement it. 
+type FailureInjector interface {
+	KillProcess(ctx context.Context, cluster ClusterInfo) (ClusterInfo, error)
 }
 
 // ProviderName is the typed identifier for a provider implementation.

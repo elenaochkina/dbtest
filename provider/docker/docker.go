@@ -150,13 +150,11 @@ func init() {
 	provider.Register(provider.Docker, newProvider)
 }
 
-// Restart performs a forced, ungraceful restart: it SIGKILLs the container's
+// KillProcess injects a forced, ungraceful failure: it SIGKILLs the container's
 // main process (postgres) to simulate a crash, waits for it to exit, then starts
 // it again — so the database comes back through WAL crash recovery rather than a
-// clean shutdown. It returns the refreshed ClusterInfo, since PublishAllPorts can
-// re-publish the host port across a restart. Waiting until the database accepts
-// connections again is the caller's job (WaitForReady).
-func (p *dockerProvider) Restart(ctx context.Context, cluster provider.ClusterInfo) (provider.ClusterInfo, error) {
+// clean shutdown. 
+func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.ClusterInfo) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if err := p.client.ContainerKill(ctx, cluster.ID, "SIGKILL"); err != nil {
@@ -195,8 +193,8 @@ func (p *dockerProvider) Restart(ctx context.Context, cluster provider.ClusterIn
 	return provider.ClusterInfo{ID: cluster.ID, DSN: dsnForPort(hostPort)}, nil
 }
 
-// Compile-time assertion that the docker provider supports restart.
-var _ provider.Restarter = (*dockerProvider)(nil)
+// Compile-time assertion that the docker provider supports failure injection.
+var _ provider.FailureInjector = (*dockerProvider)(nil)
 
 // hostPort inspects the container and returns the host port mapped to Postgres
 // 5432/tcp. With PublishAllPorts this is assigned at start and can change across

@@ -9,7 +9,7 @@ import (
 )
 
 // SaveFingerprint records a content-hash digest of a table at a named point in
-// the run (e.g. "before_restart"). Both the snapshot and verify steps call this,
+// the run (e.g. "before_kill_process"). Both the snapshot and verify steps call this,
 // so the run carries a durable audit trail of what the data looked like on each
 // side of a control-plane operation.
 func (r *Run) SaveFingerprint(ctx context.Context, name, table, digest string) error {
