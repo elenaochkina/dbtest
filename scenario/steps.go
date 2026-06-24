@@ -70,16 +70,13 @@ func (s workloadStep) Run(ctx context.Context, rc *RunContext) error {
 // state DB — currently benchmark (pgbench) results to benchmark_results. It is
 // the persistence counterpart to workloadStep's compute: the workload returns a
 // Result; the scenario layer, which owns the run and the state pool, stores it
-// (the same split as Fingerprint vs snapshot/verify). Skipped when no state DB
-// is configured or the result has no typed home yet.
+// (the same split as Fingerprint vs snapshot/verify). Skipped only when the
+// result has no typed home yet.
 type saveResultStep struct{}
 
 func (saveResultStep) Name() string { return "save-result" }
 
 func (saveResultStep) Run(ctx context.Context, rc *RunContext) error {
-	if rc.StateRun == nil {
-		return nil
-	}
 	switch r := rc.Result.(type) {
 	case nil:
 		return nil

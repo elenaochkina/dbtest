@@ -37,12 +37,12 @@ type RunContext struct {
 	Cfg       Config
 	Provider  provider.Provider
 	Cluster   provider.ClusterInfo
-	StatePool *pgxpool.Pool // optional — state-backed steps skipped when nil
+	StatePool *pgxpool.Pool 
 	Tel       *telemetry.Telemetry
 
-	// StateRun is the runs-table record for this execution, opened by Run when
-	// StatePool is set and closed in teardown. Steps attach their results to it
-	// via its run_id. Nil when no state DB is configured.
+	// StateRun is the runs-table record for this execution, opened by Run before
+	// any step executes and closed in teardown. Steps attach their results to it
+	// via its run_id.
 	StateRun *state.Run
 
 	// Result is the last workload's result, set by workloadStep and consumed by
@@ -110,27 +110,25 @@ func Run(ctx context.Context, name string, rc *RunContext) (err error) {
 		return fmt.Errorf("unknown scenario %q; registered: %v", name, Names())
 	}
 
-	// Open the runs-table record for this execution. Steps attach results to it
-	if rc.StatePool != nil && rc.Tel != nil {
-		run, startErr := state.StartRun(ctx, rc.StatePool, state.RunConfig{
-			Seed:     rc.Cfg.Seed,
-			Scenario: name,
-			Provider: string(rc.Cfg.Provider),
-		}, rc.Tel)
-		if startErr != nil {
-			return fmt.Errorf("start run: %w", startErr)
-		}
-		rc.StateRun = run
+	if rc.StatePool == nil {
+		return fmt.Errorf("scenario %q requires a state DB", name)
 	}
+	run, startErr := state.StartRun(ctx, rc.StatePool, state.RunConfig{
+		Seed:     rc.Cfg.Seed,
+		Scenario: name,
+		Provider: string(rc.Cfg.Provider),
+	}, rc.Tel)
+	if startErr != nil {
+		return fmt.Errorf("start run: %w", startErr)
+	}
+	rc.StateRun = run
 
 	defer func() {
 		for i := len(rc.cleanups) - 1; i >= 0; i-- { // reverse order
 			rc.cleanups[i](context.Background())
 		}
-		if rc.StateRun != nil {
-			if endErr := rc.StateRun.End(context.Background(), err == nil); endErr != nil && rc.Tel != nil {
-				rc.Tel.Logger.Error("end run failed", "error", endErr)
-			}
+		if endErr := rc.StateRun.End(context.Background(), err == nil); endErr != nil && rc.Tel != nil {
+			rc.Tel.Logger.Error("end run failed", "error", endErr)
 		}
 	}()
 	return sc.executeSteps(ctx, rc)

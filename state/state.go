@@ -47,7 +47,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS checkpoints (
 			id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-			run_id      UUID        NOT NULL,
+			run_id      UUID        NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 			name        TEXT        NOT NULL,
 			row_count   BIGINT      NOT NULL,
 			stock_sum   BIGINT      NOT NULL,
@@ -61,7 +61,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS benchmark_results (
 			id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-			run_id            UUID        NOT NULL,
+			run_id            UUID        NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 			provider          TEXT        NOT NULL,
 			tps               FLOAT8      NOT NULL,
 			latency_avg_ms    FLOAT8      NOT NULL,
@@ -79,7 +79,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS fingerprints (
 			id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-			run_id      UUID        NOT NULL,
+			run_id      UUID        NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
 			name        TEXT        NOT NULL,
 			table_name  TEXT        NOT NULL,
 			digest      TEXT        NOT NULL,

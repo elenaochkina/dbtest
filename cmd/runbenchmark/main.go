@@ -14,7 +14,6 @@ import (
 	"github.com/elenaochkina/dbtest/scenario"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -37,17 +36,19 @@ func main() {
 
 	ctx := context.Background()
 
-	// State DB is optional — orphan tracking and reconnect skipped if STATE_DSN is not set.
-	var statePool *pgxpool.Pool
-	if stateDSN := os.Getenv("STATE_DSN"); stateDSN != "" {
-		var err error
-		statePool, err = state.Connect(stateDSN, tel)
-		if err != nil {
-			slog.Error("state connect failed", "error", err)
-			os.Exit(1)
-		}
-		defer statePool.Close()
+	//State DB
+	stateDSN := os.Getenv("STATE_DSN")
+	if stateDSN == "" {
+		slog.Error("STATE_DSN is required")
+		os.Exit(1)
 	}
+	statePool, err := state.Connect(stateDSN, tel)
+	if err != nil {
+		slog.Error("state connect failed", "error", err)
+		os.Exit(1)
+	}
+	defer statePool.Close()
+
 	//return a provider for a requested name
 	p, err := provider.Run(provider.ProviderName(*providerName), tel)
 	if err != nil {
