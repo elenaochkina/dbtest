@@ -49,7 +49,7 @@ func main() {
 	}
 	defer statePool.Close()
 
-	//return a provider for a requested name
+	//return a provider for a requested name; builds a provider object
 	p, err := provider.Run(provider.ProviderName(*providerName), tel)
 	if err != nil {
 		slog.Error("provider init failed", "error", err)

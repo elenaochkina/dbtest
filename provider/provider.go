@@ -14,9 +14,17 @@ type ClusterInfo struct {
 	DSN string // postgres connection string, e.g. "postgres://user:pass@host:port/db"
 }
 
+// ProvisionRequest is the scenario's resource spec for a cluster — the "how
+// much" the scenario declares and Provision honors. 
+type ProvisionRequest struct {
+	VCPU      float64 
+	MemoryMiB int     
+	DiskGiB   int     
+}
+
 // Provider is the interface every database provider must satisfy.
 type Provider interface {
-	Provision(ctx context.Context) (ClusterInfo, error)
+	Provision(ctx context.Context, req ProvisionRequest) (ClusterInfo, error)
 	WaitForReady(ctx context.Context, cluster ClusterInfo) error
 	Deprovision(ctx context.Context, clusterID string) error
 }
