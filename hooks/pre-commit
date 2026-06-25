@@ -1,0 +1,28 @@
+#!/bin/sh
+# pre-commit: auto-format staged Go files, then verify the module builds.
+# Aborts the commit if the build fails.
+#
+# This hook is version-controlled. 
+# Activate it in each clone with:
+#   git config core.hooksPath hooks
+
+set -e
+
+# Staged Go files (added / copied / modified).
+gofiles=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
+
+# 1. Format them in place and re-stage.
+if [ -n "$gofiles" ]; then
+	echo "$gofiles" | xargs gofmt -w
+	echo "$gofiles" | xargs git add
+	echo "pre-commit: gofmt applied to staged Go files"
+fi
+
+# 2. Ensure the whole module builds.
+echo "pre-commit: go build ./..."
+if ! go build ./...; then
+	echo "pre-commit: go build failed — commit aborted" >&2
+	exit 1
+fi
+
+echo "pre-commit: OK"

@@ -42,3 +42,13 @@ Expected output:
 --- PASS: TestConnect (0.03s)
 --- PASS: TestWarehouseChecksum (0.03s)
 ```
+
+## Git hooks
+
+This repo ships a pre-commit hook (`hooks/pre-commit`) that gofmt-formats staged
+Go files and verifies the build before each commit. It is version-controlled but
+not active by default — activate it once per clone:
+
+```bash
+git config core.hooksPath hooks
+```
