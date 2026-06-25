@@ -13,7 +13,7 @@ type LogConfig struct {
 }
 
 // InitLogging sets up a JSON structured logger and installs it as the global default.
-func InitLogging(cfg LogConfig) *slog.Logger{
+func InitLogging(cfg LogConfig) *slog.Logger {
 	var level slog.Level
 	switch cfg.LogLevel {
 	case "debug":
@@ -29,8 +29,8 @@ func InitLogging(cfg LogConfig) *slog.Logger{
 		out = os.Stdout
 	}
 
-	 return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
+	return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{
 		Level: level,
-	 }))
-	 
+	}))
+
 }

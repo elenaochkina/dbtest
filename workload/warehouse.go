@@ -1,4 +1,3 @@
-
 package workload
 
 import (

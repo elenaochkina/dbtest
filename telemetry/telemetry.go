@@ -14,7 +14,7 @@ type Config struct {
 // It groups all observability components so new ones (traces, profiles) can be added later.
 type Telemetry struct {
 	Metrics *Metrics
-	Logger *slog.Logger
+	Logger  *slog.Logger
 	// reserved for future components
 }
 
@@ -23,8 +23,7 @@ type Telemetry struct {
 func Init(cfg Config) *Telemetry {
 	return &Telemetry{
 		Metrics: InitMetrics(cfg.Metrics),
-		Logger: InitLogging(cfg.Log),
-
+		Logger:  InitLogging(cfg.Log),
 	}
 }
 
@@ -32,4 +31,3 @@ func Init(cfg Config) *Telemetry {
 func (t *Telemetry) Shutdown() {
 	t.Metrics.shutdown()
 }
-

@@ -19,9 +19,9 @@ import (
 )
 
 type dockerProvider struct {
-	client   *dockerclient.Client
-	image string
-	tel   *telemetry.Telemetry
+	client *dockerclient.Client
+	image  string
+	tel    *telemetry.Telemetry
 }
 
 // New creates a Docker provider. It reads DOCKER_PG_IMAGE for the Postgres image
@@ -160,7 +160,7 @@ func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) erro
 	return nil
 }
 
-//uses for init() as a parameter
+// uses for init() as a parameter
 // this method is used as a value for
 // var registry = map[ProviderName]func(*telemetry.Telemetry) (Provider, error){}
 func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
@@ -174,7 +174,7 @@ func init() {
 // KillProcess injects a forced, ungraceful failure: it SIGKILLs the container's
 // main process (postgres) to simulate a crash, waits for it to exit, then starts
 // it again — so the database comes back through WAL crash recovery rather than a
-// clean shutdown. 
+// clean shutdown.
 func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.ClusterInfo) (provider.ClusterInfo, error) {
 	start := time.Now()
 

@@ -105,9 +105,9 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 	}()
 
 	return &Metrics{
-		ConnectionDuration:       connectionDuration,
-		SeedRowsTotal:            seedRowsTotal,
-		ChecksumDuration:         checksumDuration,
+		ConnectionDuration:        connectionDuration,
+		SeedRowsTotal:             seedRowsTotal,
+		ChecksumDuration:          checksumDuration,
 		BenchmarkTPS:              benchmarkTPS,
 		BenchmarkLatencyAvgMs:     benchmarkLatencyAvgMs,
 		BenchmarkLatencyStddevMs:  benchmarkLatencyStddevMs,

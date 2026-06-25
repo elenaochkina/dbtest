@@ -37,7 +37,7 @@ type RunContext struct {
 	Cfg       Config
 	Provider  provider.Provider
 	Cluster   provider.ClusterInfo
-	StatePool *pgxpool.Pool 
+	StatePool *pgxpool.Pool
 	Tel       *telemetry.Telemetry
 
 	// StateRun is the runs-table record for this execution, opened by Run before

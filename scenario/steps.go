@@ -118,7 +118,7 @@ func (killProcessStep) Run(ctx context.Context, rc *RunContext) error {
 
 // snapshotStep captures a content-hash fingerprint of each table under a label
 // (e.g. "before_kill_process") and persists it to the run, establishing the
-// baseline a later verifyStep compares against. 
+// baseline a later verifyStep compares against.
 type snapshotStep struct {
 	label  string
 	tables []string

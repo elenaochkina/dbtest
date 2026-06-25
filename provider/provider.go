@@ -15,11 +15,11 @@ type ClusterInfo struct {
 }
 
 // ProvisionRequest is the scenario's resource spec for a cluster — the "how
-// much" the scenario declares and Provision honors. 
+// much" the scenario declares and Provision honors.
 type ProvisionRequest struct {
-	VCPU      float64 
-	MemoryMiB int     
-	DiskGiB   int     
+	VCPU      float64
+	MemoryMiB int
+	DiskGiB   int
 }
 
 // Provider is the interface every database provider must satisfy.
@@ -30,7 +30,7 @@ type Provider interface {
 }
 
 // FailureInjector is an optional provider capability: providers that can inject
-// a forced, ungraceful failure into a running cluster implement it. 
+// a forced, ungraceful failure into a running cluster implement it.
 type FailureInjector interface {
 	KillProcess(ctx context.Context, cluster ClusterInfo) (ClusterInfo, error)
 }
