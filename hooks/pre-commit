@@ -2,7 +2,8 @@
 # pre-commit: auto-format staged Go files, then verify the module builds.
 # Aborts the commit if the build fails.
 #
-# This hook is version-controlled. Activate it in each clone with:
+# This hook is version-controlled. 
+# Activate it in each clone with:
 #   git config core.hooksPath hooks
 
 set -e
