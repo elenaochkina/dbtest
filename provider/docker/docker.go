@@ -39,8 +39,12 @@ func New(tel *telemetry.Telemetry) (*dockerProvider, error) {
 	return &dockerProvider{client: client, image: img, tel: tel}, nil
 }
 
-func (p *dockerProvider) Provision(ctx context.Context) (provider.ClusterInfo, error) {
+func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest) (provider.ClusterInfo, error) {
 	start := time.Now()
+
+	if req.VCPU < 0 || req.MemoryMiB < 0 {
+		return provider.ClusterInfo{}, fmt.Errorf("invalid provision request: negative resource (vcpu=%v memory_mib=%d)", req.VCPU, req.MemoryMiB)
+	}
 
 	// Pull the image so ContainerCreate never fails on a cold machine.
 	reader, err := p.client.ImagePull(ctx, p.image, image.PullOptions{})
@@ -57,6 +61,7 @@ func (p *dockerProvider) Provision(ctx context.Context) (provider.ClusterInfo, e
 		},
 		&container.HostConfig{
 			PublishAllPorts: true,
+			Resources:       dockerResources(req),
 		},
 		nil, nil, "")
 	if err != nil {
@@ -78,10 +83,26 @@ func (p *dockerProvider) Provision(ctx context.Context) (provider.ClusterInfo, e
 		p.tel.Logger.Info("provisioned cluster",
 			slog.String("container_id", resp.ID),
 			slog.String("host_port", hostPort),
+			slog.Float64("vcpu", req.VCPU),
+			slog.Int("memory_mib", req.MemoryMiB),
 		)
 	}
 
 	return provider.ClusterInfo{ID: resp.ID, DSN: dsn}, nil
+}
+
+// dockerResources maps the cross-provider ProvisionRequest onto Docker's cgroup
+// controls. Only CPU and memory apply to a container; DiskGiB is a cloud-provider
+// concern and is ignored here. A zero field leaves the limit unset (unlimited).
+func dockerResources(req provider.ProvisionRequest) container.Resources {
+	var res container.Resources
+	if req.VCPU > 0 {
+		res.NanoCPUs = int64(req.VCPU * 1e9)
+	}
+	if req.MemoryMiB > 0 {
+		res.Memory = int64(req.MemoryMiB) * 1024 * 1024
+	}
+	return res
 }
 
 func (p *dockerProvider) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {

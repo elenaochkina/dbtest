@@ -17,12 +17,12 @@ import (
 // registers cluster teardown on the cleanup stack the instant provisioning
 // succeeds — before waiting for readiness — so any later failure, including a
 // failed WaitForReady, can never leak a paying cluster.
-type provisionStep struct{}
+type provisionStep struct{ request provider.ProvisionRequest }
 
 func (provisionStep) Name() string { return "provision" }
 
-func (provisionStep) Run(ctx context.Context, rc *RunContext) error {
-	cluster, err := rc.Provider.Provision(ctx)
+func (s provisionStep) Run(ctx context.Context, rc *RunContext) error {
+	cluster, err := rc.Provider.Provision(ctx, s.request)
 	if err != nil {
 		return fmt.Errorf("provision: %w", err)
 	}
@@ -70,16 +70,13 @@ func (s workloadStep) Run(ctx context.Context, rc *RunContext) error {
 // state DB — currently benchmark (pgbench) results to benchmark_results. It is
 // the persistence counterpart to workloadStep's compute: the workload returns a
 // Result; the scenario layer, which owns the run and the state pool, stores it
-// (the same split as Fingerprint vs snapshot/verify). Skipped when no state DB
-// is configured or the result has no typed home yet.
+// (the same split as Fingerprint vs snapshot/verify). Skipped only when the
+// result has no typed home yet.
 type saveResultStep struct{}
 
 func (saveResultStep) Name() string { return "save-result" }
 
 func (saveResultStep) Run(ctx context.Context, rc *RunContext) error {
-	if rc.StateRun == nil {
-		return nil
-	}
 	switch r := rc.Result.(type) {
 	case nil:
 		return nil
@@ -120,10 +117,8 @@ func (killProcessStep) Run(ctx context.Context, rc *RunContext) error {
 }
 
 // snapshotStep captures a content-hash fingerprint of each table under a label
-// (e.g. "before_kill_process") and persists it to the run, establishing the baseline
-// a later verifyStep compares against. It requires a state DB: the baseline must
-// be durable, so with no StateRun there is nothing to record and the step fails
-// rather than silently skipping a durability check.
+// (e.g. "before_kill_process") and persists it to the run, establishing the
+// baseline a later verifyStep compares against. 
 type snapshotStep struct {
 	label  string
 	tables []string
@@ -132,9 +127,6 @@ type snapshotStep struct {
 func (snapshotStep) Name() string { return "snapshot" }
 
 func (s snapshotStep) Run(ctx context.Context, rc *RunContext) error {
-	if rc.StateRun == nil {
-		return fmt.Errorf("snapshot requires a state DB (set STATE_DSN)")
-	}
 	pool, err := pgadapter.Connect(rc.Cluster.DSN, rc.Tel)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -167,9 +159,6 @@ type verifyStep struct {
 func (verifyStep) Name() string { return "verify" }
 
 func (s verifyStep) Run(ctx context.Context, rc *RunContext) error {
-	if rc.StateRun == nil {
-		return fmt.Errorf("verify requires a state DB (set STATE_DSN)")
-	}
 	pool, err := pgadapter.Connect(rc.Cluster.DSN, rc.Tel)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -189,7 +178,7 @@ func (s verifyStep) Run(ctx context.Context, rc *RunContext) error {
 			return fmt.Errorf("load baseline: %w", err)
 		}
 		if digest != baseline {
-			return fmt.Errorf("data changed across restart: table %q fingerprint %s != baseline %q %s",
+			return fmt.Errorf("data changed across crash recovery: table %q fingerprint %s != baseline %q %s",
 				table, digest, s.baseline, baseline)
 		}
 	}

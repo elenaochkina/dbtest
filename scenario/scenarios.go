@@ -1,6 +1,9 @@
 package scenario
 
-import "github.com/elenaochkina/dbtest/workload"
+import (
+	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/workload"
+)
 
 // Behaviour-preserving scenarios: each is provision → workload(s) → teardown,
 // mirroring the old -workload selection so the refactor changes structure, not
@@ -9,10 +12,14 @@ import "github.com/elenaochkina/dbtest/workload"
 // durabilityTables are the tables holding committed data the warehouse workload
 // populates; the crash-recovery scenario fingerprints them on each side of the crash.
 var durabilityTables = []string{"warehouse", "orders"}
+var benchmarkResources = provider.ProvisionRequest{
+	VCPU:      2,
+	MemoryMiB: 2048,
+}
 
 func init() {
 	Register("warehouse", provisionStep{}, workloadStep{workload.Warehouse})
-	Register("benchmark", provisionStep{}, workloadStep{workload.Pgbench}, saveResultStep{})
+	Register("benchmark", provisionStep{request: benchmarkResources}, workloadStep{workload.Pgbench}, saveResultStep{})
 	Register("all",
 		provisionStep{},
 		workloadStep{workload.Warehouse},
