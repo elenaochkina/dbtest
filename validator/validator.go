@@ -47,7 +47,7 @@ func ComputeChecksum(ctx context.Context, db *pgxpool.Pool, table string, tel *t
 }
 
 // Fingerprint returns a content hash over every row of the named table, in
-// deterministic order. 
+// deterministic order.
 // Like ComputeChecksum, the table name is interpolated rather than
 // parameterised (pgx has no identifier parameters), so only call this with
 // trusted, hardcoded table names.

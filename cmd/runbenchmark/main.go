@@ -17,13 +17,13 @@ import (
 )
 
 func main() {
-	providerName := flag.String("provider",  "docker",        "provider name (docker)")
-	scenarioName := flag.String("scenario",  "all",           "scenario to run (warehouse, benchmark, all)")
-	seed         := flag.Int64("seed",        42,             "random seed for warehouse data")
-	warehouses   := flag.Int("warehouses",     5,             "number of warehouse rows to seed")
-	scaleFactor  := flag.Int("scale",          1,             "pgbench scale factor")
-	clients      := flag.Int("clients",        4,             "pgbench client count")
-	duration     := flag.Duration("duration", 15*time.Second, "pgbench run duration")
+	providerName := flag.String("provider", "docker", "provider name (docker)")
+	scenarioName := flag.String("scenario", "all", "scenario to run (warehouse, benchmark, all)")
+	seed := flag.Int64("seed", 42, "random seed for warehouse data")
+	warehouses := flag.Int("warehouses", 5, "number of warehouse rows to seed")
+	scaleFactor := flag.Int("scale", 1, "pgbench scale factor")
+	clients := flag.Int("clients", 4, "pgbench client count")
+	duration := flag.Duration("duration", 15*time.Second, "pgbench run duration")
 	flag.Parse()
 
 	tel := telemetry.Init(telemetry.Config{
