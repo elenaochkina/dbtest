@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -76,7 +77,6 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 	if err != nil {
 		return provider.ClusterInfo{}, err
 	}
-	dsn := dsnForPort(hostPort)
 
 	if p.tel != nil {
 		p.tel.Metrics.ProviderProvisionDuration.WithLabelValues("docker").Observe(time.Since(start).Seconds())
@@ -88,7 +88,7 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 		)
 	}
 
-	return provider.ClusterInfo{ID: resp.ID, DSN: dsn}, nil
+	return provider.ClusterInfo{ID: resp.ID, Target: targetForPort(hostPort), Password: "test"}, nil
 }
 
 // dockerResources maps the cross-provider ProvisionRequest onto Docker's cgroup
@@ -112,7 +112,7 @@ func (p *dockerProvider) WaitForReady(ctx context.Context, cluster provider.Clus
 			return err
 		}
 		connCtx, cancel := context.WithTimeout(ctx, time.Second)
-		conn, err := pgx.Connect(connCtx, cluster.DSN)
+		conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
 		cancel()
 		if err == nil {
 			conn.Close(context.Background())
@@ -211,7 +211,7 @@ func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.Clust
 			slog.Duration("took", time.Since(start)),
 		)
 	}
-	return provider.ClusterInfo{ID: cluster.ID, DSN: dsnForPort(hostPort)}, nil
+	return provider.ClusterInfo{ID: cluster.ID, Target: targetForPort(hostPort), Password: cluster.Password}, nil
 }
 
 // Compile-time assertion that the docker provider supports failure injection.
@@ -232,8 +232,18 @@ func (p *dockerProvider) hostPort(ctx context.Context, containerID string) (stri
 	return bindings[0].HostPort, nil
 }
 
-func dsnForPort(hostPort string) string {
-	return fmt.Sprintf("postgres://postgres:test@localhost:%s/postgres", hostPort)
+// targetForPort builds the provider-agnostic PGTarget for a container whose
+// Postgres is published on hostPort. The user "postgres" and database "postgres"
+// match the official image's defaults; the password matches POSTGRES_PASSWORD in
+// the container env set by Provision.
+func targetForPort(hostPort string) provider.PGTarget {
+	port, _ := strconv.Atoi(hostPort)
+	return provider.PGTarget{
+		Host:     "localhost",
+		Port:     port,
+		Database: "postgres",
+		User:     "postgres",
+	}
 }
 
 // deprovision performs a single stop+remove attempt.
