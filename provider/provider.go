@@ -8,10 +8,30 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
+// PGTarget is provider-agnostic connection info for a Postgres instance.
+type PGTarget struct {
+	Host     string
+	Port     int
+	Database string
+	User     string
+}
+
+// Addr returns the "host:port" pair.
+func (t PGTarget) Addr() string {
+	return fmt.Sprintf("%s:%d", t.Host, t.Port)
+}
+
+// URL renders a pgx/libpq URL DSN with the password injected. Build it only at
+// the moment of connecting, so the secret never has to live alongside the target.
+func (t PGTarget) URL(password string) string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s", t.User, password, t.Host, t.Port, t.Database)
+}
+
 // ClusterInfo is returned by Provision and used to connect and deprovision.
 type ClusterInfo struct {
-	ID  string // provider-specific identifier (e.g. Docker container ID, RDS instance ID)
-	DSN string // postgres connection string, e.g. "postgres://user:pass@host:port/db"
+	ID       string   // provider-specific identifier (e.g. Docker container ID, RDS instance ID)
+	Target   PGTarget // how to reach the database
+	Password string   // master password; rendered into a DSN at connect time, never persisted
 }
 
 // ProvisionRequest is the scenario's resource spec for a cluster — the "how
