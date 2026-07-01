@@ -37,9 +37,10 @@ type ClusterInfo struct {
 // ProvisionRequest is the scenario's resource spec for a cluster — the "how
 // much" the scenario declares and Provision honors.
 type ProvisionRequest struct {
-	VCPU      float64
-	MemoryMiB int
-	DiskGiB   int
+	VCPU            float64
+	MemoryMiB       int
+	DiskGiB         int
+	PostgresVersion string
 }
 
 // Provider is the interface every database provider must satisfy.

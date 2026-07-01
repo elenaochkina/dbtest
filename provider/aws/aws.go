@@ -19,33 +19,24 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// awsProvider provisions Postgres on Amazon RDS. It satisfies provider.Provider
-// and is the cloud counterpart to the Docker provider: instead of a container it
-// drives a single-instance RDS database through the AWS SDK.
+// awsProvider provisions Postgres on Amazon RDS.
 type awsProvider struct {
 	client *rds.Client
 	cfg    awsConfig
 	tel    *telemetry.Telemetry
 }
 
-// awsConfig holds the resolved, env-driven settings for the provider. Networking
-// fields are only consulted when Public is false (the VPC-internal path); in the
-// default public path the provider rides the account's default VPC and scopes a
-// security group to the runner's egress IP.
 type awsConfig struct {
-	Region           string   // AWS_REGION
-	Username         string   // AWS_RDS_USERNAME (default "dbtest")
-	Database         string   // AWS_RDS_DATABASE (default "postgres")
-	InstanceClass    string   // AWS_RDS_INSTANCE_CLASS (optional; overrides sizing table)
-	EngineVersion    string   // AWS_RDS_ENGINE_VERSION (optional; RDS default if empty)
-	Public           bool     // AWS_RDS_PUBLIC (default true)
-	SubnetGroup      string   // AWS_RDS_SUBNET_GROUP (VPC-internal path)
-	SecurityGroupIDs []string // AWS_RDS_SECURITY_GROUP_IDS (VPC-internal path)
+	Region                string   // AWS_REGION
+	Username              string   // AWS_RDS_USERNAME (default "dbtest")
+	Database              string   // AWS_RDS_DATABASE (default "postgres")
+	InstanceClassOverride string   // AWS_RDS_INSTANCE_CLASS (optional; forces a class, bypassing the sizing table)
+	Public                bool     // AWS_RDS_PUBLIC (default true)
+	SubnetGroup           string   // AWS_RDS_SUBNET_GROUP (VPC-internal path)
+	SecurityGroupIDs      []string // AWS_RDS_SECURITY_GROUP_IDS (VPC-internal path)
 }
 
-// New creates an RDS-backed provider. Credentials and region are resolved through
-// the standard AWS credential chain (env vars, shared profile, or IAM role) via
-// config.LoadDefaultConfig.
+// New creates an RDS-backed provider.
 func New(tel *telemetry.Telemetry) (*awsProvider, error) {
 	cfg := loadConfig()
 
@@ -71,14 +62,13 @@ func loadConfig() awsConfig {
 		public = false
 	}
 	return awsConfig{
-		Region:           os.Getenv("AWS_REGION"),
-		Username:         envOr("AWS_RDS_USERNAME", "dbtest"),
-		Database:         envOr("AWS_RDS_DATABASE", "postgres"),
-		InstanceClass:    os.Getenv("AWS_RDS_INSTANCE_CLASS"),
-		EngineVersion:    os.Getenv("AWS_RDS_ENGINE_VERSION"),
-		Public:           public,
-		SubnetGroup:      os.Getenv("AWS_RDS_SUBNET_GROUP"),
-		SecurityGroupIDs: splitNonEmpty(os.Getenv("AWS_RDS_SECURITY_GROUP_IDS"), ","),
+		Region:                os.Getenv("AWS_REGION"),
+		Username:              envOr("AWS_RDS_USERNAME", "dbtest"),
+		Database:              envOr("AWS_RDS_DATABASE", "postgres"),
+		InstanceClassOverride: os.Getenv("AWS_RDS_INSTANCE_CLASS"),
+		Public:                public,
+		SubnetGroup:           os.Getenv("AWS_RDS_SUBNET_GROUP"),
+		SecurityGroupIDs:      splitNonEmpty(os.Getenv("AWS_RDS_SECURITY_GROUP_IDS"), ","),
 	}
 }
 
@@ -90,8 +80,7 @@ func envOr(key, def string) string {
 	return def
 }
 
-// Provision creates an RDS instance sized from req, then waits for its endpoint
-// to be assigned so the returned ClusterInfo carries a usable target.
+// Provision creates an RDS instance sized from req
 func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionRequest) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -101,7 +90,7 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 
 	instanceID := p.cfg.Database + "-" + uuid.NewString()
 	password := uuid.NewString()
-	instanceClass := resolveInstanceClass(req, p.cfg.InstanceClass)
+	instanceClass := resolveInstanceClass(req, p.cfg.InstanceClassOverride)
 
 	input := &rds.CreateDBInstanceInput{
 		DBInstanceIdentifier: aws.String(instanceID),
@@ -115,13 +104,12 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 			{Key: aws.String("dbtest"), Value: aws.String("true")},
 		},
 	}
-	// The "postgres" database always exists; for any other name RDS must be told
-	// to create it via DBName.
+
 	if p.cfg.Database != "postgres" {
 		input.DBName = aws.String(p.cfg.Database)
 	}
-	if p.cfg.EngineVersion != "" {
-		input.EngineVersion = aws.String(p.cfg.EngineVersion)
+	if req.PostgresVersion != "" {
+		input.EngineVersion = aws.String(req.PostgresVersion)
 	}
 	if p.cfg.SubnetGroup != "" {
 		input.DBSubnetGroupName = aws.String(p.cfg.SubnetGroup)
@@ -161,8 +149,6 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 }
 
 // waitForEndpoint polls DescribeDBInstances until the instance reports "available"
-// with an endpoint address. RDS creation routinely takes several minutes, so the
-// deadline is generous.
 func (p *awsProvider) waitForEndpoint(ctx context.Context, instanceID string) (string, int, error) {
 	deadline := time.Now().Add(15 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -194,7 +180,6 @@ func resolveInstanceClass(req provider.ProvisionRequest, override string) string
 	if override != "" {
 		return override
 	}
-	// Ordered small → large; memory values are the published db.t3 specs.
 	table := []struct {
 		name      string
 		vcpu      float64
@@ -214,8 +199,6 @@ func resolveInstanceClass(req provider.ProvisionRequest, override string) string
 	return table[len(table)-1].name
 }
 
-// allocatedStorageGiB maps DiskGiB onto RDS AllocatedStorage, enforcing the RDS
-// minimum of 20 GiB (which also covers a zero request).
 func allocatedStorageGiB(req provider.ProvisionRequest) int32 {
 	if req.DiskGiB < 20 {
 		return 20
@@ -224,8 +207,6 @@ func allocatedStorageGiB(req provider.ProvisionRequest) int32 {
 }
 
 // WaitForReady verifies the instance is actually accepting Postgres connections.
-// Provision already blocks on RDS reporting "available"; this performs the same
-// pgx connectivity probe the Docker provider does so callers get a uniform signal.
 func (p *awsProvider) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	deadline := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -247,8 +228,6 @@ func (p *awsProvider) WaitForReady(ctx context.Context, cluster provider.Cluster
 	return fmt.Errorf("cluster %s did not accept connections within 5m", cluster.ID)
 }
 
-// Deprovision deletes the RDS instance, skipping the final snapshot so teardown
-// is fast and leaves nothing billable behind.
 func (p *awsProvider) Deprovision(ctx context.Context, clusterID string) error {
 	var lastErr error
 	for attempt := range 3 {

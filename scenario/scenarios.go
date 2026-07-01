@@ -13,8 +13,9 @@ import (
 // populates; the crash-recovery scenario fingerprints them on each side of the crash.
 var durabilityTables = []string{"warehouse", "orders"}
 var benchmarkResources = provider.ProvisionRequest{
-	VCPU:      2,
-	MemoryMiB: 2048,
+	VCPU:            2,
+	MemoryMiB:       2048,
+	PostgresVersion: "16",
 }
 
 func init() {
