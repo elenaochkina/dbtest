@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,8 +59,8 @@ func New(tel *telemetry.Telemetry) (*awsProvider, error) {
 // loadConfig reads the AWS_* / AWS_RDS_* environment into an awsConfig.
 func loadConfig() awsConfig {
 	public := true
-	if v := os.Getenv("AWS_RDS_PUBLIC"); v == "false" {
-		public = false
+	if b, err := strconv.ParseBool(os.Getenv("AWS_RDS_PUBLIC")); err == nil {
+		public = b
 	}
 	return awsConfig{
 		Region:                os.Getenv("AWS_REGION"),
@@ -127,6 +128,17 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 
 	host, port, err := p.waitForEndpoint(ctx, instanceID)
 	if err != nil {
+		// The instance is already billing; delete it on a fresh ctx so a failed
+		// provision doesn't orphan it.
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		derr := p.Deprovision(cleanupCtx, instanceID)
+		cancel()
+		if derr != nil && p.tel != nil {
+			p.tel.Logger.Warn("cleanup after failed provision did not delete instance",
+				slog.String("instance_id", instanceID),
+				slog.Any("error", derr),
+			)
+		}
 		return provider.ClusterInfo{}, err
 	}
 
