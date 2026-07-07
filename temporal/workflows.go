@@ -2,29 +2,38 @@ package temporal
 
 import (
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/workflow"
 )
 
-// ProvisionTeardownWorkflow provisions a cluster and guarantees teardown. It is
-// the smallest end-to-end durable scenario: provision, then defer deprovision so
-// the cluster is torn down on every exit path — success, failure, cancellation,
-// or a worker crash and replay. The scenario body (workloads, fingerprints,
-// kill-process) slots in where noted, and each addition is one more activity.
+// ProvisionTeardownWorkflow provisions a cluster and guarantees teardown.
 func ProvisionTeardownWorkflow(ctx workflow.Context, cfg Config) error {
 	ctx = workflow.WithActivityOptions(ctx, defaultActivityOptions)
 	var a *Activities // typed-nil: the SDK reads only the method NAME off a.Provision
 
+	type provisionIdentity struct{ Token, Password string }
+	var id provisionIdentity
+	if err := workflow.SideEffect(ctx, func(workflow.Context) any {
+		return provisionIdentity{
+			Token:    uuid.NewString(),
+			Password: uuid.NewString(),
+		}
+	}).Get(&id); err != nil {
+		return err
+	}
+
 	var cluster provider.ClusterInfo
 	if err := workflow.ExecuteActivity(ctx, a.Provision, ProvisionInput{
 		Provider: cfg.Provider,
-		Request:  benchmarkRequest(),
+		Request:  cfg.Request,
+		Token:    id.Token,
+		Password: id.Password,
 	}).Get(ctx, &cluster); err != nil {
 		return err // provision failed → nothing created → nothing to tear down
 	}
 
 	// Durable teardown. Registered only after provision succeeds, and run on a
-	// disconnected context so a cancelled/failed workflow still cleans up. This
-	// is the crash-proof form of scenario.Run's teardown stack.
+	// disconnected context so a cancelled/failed workflow still cleans up.
 	defer func() {
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
@@ -34,17 +43,14 @@ func ProvisionTeardownWorkflow(ctx workflow.Context, cfg Config) error {
 		}).Get(dctx, nil)
 	}()
 
-	// --- scenario body goes here (RunWorkload, Fingerprint, KillProcess) ---
+	// Wait for the cluster to accept connections. Runs after teardown is
+	// registered, so a readiness failure still deprovisions the instance.
+	if err := workflow.ExecuteActivity(ctx, a.WaitForReady, WaitForReadyInput{
+		Provider: cfg.Provider,
+		Cluster:  cluster,
+	}).Get(ctx, nil); err != nil {
+		return err
+	}
 
 	return nil
-}
-
-// benchmarkRequest is the default resource spec until scenarios carry their own,
-// mirroring scenario.benchmarkResources.
-func benchmarkRequest() provider.ProvisionRequest {
-	return provider.ProvisionRequest{
-		VCPU:            2,
-		MemoryMiB:       2048,
-		PostgresVersion: "16",
-	}
 }

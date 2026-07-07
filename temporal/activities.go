@@ -22,20 +22,28 @@ func NewActivities(statePool *pgxpool.Pool, tel *telemetry.Telemetry) *Activitie
 		tel:       tel,
 	}
 }
-
 func (a *Activities) Provision(ctx context.Context, input ProvisionInput) (provider.ClusterInfo, error) {
+
 	p, err := provider.Run(input.Provider, a.tel)
 	if err != nil {
 		return provider.ClusterInfo{}, fmt.Errorf("provider %q: %w", input.Provider, err)
 	}
-	cluster, err := p.Provision(ctx, input.Request)
+	cluster, err := p.Provision(ctx, input.Request, input.Token, input.Password)
 	if err != nil {
 		return provider.ClusterInfo{}, fmt.Errorf("provision: %w", err)
 	}
-	if err := p.WaitForReady(ctx, cluster); err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("wait for ready: %w", err)
-	}
 	return cluster, nil
+}
+
+// WaitForReady blocks until the cluster accepts connections. Split from Provision
+// so the workflow can register teardown before waiting — a readiness failure or
+// worker crash then still tears the cluster down instead of orphaning it.
+func (a *Activities) WaitForReady(ctx context.Context, input WaitForReadyInput) error {
+	p, err := provider.Run(input.Provider, a.tel)
+	if err != nil {
+		return fmt.Errorf("provider %q: %w", input.Provider, err)
+	}
+	return p.WaitForReady(ctx, input.Cluster)
 }
 
 // Deprovision tears the cluster down. It is idempotent: providers treat an

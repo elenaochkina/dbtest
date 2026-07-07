@@ -82,15 +82,23 @@ func envOr(key, def string) string {
 }
 
 // Provision creates an RDS instance sized from req
-func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionRequest) (provider.ClusterInfo, error) {
+func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 || req.DiskGiB < 0 {
 		return provider.ClusterInfo{}, fmt.Errorf("invalid provision request: negative resource (vcpu=%v memory_mib=%d disk_gib=%d)", req.VCPU, req.MemoryMiB, req.DiskGiB)
 	}
 
-	instanceID := p.cfg.Database + "-" + uuid.NewString()
-	password := uuid.NewString()
+	// A retry must land on the same instance a prior attempt created, so the
+	// identifier and password are derived from the caller's pinned token/password.
+	if token == "" {
+		token = uuid.NewString()
+	}
+	if password == "" {
+		password = uuid.NewString()
+	}
+
+	instanceID := p.cfg.Database + "-" + token
 	instanceClass := resolveInstanceClass(req, p.cfg.InstanceClassOverride)
 
 	input := &rds.CreateDBInstanceInput{
@@ -123,7 +131,14 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 	}
 
 	if _, err := p.client.CreateDBInstance(ctx, input); err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("create db instance: %w", err)
+		// A retried attempt finds the instance a prior attempt already created.
+		// Because the identity is pinned, that instance carries the same master
+		// password we hold here, so we adopt it and proceed to wait for its
+		// endpoint rather than orphaning it and creating a second one.
+		var exists *rdstypes.DBInstanceAlreadyExistsFault
+		if !errors.As(err, &exists) {
+			return provider.ClusterInfo{}, fmt.Errorf("create db instance: %w", err)
+		}
 	}
 
 	host, port, err := p.waitForEndpoint(ctx, instanceID)

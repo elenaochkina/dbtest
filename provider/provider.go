@@ -44,8 +44,15 @@ type ProvisionRequest struct {
 }
 
 // Provider is the interface every database provider must satisfy.
+//
+// token and password pin the provision's identity so it is idempotent under
+// retries: a caller that may retry (the Temporal activity) passes the same
+// values on every attempt, so a retried Provision adopts the instance a prior
+// attempt created instead of orphaning it. Empty means "no stable identity
+// supplied" — the provider mints its own, which is correct for the standalone
+// path that never retries.
 type Provider interface {
-	Provision(ctx context.Context, req ProvisionRequest) (ClusterInfo, error)
+	Provision(ctx context.Context, req ProvisionRequest, token, password string) (ClusterInfo, error)
 	WaitForReady(ctx context.Context, cluster ClusterInfo) error
 	Deprovision(ctx context.Context, clusterID string) error
 }

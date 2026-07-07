@@ -40,7 +40,10 @@ func New(tel *telemetry.Telemetry) (*dockerProvider, error) {
 	return &dockerProvider{client: client, image: img, tel: tel}, nil
 }
 
-func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest) (provider.ClusterInfo, error) {
+// token and password are ignored: Docker is the baseline, non-durable path — the
+// daemon assigns the container ID and the password is fixed — so there is no
+// pinned identity to honor.
+func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest, _, _ string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 {
