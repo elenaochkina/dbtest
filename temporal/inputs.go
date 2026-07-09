@@ -3,8 +3,10 @@ package temporal
 import (
 	"time"
 
+	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/workload"
+	"github.com/google/uuid"
 )
 
 // Config is the workflow input for every scenario — the durable, serializable
@@ -32,11 +34,29 @@ type WaitForReadyInput struct {
 }
 
 // WorkloadInput drives a workload activity: which cluster to run against and the
-// workload parameters. The DSN is built from Cluster at run time, so the
-// password is never a separate field here.
+// workload parameters.
 type WorkloadInput struct {
 	Cluster provider.ClusterInfo
 	Config  workload.Config
+}
+
+// StartRunInput opens a runs row recording this benchmark execution.
+type StartRunInput struct {
+	Scenario string
+	Seed     int64
+	Provider provider.ProviderName
+}
+
+// SaveResultInput persists one pgbench result.
+type SaveResultInput struct {
+	RunID  uuid.UUID
+	Result pgbench.Result
+}
+
+// EndRunInput closes a runs row, recording whether the run passed.
+type EndRunInput struct {
+	RunID  uuid.UUID
+	Passed bool
 }
 
 type DeprovisionInput struct {

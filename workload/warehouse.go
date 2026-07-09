@@ -23,6 +23,10 @@ type warehouseWorkload struct{ cfg Config }
 func (s *warehouseWorkload) Name() string { return string(Warehouse) }
 
 func (s *warehouseWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) (Result, error) {
+	if s.cfg.Warehouses <= 0 {
+		return nil, fmt.Errorf("warehouse workload requires Warehouses > 0 to seed data and compute a stock delta, got %d", s.cfg.Warehouses)
+	}
+
 	pool, err := pgadapter.Connect(dsn, tel)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)

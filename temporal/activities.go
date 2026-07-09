@@ -6,9 +6,11 @@ import (
 
 	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
 	"github.com/elenaochkina/dbtest/workload"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,9 +40,7 @@ func (a *Activities) Provision(ctx context.Context, input ProvisionInput) (provi
 	return cluster, nil
 }
 
-// WaitForReady blocks until the cluster accepts connections. Split from Provision
-// so the workflow can register teardown before waiting — a readiness failure or
-// worker crash then still tears the cluster down instead of orphaning it.
+// WaitForReady blocks until the cluster accepts connections.
 func (a *Activities) WaitForReady(ctx context.Context, input WaitForReadyInput) error {
 	p, err := provider.Run(input.Provider, a.tel)
 	if err != nil {
@@ -78,8 +78,6 @@ func (a *Activities) RunPgbench(ctx context.Context, input WorkloadInput) (pgben
 }
 
 // runWorkload resolves a workload by name and runs it against the cluster,
-// building the DSN at call time so the password is never persisted separately.
-// The concrete Result the workload returns is asserted by each caller.
 func (a *Activities) runWorkload(ctx context.Context, name workload.WorkloadName, input WorkloadInput) (workload.Result, error) {
 	w, err := workload.New(name, input.Config)
 	if err != nil {
@@ -88,9 +86,33 @@ func (a *Activities) runWorkload(ctx context.Context, name workload.WorkloadName
 	return w.Run(ctx, input.Cluster.Target.URL(input.Cluster.Password), a.tel)
 }
 
-// Deprovision tears the cluster down. It is idempotent: providers treat an
-// already-deleted cluster as success (e.g. RDS NotFound), so Temporal may safely
-// retry or replay it without a second, failing delete.
+// StartRun opens a runs row for this execution and returns its DB-generated id,
+// which SaveResult and EndRun reference.
+func (a *Activities) StartRun(ctx context.Context, input StartRunInput) (uuid.UUID, error) {
+	run, err := state.StartRun(ctx, a.statePool, state.RunConfig{
+		Seed:     input.Seed,
+		Scenario: input.Scenario,
+		Provider: string(input.Provider),
+	}, a.tel)
+	if err != nil {
+		return uuid.UUID{}, err
+	}
+	return run.ID, nil
+}
+
+// SaveResult persists a pgbench result to the state DB under an existing run.
+func (a *Activities) SaveResult(ctx context.Context, input SaveResultInput) error {
+	return state.SaveBenchmarkResult(ctx, a.statePool, input.RunID, input.Result, a.tel)
+}
+
+// EndRun closes the runs row (ended_at, passed).
+func (a *Activities) EndRun(ctx context.Context, input EndRunInput) error {
+	run := &state.Run{Pool: a.statePool, ID: input.RunID, Logger: a.tel.Logger}
+	return run.End(ctx, input.Passed)
+}
+
+// Deprovision tears the cluster down.
+
 func (a *Activities) Deprovision(ctx context.Context, input DeprovisionInput) error {
 	p, err := provider.Run(input.Provider, a.tel)
 	if err != nil {

@@ -50,7 +50,7 @@ func main() {
 	defer c.Close()
 
 	w := worker.New(c, dbtemporal.TaskQueue, worker.Options{})
-	w.RegisterWorkflow(dbtemporal.ProvisionTeardownWorkflow)
+	w.RegisterWorkflow(dbtemporal.PgBenchWorkflow)
 	w.RegisterActivity(dbtemporal.NewActivities(statePool, tel))
 
 	slog.Info("worker started", "task_queue", dbtemporal.TaskQueue, "temporal", hostPort)
