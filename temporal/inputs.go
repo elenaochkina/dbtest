@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/workload"
 )
 
 // Config is the workflow input for every scenario — the durable, serializable
@@ -28,6 +29,14 @@ type ProvisionInput struct {
 type WaitForReadyInput struct {
 	Provider provider.ProviderName
 	Cluster  provider.ClusterInfo
+}
+
+// WorkloadInput drives a workload activity: which cluster to run against and the
+// workload parameters. The DSN is built from Cluster at run time, so the
+// password is never a separate field here.
+type WorkloadInput struct {
+	Cluster provider.ClusterInfo
+	Config  workload.Config
 }
 
 type DeprovisionInput struct {
