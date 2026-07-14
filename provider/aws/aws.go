@@ -131,10 +131,7 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 	}
 
 	if _, err := p.client.CreateDBInstance(ctx, input); err != nil {
-		// A retried attempt finds the instance a prior attempt already created.
-		// Because the identity is pinned, that instance carries the same master
-		// password we hold here, so we adopt it and proceed to wait for its
-		// endpoint rather than orphaning it and creating a second one.
+		// A retried attempt finds the instance a prior attempt already created instead of creatong a new one and orphan the previous instance.
 		var exists *rdstypes.DBInstanceAlreadyExistsFault
 		if !errors.As(err, &exists) {
 			return provider.ClusterInfo{}, fmt.Errorf("create db instance: %w", err)
@@ -200,9 +197,8 @@ func (p *awsProvider) waitForEndpoint(ctx context.Context, instanceID string) (s
 }
 
 // resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instance
-// class. AWS_RDS_INSTANCE_CLASS (passed through as override) wins verbatim;
-// otherwise the smallest class satisfying both vCPU and memory is chosen, falling
-// back to the largest in the table.
+// class.
+// By default is the smallest class returns.
 func resolveInstanceClass(req provider.ProvisionRequest, override string) string {
 	if override != "" {
 		return override
@@ -289,12 +285,6 @@ func (p *awsProvider) Deprovision(ctx context.Context, clusterID string) error {
 	}
 	return nil
 }
-
-// FailureInjector (KillProcess) is intentionally not implemented yet. The natural
-// RDS analogue is RebootDBInstance(ForceFailover=true); add it here and restore
-// the compile-time assertion below when failure-injection scenarios target AWS.
-//
-// var _ provider.FailureInjector = (*awsProvider)(nil)
 
 // splitNonEmpty splits s on sep, dropping empty fields. Returns nil for "".
 func splitNonEmpty(s, sep string) []string {
