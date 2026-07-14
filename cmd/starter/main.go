@@ -9,6 +9,7 @@ import (
 
 	"github.com/elenaochkina/dbtest/provider"
 	dbtemporal "github.com/elenaochkina/dbtest/temporal"
+	"github.com/elenaochkina/dbtest/workload"
 
 	"go.temporal.io/sdk/client"
 )
@@ -46,7 +47,7 @@ func main() {
 	}
 	defer c.Close()
 
-	cfg := dbtemporal.Config{
+	cfg := dbtemporal.PgBenchWorkflowConfig{
 		Provider: provider.ProviderName(*providerName),
 		Request: provider.ProvisionRequest{
 			VCPU:            *vcpu,
@@ -54,11 +55,13 @@ func main() {
 			DiskGiB:         *diskGiB,
 			PostgresVersion: *pgVersion,
 		},
-		Seed:        *seed,
-		Warehouses:  *warehouses,
-		ScaleFactor: *scaleFactor,
-		Clients:     *clients,
-		Duration:    *duration,
+		Workload: workload.Config{
+			Seed:        *seed,
+			Warehouses:  *warehouses,
+			ScaleFactor: *scaleFactor,
+			Clients:     *clients,
+			Duration:    *duration,
+		},
 	}
 
 	we, err := c.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{

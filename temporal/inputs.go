@@ -1,24 +1,20 @@
 package temporal
 
 import (
-	"time"
-
 	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/workload"
 	"github.com/google/uuid"
 )
 
-// Config is the workflow input for every scenario — the durable, serializable
-// equivalent of scenario.Config.
-type Config struct {
-	Provider    provider.ProviderName
-	Request     provider.ProvisionRequest // cluster resource spec the caller declares
-	Seed        int64
-	Warehouses  int
-	ScaleFactor int
-	Clients     int
-	Duration    time.Duration
+// PgBenchWorkflowConfig is the input to PgBenchWorkflow.
+// It holds provisioning (Provider, Request) and the workload params. Provider is
+// the single source of truth for the provider name; the workflow propagates it
+// into Workload.ProviderName, so callers leave that field unset.
+type PgBenchWorkflowConfig struct {
+	Provider provider.ProviderName
+	Request  provider.ProvisionRequest // cluster resource spec the caller declares
+	Workload workload.Config
 }
 
 type ProvisionInput struct {
