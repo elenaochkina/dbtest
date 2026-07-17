@@ -22,7 +22,7 @@ type provisionStep struct{ request provider.ProvisionRequest }
 func (provisionStep) Name() string { return "provision" }
 
 func (s provisionStep) Run(ctx context.Context, rc *RunContext) error {
-	cluster, err := rc.Provider.Provision(ctx, s.request)
+	cluster, err := rc.Provider.Provision(ctx, s.request, "", "")
 	if err != nil {
 		return fmt.Errorf("provision: %w", err)
 	}

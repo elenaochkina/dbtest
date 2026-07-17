@@ -82,15 +82,23 @@ func envOr(key, def string) string {
 }
 
 // Provision creates an RDS instance sized from req
-func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionRequest) (provider.ClusterInfo, error) {
+func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 || req.DiskGiB < 0 {
 		return provider.ClusterInfo{}, fmt.Errorf("invalid provision request: negative resource (vcpu=%v memory_mib=%d disk_gib=%d)", req.VCPU, req.MemoryMiB, req.DiskGiB)
 	}
 
-	instanceID := p.cfg.Database + "-" + uuid.NewString()
-	password := uuid.NewString()
+	// A retry must land on the same instance a prior attempt created, so the
+	// identifier and password are derived from the caller's pinned token/password.
+	if token == "" {
+		token = uuid.NewString()
+	}
+	if password == "" {
+		password = uuid.NewString()
+	}
+
+	instanceID := p.cfg.Database + "-" + token
 	instanceClass := resolveInstanceClass(req, p.cfg.InstanceClassOverride)
 
 	input := &rds.CreateDBInstanceInput{
@@ -123,7 +131,11 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 	}
 
 	if _, err := p.client.CreateDBInstance(ctx, input); err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("create db instance: %w", err)
+		// A retried attempt finds the instance a prior attempt already created instead of creatong a new one and orphan the previous instance.
+		var exists *rdstypes.DBInstanceAlreadyExistsFault
+		if !errors.As(err, &exists) {
+			return provider.ClusterInfo{}, fmt.Errorf("create db instance: %w", err)
+		}
 	}
 
 	host, port, err := p.waitForEndpoint(ctx, instanceID)
@@ -185,9 +197,8 @@ func (p *awsProvider) waitForEndpoint(ctx context.Context, instanceID string) (s
 }
 
 // resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instance
-// class. AWS_RDS_INSTANCE_CLASS (passed through as override) wins verbatim;
-// otherwise the smallest class satisfying both vCPU and memory is chosen, falling
-// back to the largest in the table.
+// class.
+// By default is the smallest class returns.
 func resolveInstanceClass(req provider.ProvisionRequest, override string) string {
 	if override != "" {
 		return override
@@ -274,12 +285,6 @@ func (p *awsProvider) Deprovision(ctx context.Context, clusterID string) error {
 	}
 	return nil
 }
-
-// FailureInjector (KillProcess) is intentionally not implemented yet. The natural
-// RDS analogue is RebootDBInstance(ForceFailover=true); add it here and restore
-// the compile-time assertion below when failure-injection scenarios target AWS.
-//
-// var _ provider.FailureInjector = (*awsProvider)(nil)
 
 // splitNonEmpty splits s on sep, dropping empty fields. Returns nil for "".
 func splitNonEmpty(s, sep string) []string {

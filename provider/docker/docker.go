@@ -40,7 +40,10 @@ func New(tel *telemetry.Telemetry) (*dockerProvider, error) {
 	return &dockerProvider{client: client, image: img, tel: tel}, nil
 }
 
-func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest) (provider.ClusterInfo, error) {
+// token and password parameters are ignored by Docker.
+// Daemon picks its own container ID, password is fixed
+// no need to preserve identity across retries compared to a cloud provider
+func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest, _, _ string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 {
@@ -212,6 +215,9 @@ func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.Clust
 	}
 	return provider.ClusterInfo{ID: cluster.ID, Target: targetForPort(hostPort), Password: cluster.Password}, nil
 }
+
+// Compile-time assertion that dockerProvider satisfies the core Provider contract.
+var _ provider.Provider = (*dockerProvider)(nil)
 
 // Compile-time assertion that the docker provider supports failure injection.
 var _ provider.FailureInjector = (*dockerProvider)(nil)
