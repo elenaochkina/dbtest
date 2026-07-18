@@ -17,8 +17,8 @@ import (
 )
 
 // The worker polls the task queue and executes the workflow + activities. It
-// holds the live dependencies (state pool, telemetry) that the workflow's
-// typed-nil *Activities resolves to at run time.
+// holds the live dependencies (state pool, telemetry) injected into the activity
+// structs the workflow's typed-nil receivers resolve to at run time.
 func main() {
 	tel := telemetry.Init(telemetry.Config{
 		Log:     telemetry.LogConfig{LogLevel: "info", Output: nil},
@@ -51,7 +51,9 @@ func main() {
 
 	w := worker.New(c, dbtemporal.TaskQueue, worker.Options{})
 	w.RegisterWorkflow(dbtemporal.PgBenchWorkflow)
-	w.RegisterActivity(dbtemporal.NewActivities(statePool, tel))
+	w.RegisterActivity(dbtemporal.NewSaveResultActivities(statePool, tel))
+	w.RegisterActivity(dbtemporal.NewProviderActivities(tel))
+	w.RegisterActivity(dbtemporal.NewWorkloadActivities(tel))
 
 	slog.Info("worker started", "task_queue", dbtemporal.TaskQueue, "temporal", hostPort)
 	if err := w.Run(worker.InterruptCh()); err != nil {
