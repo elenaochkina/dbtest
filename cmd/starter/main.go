@@ -28,8 +28,13 @@ func main() {
 	scaleFactor := flag.Int("scale", 1, "pgbench scale factor")
 	clients := flag.Int("clients", 4, "pgbench client count")
 	duration := flag.Duration("duration", 15*time.Second, "pgbench run duration")
-	workflowID := flag.String("id", "pgbench", "workflow id")
+	workflowName := flag.String("workflow", "pgbench", "workflow to run (pgbench, crash-recovery)")
+	workflowID := flag.String("id", "", "workflow id (default: workflow name)")
 	flag.Parse()
+
+	if *workflowID == "" {
+		*workflowID = *workflowName
+	}
 
 	if *warehouses < 1 {
 		slog.Error("warehouses must be > 0 (needed to seed data and compute the stock delta)")
@@ -47,27 +52,41 @@ func main() {
 	}
 	defer c.Close()
 
-	cfg := dbtemporal.PgBenchWorkflowConfig{
-		Provider: provider.ProviderName(*providerName),
-		Request: provider.ProvisionRequest{
-			VCPU:            *vcpu,
-			MemoryMiB:       *memoryMiB,
-			DiskGiB:         *diskGiB,
-			PostgresVersion: *pgVersion,
-		},
-		Workload: workload.Config{
-			Seed:        *seed,
-			Warehouses:  *warehouses,
-			ScaleFactor: *scaleFactor,
-			Clients:     *clients,
-			Duration:    *duration,
-		},
+	request := provider.ProvisionRequest{
+		VCPU:            *vcpu,
+		MemoryMiB:       *memoryMiB,
+		DiskGiB:         *diskGiB,
+		PostgresVersion: *pgVersion,
+	}
+	workloadCfg := workload.Config{
+		Seed:        *seed,
+		Warehouses:  *warehouses,
+		ScaleFactor: *scaleFactor,
+		Clients:     *clients,
+		Duration:    *duration,
+	}
+
+	// Both workflows take the same config shape; pick which one to start.
+	var (
+		wf  any
+		cfg any
+	)
+	switch *workflowName {
+	case "pgbench":
+		wf = dbtemporal.PgBenchWorkflow
+		cfg = dbtemporal.PgBenchWorkflowConfig{Provider: provider.ProviderName(*providerName), Request: request, Workload: workloadCfg}
+	case "crash-recovery":
+		wf = dbtemporal.CrashRecoveryWorkflow
+		cfg = dbtemporal.CrashRecoveryWorkflowConfig{Provider: provider.ProviderName(*providerName), Request: request, Workload: workloadCfg}
+	default:
+		slog.Error("unknown workflow", "workflow", *workflowName)
+		os.Exit(1)
 	}
 
 	we, err := c.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
 		ID:        *workflowID,
 		TaskQueue: dbtemporal.TaskQueue,
-	}, dbtemporal.PgBenchWorkflow, cfg)
+	}, wf, cfg)
 	if err != nil {
 		slog.Error("start workflow failed", "error", err)
 		os.Exit(1)
