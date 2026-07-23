@@ -51,9 +51,11 @@ func main() {
 
 	w := worker.New(c, dbtemporal.TaskQueue, worker.Options{})
 	w.RegisterWorkflow(dbtemporal.PgBenchWorkflow)
+	w.RegisterWorkflow(dbtemporal.CrashRecoveryWorkflow)
 	w.RegisterActivity(dbtemporal.NewSaveResultActivities(statePool, tel))
 	w.RegisterActivity(dbtemporal.NewProviderActivities(tel))
 	w.RegisterActivity(dbtemporal.NewWorkloadActivities(tel))
+	w.RegisterActivity(dbtemporal.NewDurabilityActivities(tel))
 
 	slog.Info("worker started", "task_queue", dbtemporal.TaskQueue, "temporal", hostPort)
 	if err := w.Run(worker.InterruptCh()); err != nil {
