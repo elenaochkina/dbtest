@@ -1,6 +1,5 @@
 # Plan: Checkpoint vs. Recovery Time
-
-Measure how long Postgres takes to come back after an ungraceful kill, and how
+staying Measure how long Postgres takes to come back after an ungraceful kill, and how
 that time depends on **whether a checkpoint had just happened**. Docker-local
 first; the same workflow should later point at RDS unchanged.
 
@@ -138,7 +137,8 @@ Three layers, each ignorant of the others:
 ```
 worker/activity   records metrics, persists results   ← long-lived, scrapeable
       │
-harness/          starts a container, reads its stdout ← knows Docker/ECS,
+
+
       │                                                  not pgbench
 cmd/bench         runs a workload, prints the result   ← knows workloads,
                                                          not where it runs
