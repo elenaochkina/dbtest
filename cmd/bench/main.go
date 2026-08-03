@@ -1,13 +1,5 @@
 // Command bench runs one workload against a database and prints the result as a
-// single JSON line. It is the containerized load generator: locally a Docker
-// container beside the database container, later an ECS task in the database's
-// region. It never learns where it runs — it takes a DSN and a workload name,
-// which is what makes the same image usable in both places.
-//
-// Telemetry is deliberately nil. Prometheus metrics are *scraped*, which only
-// works for a long-lived process; a container that runs for a minute and exits
-// would never be polled, and on Fargate it has no reachable address at all. So
-// bench pushes its result out on stdout and the worker records the metrics.
+// single JSON line.
 package main
 
 import (
@@ -23,10 +15,6 @@ import (
 
 	"github.com/elenaochkina/dbtest/workload"
 )
-
-// resultPrefix marks the one machine-readable line on stdout. The harness scans
-// container logs for it; everything else bench emits goes to stderr.
-const resultPrefix = "DBTEST_RESULT "
 
 // result is the contract between bench and the harness. Metrics comes straight
 // from workload.Result.Metrics(), so bench stays workload-agnostic — it never
@@ -56,9 +44,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	// SIGTERM is how a container is asked to stop. Cancelling the context makes
-	// exec.CommandContext terminate the workload's child, so `docker stop` takes
-	// pgbench down with us instead of leaving it orphaned.
+	// SIGTERM is how a container is asked to stop.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -71,9 +57,7 @@ func main() {
 	}
 
 	res, err := run(ctx, *dsn, workload.WorkloadName(*name), *initOnly, cfg)
-	// The result line is printed on every path, including failure: the database
-	// dying underneath the workload is the expected outcome of a crash test, and
-	// the harness still wants to see what happened.
+	// The result line is printed on every path, including failure.
 	if err != nil {
 		res.Aborted = true
 		res.Error = err.Error()
@@ -85,8 +69,7 @@ func main() {
 	}
 }
 
-// run resolves the workload and executes one phase of it. res is named so the
-// deferred elapsed-time stamp lands on the value actually returned.
+// run resolves the workload and executes one phase of it.
 func run(ctx context.Context, dsn string, name workload.WorkloadName, initOnly bool, cfg workload.Config) (res result, err error) {
 	res = result{Workload: string(name), Phase: "run"}
 	if initOnly {
@@ -122,13 +105,13 @@ func run(ctx context.Context, dsn string, name workload.WorkloadName, initOnly b
 	return res, nil
 }
 
-// emit writes the result line to stdout. A failure to marshal must not be
-// silent — the harness would block waiting for a line that never comes.
+// emit writes the result to stdout
+// Every log line bench writes goes to stderr, where it cannot corrupt the result.
 func emit(res result) {
 	payload, err := json.Marshal(res)
 	if err != nil {
 		slog.Error("marshal result", "error", err)
 		return
 	}
-	fmt.Println(resultPrefix + string(payload))
+	fmt.Println(string(payload))
 }
