@@ -47,25 +47,42 @@ func (r *dockerRunner) Start(ctx context.Context, spec harness.Spec) (harness.Ha
 		&container.HostConfig{},
 		netConfig, nil, spec.Name,
 	)
+	id := resp.ID
 	if err != nil {
 		if errdefs.IsNotFound(err) {
 			return harness.Handle{}, fmt.Errorf("image %q not found locally — run `make images`: %w", spec.Image, err)
 		}
-		return harness.Handle{}, fmt.Errorf("container create: %w", err)
+		//Docker adoption: try to find a same name container
+		if spec.Name == "" || !errdefs.IsConflict(err) {
+			return harness.Handle{}, fmt.Errorf("container create %q: %w", spec.Name, err)
+		}
+		existing, ierr := r.client.ContainerInspect(ctx, spec.Name)
+		if ierr != nil {
+			return harness.Handle{}, fmt.Errorf("adopt existing container %q: %w", spec.Name, ierr)
+		}
+		id = existing.ID
+		if r.tel != nil {
+			r.tel.Logger.Info("adopted container from a previous attempt",
+				slog.String("container_id", id),
+				slog.String("name", spec.Name),
+			)
+		}
 	}
 
-	if err := r.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	// Starting an already-running container is a no-op
+	if err := r.client.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
 		return harness.Handle{}, fmt.Errorf("container start: %w", err)
 	}
 
 	if r.tel != nil {
 		r.tel.Logger.Info("started harness container",
-			slog.String("container_id", resp.ID),
+			slog.String("container_id", id),
+			slog.String("name", spec.Name),
 			slog.String("image", spec.Image),
 			slog.String("network", spec.Network),
 		)
 	}
-	return harness.Handle{ID: resp.ID}, nil
+	return harness.Handle{ID: id}, nil
 }
 
 // Wait blocks until the container exits and reports its exit code.
