@@ -18,20 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/elenaochkina/dbtest/probe"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
-
-// outage is one uninterrupted run of failed observations, bracketed by successes.
-type outage struct {
-	LastOK       time.Time      `json:"last_ok"`        // last success before it
-	FirstFailure time.Time      `json:"first_failure"`  // first observation that failed
-	FirstOKAfter time.Time      `json:"first_ok_after"` // first success after it
-	DownMs       float64        `json:"down_ms"`        // LastOK → FirstOKAfter
-	Failures     int            `json:"failures"`
-	Errors       map[string]int `json:"errors"`       // classification → count
-	LostCommits  int64          `json:"lost_commits"` // acked before, missing after
-}
 
 // detector watches one condition and brackets the outages in it. Working state
 // only — an outage is the gap between two observations, so deciding what a
@@ -40,15 +30,15 @@ type detector struct {
 	recoveredAfter int
 	seenFirstOK    bool
 	lastOK         time.Time
-	current        *outage
+	current        *probe.Outage
 	consecutiveOK  int
-	outages        []outage
+	outages        []probe.Outage
 	completed      int // outages that closed properly
 }
 
 // record feeds one observation in.
 // It returns the outage that just completed, or nil.
-func (d *detector) record(at time.Time, err error) *outage {
+func (d *detector) record(at time.Time, err error) *probe.Outage {
 	if err == nil {
 		d.lastOK = at
 		// Until the condition has held once, "not holding" is indistinguishable
@@ -85,7 +75,7 @@ func (d *detector) record(at time.Time, err error) *outage {
 		return nil
 	}
 	if d.current == nil {
-		d.current = &outage{LastOK: d.lastOK, FirstFailure: at, Errors: map[string]int{}}
+		d.current = &probe.Outage{LastOK: d.lastOK, FirstFailure: at, Errors: map[string]int{}}
 	}
 	// A success can be followed by more failures — reopen the outage and let the
 	// run-of-successes rule decide when it really ended.
@@ -97,9 +87,9 @@ func (d *detector) record(at time.Time, err error) *outage {
 }
 
 // report returns what the detector saw, including an outage that is still open.
-func (d *detector) report() availability {
-	a := availability{
-		Outages:   append([]outage(nil), d.outages...),
+func (d *detector) report() probe.Availability {
+	a := probe.Availability{
+		Outages:   append([]probe.Outage(nil), d.outages...),
 		Recovered: d.completed > 0,
 	}
 	if d.current != nil {
@@ -111,29 +101,6 @@ func (d *detector) report() availability {
 		}
 	}
 	return a
-}
-
-// availability is one detector's findings.
-type availability struct {
-	Outages       []outage `json:"outages"`
-	LongestDownMs float64  `json:"longest_down_ms"`
-	Recovered     bool     `json:"recovered"` // saw at least one outage begin and end
-}
-
-// result is what the harness reads off stdout.
-type result struct {
-	StartedAt   time.Time `json:"started_at"`
-	EndedAt     time.Time `json:"ended_at"`
-	IntervalMs  float64   `json:"interval_ms"`
-	Samples     int       `json:"samples"`
-	Repetitions int       `json:"repetitions"` // disruptions expected
-
-	Reachable availability `json:"reachable"` // connect + SELECT 1
-	Writable  availability `json:"writable"`  // INSERT acked
-
-	AckedCommits int64  `json:"acked_commits"`
-	LostCommits  int64  `json:"lost_commits"` // acked, then missing after recovery
-	Error        string `json:"error,omitempty"`
 }
 
 func main() {
@@ -246,8 +213,8 @@ func (p *prober) prepare(ctx context.Context) error {
 
 // run polls until it has watched the expected number of outages end, the
 // deadline passes, or the context is cancelled.
-func (p *prober) run(ctx context.Context, maxDuration time.Duration) result {
-	res := result{
+func (p *prober) run(ctx context.Context, maxDuration time.Duration) probe.Result {
+	res := probe.Result{
 		StartedAt:   time.Now(),
 		IntervalMs:  float64(p.interval.Microseconds()) / 1000,
 		Repetitions: p.repetitions,
