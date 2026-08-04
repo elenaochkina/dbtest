@@ -7,6 +7,8 @@ import (
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	dbtemporal "github.com/elenaochkina/dbtest/temporal"
+	"github.com/elenaochkina/dbtest/temporal/activities"
+	"github.com/elenaochkina/dbtest/temporal/workflows"
 
 	// Register the providers so provider.Run can resolve them inside activities.
 	_ "github.com/elenaochkina/dbtest/provider/aws"
@@ -50,12 +52,14 @@ func main() {
 	defer c.Close()
 
 	w := worker.New(c, dbtemporal.TaskQueue, worker.Options{})
-	w.RegisterWorkflow(dbtemporal.PgBenchWorkflow)
-	w.RegisterWorkflow(dbtemporal.CrashRecoveryWorkflow)
-	w.RegisterActivity(dbtemporal.NewSaveResultActivities(statePool, tel))
-	w.RegisterActivity(dbtemporal.NewProviderActivities(tel))
-	w.RegisterActivity(dbtemporal.NewWorkloadActivities(tel))
-	w.RegisterActivity(dbtemporal.NewDurabilityActivities(tel))
+	w.RegisterWorkflow(workflows.PgBenchWorkflow)
+	w.RegisterWorkflow(workflows.CrashRecoveryWorkflow)
+	w.RegisterActivity(activities.NewSaveResultActivities(statePool, tel))
+	w.RegisterActivity(activities.NewProviderActivities(tel))
+	w.RegisterActivity(activities.NewWorkloadActivities(tel))
+	w.RegisterActivity(activities.NewDurabilityActivities(tel))
+	w.RegisterActivity(activities.NewPgBenchActivities(tel))
+	w.RegisterActivity(activities.NewProbeActivities(tel))
 
 	slog.Info("worker started", "task_queue", dbtemporal.TaskQueue, "temporal", hostPort)
 	if err := w.Run(worker.InterruptCh()); err != nil {

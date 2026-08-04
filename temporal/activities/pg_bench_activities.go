@@ -1,4 +1,4 @@
-package temporal
+package activities
 
 import (
 	"context"
@@ -22,12 +22,6 @@ type BenchInput struct {
 	Workload workload.WorkloadName
 	Config   workload.Config
 	Init     bool // run the setup phase and exit
-}
-
-// ContainerInput targets a container a Start activity returned.
-type ContainerInput struct {
-	Runner harness.RunnerName
-	Handle harness.Handle
 }
 
 // PgBenchActivities run the load generator in a container.
