@@ -9,6 +9,7 @@ import (
 
 	"github.com/elenaochkina/dbtest/provider"
 	dbtemporal "github.com/elenaochkina/dbtest/temporal"
+	"github.com/elenaochkina/dbtest/temporal/workflows"
 	"github.com/elenaochkina/dbtest/workload"
 
 	"go.temporal.io/sdk/client"
@@ -73,11 +74,11 @@ func main() {
 	)
 	switch *workflowName {
 	case "pgbench":
-		wf = dbtemporal.PgBenchWorkflow
-		cfg = dbtemporal.PgBenchWorkflowConfig{Provider: provider.ProviderName(*providerName), Request: request, Workload: workloadCfg}
+		wf = workflows.PgBenchWorkflow
+		cfg = workflows.PgBenchWorkflowConfig{Provider: provider.ProviderName(*providerName), Request: request, Workload: workloadCfg}
 	case "crash-recovery":
-		wf = dbtemporal.CrashRecoveryWorkflow
-		cfg = dbtemporal.CrashRecoveryWorkflowConfig{Provider: provider.ProviderName(*providerName), Request: request, Workload: workloadCfg}
+		wf = workflows.CrashRecoveryWorkflow
+		cfg = workflows.CrashRecoveryWorkflowConfig{Provider: provider.ProviderName(*providerName), Request: request, Workload: workloadCfg}
 	default:
 		slog.Error("unknown workflow", "workflow", *workflowName)
 		os.Exit(1)
