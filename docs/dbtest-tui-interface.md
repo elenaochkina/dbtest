@@ -20,6 +20,11 @@ actions, and live logs from the active run. Existing binaries (`cmd/worker`, `cm
 Decisions already made: **Bubble Tea + Lipgloss + Bubbles**; **three stacked full-width rows**;
 the worker sits **behind an interface** with an in-process implementation first.
 
+"Provider" here means a **managed Postgres provider**, and the list is expected to grow: **AWS RDS
+is the starting point, then GCP Cloud SQL, then Azure Database for PostgreSQL Flexible Server**,
+with `docker` staying as the local zero-cost baseline. Nothing in the console may hardcode a
+provider set — see [Provider set and the config seam](#provider-set-and-the-config-seam).
+
 ## UX
 
 ```
@@ -27,7 +32,7 @@ the worker sits **behind an interface** with an in-process implementation first.
 │ state db   ● up    postgres://…@localhost:54321/postgres           │
 │ temporal   ● up    localhost:7233   UI http://localhost:8233       │
 │ telemetry  ● up    http://localhost:53411/metrics                  │
-│ providers  docker ● ready    aws ○ not configured                  │
+│ providers  1 ready (docker)   3 need config (aws, gcp, azure)      │
 ├─ ACTIONS ──────────────────────────────────────────────────────────┤
 │ > 1 start workflow    2 configure providers    3 list resources    │
 │   4 past workflows    5 exit                                       │
@@ -78,7 +83,10 @@ internal/workerhost/            THE SEAM
   workerhost.go                 interface + LogLine type
   inprocess.go                  v1 implementation (goroutine)
 internal/logbus/logbus.go       slog.Handler → batched LogLine stream + ring buffer
-internal/awsguide/              profile/STS/sso login; region, reachability, cost preview
+internal/providercfg/           per-provider config + credential flows
+  configurator.go               the interface; lookup by provider name
+  aws.go                        profile/STS/sso login; region; reachability; cost preview
+  (gcp.go, azure.go)            later — one file per cloud, no console changes
 temporal/worker.go              NEW shared registration list
 ```
 
@@ -103,6 +111,45 @@ STATUS panel is live rather than polled once at boot. Containers are **adopted, 
 names `dbtest-state`/`dbtest-temporal`, labels `dbtest.managed=true` + `dbtest.role=…`; running →
 adopt its published port, stopped → start, absent → create.
 
+## Provider set and the config seam
+
+The roadmap is **AWS RDS → GCP Cloud SQL → Azure Database for PostgreSQL Flexible Server**, with
+`docker` as the local zero-cost baseline, so the provider list only grows. Three consequences:
+
+**The console enumerates, never hardcodes.** `provider/provider.go:76-101` already has the
+self-registering registry (`Register`, `Run`, `registeredNames()`); the STATUS row and the
+providers screen render from it. The status row shows counts plus names and collapses to
+`… +N more` once it overflows the width; full per-provider detail lives in the providers screen,
+which is a scrollable table rather than a fixed list.
+
+**Config, credentials and cost preview become optional capability interfaces**, mirroring the
+existing `FailureInjector` pattern (`provider/provider.go:62`) — so a new cloud is a new file
+under `provider/` plus one under `internal/providercfg/`, with no console change:
+
+```go
+// implemented per provider; the console only ever knows this interface
+type Configurator interface {
+    Fields() []Field                      // what to prompt for (profile, project, subscription…)
+    Validate(ctx context.Context) Status   // ready | needs-login | misconfigured + reason
+    Login(ctx context.Context) error       // aws sso login / gcloud auth ADC / az login
+}
+
+type SizingPreview interface {            // optional: what a ProvisionRequest will actually create
+    Preview(req provider.ProvisionRequest) (string, error)
+}
+```
+
+Per-cloud specifics live behind that interface: **AWS** — profile + `sts:GetCallerIdentity` +
+`aws sso login`, instance class from the sizing table; **GCP** — project + region + ADC via
+`gcloud auth application-default login`, machine type; **Azure** — subscription + resource group
+via `az login`, SKU tier. `.dbtest.local.json` carries one section per provider, so configuring
+one cloud never disturbs another.
+
+**Capabilities gate the action list.** `crash-recovery` is offered only for providers implementing
+`FailureInjector` — today just `docker`, since `provider/aws/aws.go` has no `KillProcess`. As each
+cloud gains forced-failover support the action appears for it automatically, through the same
+`Model.actions()` derivation described above rather than a new conditional in the UI.
+
 ## Engine decisions
 
 - **Temporal server** = `temporalio/temporal:1.8.2` container running `server start-dev --ip
@@ -124,7 +171,10 @@ adopt its published port, stopped → start, absent → create.
 - **Log volume is real.** `benchmark/seed.go:39` logs one line *per seeded row*. Batch lines
   (drain every ~75 ms into one `logBatchMsg`) and cap the ring at ~2000, or a seed of any size
   floods `Update` and the viewport re-renders per line.
-- **AWS guided flow**, all before anything billable: profile (`-aws-profile` → `AWS_PROFILE` →
+- **Cloud config flow — AWS is the reference implementation** of `Configurator`, and every later
+  cloud repeats its shape: establish identity → scope it (region / project / resource group) →
+  guard reachability → preview cost → confirm. For AWS, all before anything billable: profile
+  (`-aws-profile` → `AWS_PROFILE` →
   saved config → substring-filtered prompt, since a several-hundred-entry list is useless) →
   validate with `sts:GetCallerIdentity` (promote `aws-sdk-go-v2/service/sts` to a direct dep) → on
   expired SSO, prompt then `aws sso login --profile|--sso-session`, retry once → region →
@@ -155,8 +205,10 @@ implementation; real log lines in the LOG panel; worker health in STATUS.
 reuses the bare workflow name and collides on rerun), active-run header, completion/failure, and
 two-stage cancel-and-quit.
 
-**Step 4 — providers.** Providers line in STATUS; `configure providers` screen; the full AWS
-guided flow above, persisted to a gitignored `.dbtest.local.json`.
+**Step 4 — providers.** Providers row in STATUS rendered from the registry; `configure providers`
+screen listing every registered provider; the `Configurator`/`SizingPreview` interfaces with
+**AWS RDS as the first implementation**, persisted per-provider to a gitignored
+`.dbtest.local.json`. Cloud SQL and Flexible Server then land as added files, not console edits.
 
 **Step 5 — resources + history.** `list resources`: containers by label, RDS instances by the
 `dbtest=true` tag (`aws.go:112`), and the `clusters` table — with a confirmed delete. `past
@@ -175,7 +227,8 @@ predates providers, the state DB and Temporal), help overlay, log filter/scrollb
 | `temporal/provider_activities.go` | fix format-string typo (line 46) |
 | `telemetry/metrics.go` | port 0 = auto; return bind error |
 | `telemetry/logs.go` | fix the stale "installs global default" comment |
-| `provider/aws/aws.go` | export sizing helpers for the cost preview |
+| `provider/provider.go` | add `Configurator` / `SizingPreview` optional capability interfaces |
+| `provider/aws/aws.go` | implement them — first managed provider; export the sizing helpers |
 | `go.mod` | add bubbletea/lipgloss/bubbles; `service/sts` indirect → direct |
 | `.gitignore` | add `.dbtest.local.json`, `.dbtest/` |
 | `README.md` | quickstart rewrite around the console |
@@ -215,5 +268,7 @@ go run ./cmd/dbtest                       # step 0: frame renders, resize, q qui
 - Child-process and container `WorkerHost` implementations — the interface exists for them; only
   the in-process one ships.
 - Auto-creating AWS security groups; the EC2 in-region harness (`docs/in-region-benchmark.md`).
+- The GCP Cloud SQL and Azure Flexible Server **provider implementations** themselves — separate
+  work. This plan only guarantees the console, config and capability seams don't assume AWS.
 - A headless/CI mode for `cmd/dbtest` — `cmd/starter` and `cmd/runbenchmark` already cover that.
 - Retiring the non-durable `scenario.Run` path.
