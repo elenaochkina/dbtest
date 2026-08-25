@@ -22,3 +22,6 @@
 
 # Docs
 #docs/
+
+# Agent worktrees
+.claude/worktrees/

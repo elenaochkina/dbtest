@@ -90,6 +90,30 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("migrate fingerprints table: %w", err)
 	}
 
+	// probe_interval_ms is the resolution of the two downtime figures, so rows
+	// recorded at different intervals are not comparable and the query has to be
+	// able to tell. UNIQUE (run_id, repetition) makes a retried insert a no-op.
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS downtime_results (
+			id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id                UUID        NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+			provider              TEXT        NOT NULL,
+			disruption            TEXT        NOT NULL,
+			repetition            INT         NOT NULL,
+			reachable_downtime_ms FLOAT8      NOT NULL,
+			writable_downtime_ms  FLOAT8      NOT NULL,
+			lost_commits          BIGINT      NOT NULL,
+			probe_interval_ms     FLOAT8      NOT NULL,
+			probe_failures        INT         NOT NULL,
+			probe_errors          JSONB       NOT NULL,
+			created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE (run_id, repetition)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate downtime_results table: %w", err)
+	}
+
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS clusters (
 			id               TEXT        PRIMARY KEY,
