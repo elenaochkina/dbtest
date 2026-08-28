@@ -179,8 +179,8 @@ workflow provisions once and applies the disruption N times, settling between
 repetitions.
 
 The prober spans all N, which is why its result is a **list** of outages rather
-than one — `cmd/probe` already models it that way, though `-recovered-after`
-currently makes it exit after the first. That needs a `-repetitions` flag.
+than one — `cmd/probe` models it that way, and `-repetitions` says how many
+disruptions to watch for before exiting.
 
 ## 3. Architecture
 

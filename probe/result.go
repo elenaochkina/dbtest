@@ -1,5 +1,5 @@
-// Package probe holds the result contract between the probe container and
-// whatever reads its stdout.
+// Package probe measures database availability and holds the result contract
+// between the probe container and whatever reads its stdout.
 package probe
 
 import (
@@ -18,6 +18,10 @@ type Outage struct {
 	Failures     int            `json:"failures"`
 	Errors       map[string]int `json:"errors"`       // classification → count
 	LostCommits  int64          `json:"lost_commits"` // acked before, missing after
+
+	// consecutiveOK is the current run of successes. Unexported, so it stays out
+	// of the JSON.
+	consecutiveOK int
 }
 
 // Availability is one detector's findings.
