@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/elenaochkina/dbtest/provider"
@@ -40,10 +41,9 @@ func New(tel *telemetry.Telemetry) (*dockerProvider, error) {
 	return &dockerProvider{client: client, image: img, tel: tel}, nil
 }
 
-// token and password parameters are ignored by Docker.
-// Daemon picks its own container ID, password is fixed
-// no need to preserve identity across retries compared to a cloud provider
-func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest, _, _ string) (provider.ClusterInfo, error) {
+// The password parameter is ignored by Docker — it is fixed at "test". The
+// token is used as the container name for idempotency
+func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest, token, _ string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 {
@@ -58,6 +58,14 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 	io.Copy(io.Discard, reader)
 	reader.Close()
 
+	// A named container on a shared network is what lets bench and probe address
+	// the database as <name>:5432 — an address that survives the restart
+	// the published host port, which PublishAllPorts reassigns on every start.
+	name := containerName(token)
+	if err := p.ensureNetwork(ctx); err != nil {
+		return provider.ClusterInfo{}, err
+	}
+
 	resp, err := p.client.ContainerCreate(ctx,
 		&container.Config{
 			Image: p.image,
@@ -67,16 +75,36 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 			PublishAllPorts: true,
 			Resources:       dockerResources(req),
 		},
-		nil, nil, "")
+		&network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{networkName: {}},
+		},
+		nil, name)
+
+	id := resp.ID
 	if err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("container create: %w", err)
+		//Docker adoption: try to find a same name container
+		if name == "" || !errdefs.IsConflict(err) {
+			return provider.ClusterInfo{}, fmt.Errorf("container create %q: %w", name, err)
+		}
+		existing, ierr := p.client.ContainerInspect(ctx, name)
+		if ierr != nil {
+			return provider.ClusterInfo{}, fmt.Errorf("adopt existing container %q: %w", name, ierr)
+		}
+		id = existing.ID
+		if p.tel != nil {
+			p.tel.Logger.Info("adopted container from a previous attempt",
+				slog.String("container_id", id),
+				slog.String("name", name),
+			)
+		}
 	}
 
-	if err := p.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+	// Starting an already-running container is a no-op
+	if err := p.client.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
 		return provider.ClusterInfo{}, fmt.Errorf("container start: %w", err)
 	}
 
-	hostPort, err := p.hostPort(ctx, resp.ID)
+	hostPort, err := p.hostPort(ctx, id)
 	if err != nil {
 		return provider.ClusterInfo{}, err
 	}
@@ -84,14 +112,48 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 	if p.tel != nil {
 		p.tel.Metrics.ProviderProvisionDuration.WithLabelValues("docker").Observe(time.Since(start).Seconds())
 		p.tel.Logger.Info("provisioned cluster",
-			slog.String("container_id", resp.ID),
+			slog.String("container_id", id),
 			slog.String("host_port", hostPort),
 			slog.Float64("vcpu", req.VCPU),
 			slog.Int("memory_mib", req.MemoryMiB),
 		)
 	}
 
-	return provider.ClusterInfo{ID: resp.ID, Target: targetForPort(hostPort), Password: "test"}, nil
+	return provider.ClusterInfo{
+		ID:       id,
+		Target:   targetForPort(hostPort),
+		Internal: targetForContainer(name),
+		Password: "test",
+	}, nil
+}
+
+// networkName is a single long-lived network shared by every run.
+const networkName = "dbtest-net"
+
+// ensureNetwork creates the shared network if it does not already exist.
+func (p *dockerProvider) ensureNetwork(ctx context.Context) error {
+	_, err := p.client.NetworkInspect(ctx, networkName, network.InspectOptions{})
+	if err == nil {
+		return nil
+	}
+	if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("inspect network %q: %w", networkName, err)
+	}
+	if _, err := p.client.NetworkCreate(ctx, networkName, network.CreateOptions{}); err != nil {
+		// A concurrent run may have won the race; that is success, not failure.
+		if !errdefs.IsConflict(err) {
+			return fmt.Errorf("create network %q: %w", networkName, err)
+		}
+	}
+	return nil
+}
+
+// containerName derives a stable name from the provisioning token
+func containerName(token string) string {
+	if token == "" {
+		return "" // no stable identity supplied — let Docker pick
+	}
+	return "dbtest-" + token
 }
 
 // dockerResources maps the cross-provider ProvisionRequest onto Docker's cgroup
@@ -163,8 +225,6 @@ func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) erro
 }
 
 // uses for init() as a parameter
-// this method is used as a value for
-// var registry = map[ProviderName]func(*telemetry.Telemetry) (Provider, error){}
 func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
 	return New(tel)
 }
@@ -184,8 +244,6 @@ func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.Clust
 		return provider.ClusterInfo{}, fmt.Errorf("container kill: %w", err)
 	}
 
-	// Wait for the container to actually exit before starting it, so the start
-	// does not race the kill.
 	statusCh, errCh := p.client.ContainerWait(ctx, cluster.ID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errCh:
@@ -213,7 +271,13 @@ func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.Clust
 			slog.Duration("took", time.Since(start)),
 		)
 	}
-	return provider.ClusterInfo{ID: cluster.ID, Target: targetForPort(hostPort), Password: cluster.Password}, nil
+
+	return provider.ClusterInfo{
+		ID:       cluster.ID,
+		Target:   targetForPort(hostPort),
+		Internal: cluster.Internal,
+		Password: cluster.Password,
+	}, nil
 }
 
 // Compile-time assertion that dockerProvider satisfies the core Provider contract.
@@ -237,12 +301,23 @@ func (p *dockerProvider) hostPort(ctx context.Context, containerID string) (stri
 }
 
 // targetForPort builds the provider-agnostic PGTarget for a container whose
-// Postgres is published on hostPort.
+// Postgres is published on hostPort. This is the worker's route, from outside
+// Docker.
 func targetForPort(hostPort string) provider.PGTarget {
 	port, _ := strconv.Atoi(hostPort)
 	return provider.PGTarget{
 		Host:     "localhost",
 		Port:     port,
+		Database: "postgres",
+		User:     "postgres",
+	}
+}
+
+// targetForContainer builds the route a sibling container usesa
+func targetForContainer(name string) provider.PGTarget {
+	return provider.PGTarget{
+		Host:     name,
+		Port:     5432,
 		Database: "postgres",
 		User:     "postgres",
 	}
