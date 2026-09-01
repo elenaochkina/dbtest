@@ -55,6 +55,13 @@ func (r *availabilityRecorder) up(at time.Time) *Outage {
 	return &r.completedOutages[len(r.completedOutages)-1]
 }
 
+// recordLostCommits attributes lost commits to the open outage.
+func (r *availabilityRecorder) recordLostCommits(n int64) {
+	if r.currentOutage != nil {
+		r.currentOutage.LostCommits += n
+	}
+}
+
 // availability returns what the recorder saw, including an outage that is still
 // open.
 func (r *availabilityRecorder) availability() Availability {

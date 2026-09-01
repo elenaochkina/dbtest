@@ -107,22 +107,30 @@ So the probe grows a second signal. Three levels, in increasing strength:
 
 | Level | Test | What it catches |
 |---|---|---|
-| reachable | connect + `SELECT 1` | the process is up and listening |
-| writable | `INSERT` into a scratch table | promotion finished; not in recovery |
-| durable | after recovery, re-read the acked sequence | commits survived the disruption |
+| readable | connect + read the counter | the process is up and serving reads |
+| writable | advance the counter, get it back | promotion finished; not in recovery |
+| durable | the returned value never goes backwards | commits survived the disruption |
 
-The elegant part is that one mechanism gives all three. The prober inserts a
-monotonically increasing sequence number and remembers the highest one the server
-**acked**. Reaching that point proves writability. After the outage it re-reads
-`max(seq)` and compares against the watermark: anything acked but missing is lost
-data. That is the acked-commit watermark from the PR #16 review, living in the
+The elegant part is that one mechanism gives all three. The prober keeps a single
+counter row, advances it by one per sample, and remembers the highest value the
+server handed back. Getting a value back proves writability. Because the counter
+is an ordinary row, it shares its transaction's fate: a lost commit takes it
+backwards, so the first successful write after an outage returns a value at or
+below the previous high, and the shortfall is the number of acknowledged commits
+lost. That is the acked-commit watermark from the PR #16 review, living in the
 prober — which is exactly the convergence that justified making the prober a
 container in the first place (§2.4, reason 2).
 
+A Postgres `SEQUENCE` cannot do this. `nextval` is non-transactional and its
+advances are WAL-logged in blocks, so after a crash it resumes *ahead* of the
+last value handed out. It jumps forward, never backward, and would report no loss
+in the one case being measured.
+
 ```sql
-CREATE TABLE IF NOT EXISTS dbtest_probe (seq BIGINT PRIMARY KEY, ts TIMESTAMPTZ NOT NULL DEFAULT now());
--- per sample: INSERT INTO dbtest_probe (seq) VALUES ($1)
--- after recovery: SELECT max(seq) FROM dbtest_probe
+CREATE TABLE IF NOT EXISTS dbtest_probe (id INT PRIMARY KEY, seq BIGINT NOT NULL, ts TIMESTAMPTZ NOT NULL DEFAULT now());
+INSERT INTO dbtest_probe (id, seq) VALUES (1, 0) ON CONFLICT (id) DO NOTHING;
+-- readable: SELECT seq FROM dbtest_probe WHERE id = 1
+-- writable: UPDATE dbtest_probe SET seq = seq + 1, ts = now() WHERE id = 1 RETURNING seq
 ```
 
 Two costs, both acceptable and both requiring the prober to be **identical across
@@ -315,7 +323,7 @@ Recorded per **disruption**, not per run — a run produces N rows.
 
 | Metric | Source | What it means |
 |---|---|---|
-| `reachable_downtime_ms` | prober: last OK → first OK after | The process is answering again. |
+| `readable_downtime_ms` | prober: last OK → first OK after | The process is answering again. |
 | `writable_downtime_ms` | prober: last acked write → first acked write after | The database is *back*. On a failover this is the real number; on a restart the two nearly coincide. |
 | `errors` | prober: per-sample classification | How the outage decomposed — `refused` (nothing listening), `57P03` (up, starting up / shutting down), `25006` (read-only transaction), `timeout`, DNS failure. Tells you *which phase* got longer. |
 | `lost_commits` | prober: acked watermark vs. `max(seq)` after | Durability verdict. Non-zero fails the run. |
@@ -381,7 +389,7 @@ CREATE TABLE IF NOT EXISTS downtime_results (
     disruption             TEXT NOT NULL,     -- restart | failover | crash
     high_availability      BOOLEAN NOT NULL,
     repetition             INT NOT NULL,      -- which of the N
-    reachable_downtime_ms  FLOAT8 NOT NULL,
+    readable_downtime_ms  FLOAT8 NOT NULL,
     writable_downtime_ms   FLOAT8,            -- NULL if writability never returned
     lost_commits           BIGINT NOT NULL,
     probe_interval_ms      FLOAT8 NOT NULL,
@@ -401,7 +409,7 @@ because it looks like an answer.
 ```sql
 SELECT provider, disruption, high_availability,
        count(*)                   AS n,
-       avg(reachable_downtime_ms) AS avg_reachable_ms,
+       avg(readable_downtime_ms) AS avg_readable_ms,
        avg(writable_downtime_ms)  AS avg_writable_ms,
        max(writable_downtime_ms)  AS worst_ms,
        sum(lost_commits)          AS lost
@@ -454,9 +462,9 @@ Deciding this before §3.3 gets built avoids doing it twice.
 
 - **The prober reports no completed outage** → it started too late, or the
   disruption never happened. Hard-fail; a missing measurement is not a fast one.
-- **`reachable_downtime_ms` is within a few multiples of `probe_interval_ms`** →
+- **`readable_downtime_ms` is within a few multiples of `probe_interval_ms`** →
   quantization is the size of the answer. Lower the interval before believing it.
-- **`writable_downtime_ms` equals `reachable_downtime_ms` on a failover** → the
+- **`writable_downtime_ms` equals `readable_downtime_ms` on a failover** → the
   probe is not actually testing writability (§2.2), or the failover didn't happen.
 - **`lost_commits > 0`** → not a downtime finding at all. A durability bug, or a
   broken watermark. Investigate before reporting any timing from that run.

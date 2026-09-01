@@ -24,21 +24,18 @@ type Config struct {
 type Probe struct {
 	cfg Config
 
-	reachable availabilityRecorder // connect + SELECT 1
-	writable  availabilityRecorder // INSERT acked
+	readable availabilityRecorder // connect + read the counter
+	writable availabilityRecorder // counter advanced and acked
 
-	// seq is handed to the next insert and never reused
+	// seq is the highest counter value the server has returned.
 	seq int64
-	// watermark is the highest seq the server explicitly acked;
-	watermark int64
-	acked     int64
 }
 
 func New(cfg Config) *Probe {
 	return &Probe{cfg: cfg}
 }
 
-// Prepare creates the table the writable observation inserts into.
+// Prepare creates the counter row the writable observation advances.
 // Retried in case the probe has been started but the database is still in
 // booting mode.
 func (p *Probe) Prepare(ctx context.Context) error {
@@ -54,10 +51,15 @@ func (p *Probe) Prepare(ctx context.Context) error {
 			}
 			defer conn.Close(context.Background())
 
-			_, err = conn.Exec(cctx, `CREATE TABLE IF NOT EXISTS dbtest_probe (
-				seq BIGINT PRIMARY KEY,
+			if _, err := conn.Exec(cctx, `CREATE TABLE IF NOT EXISTS dbtest_probe (
+				id  INT PRIMARY KEY,
+				seq BIGINT NOT NULL,
 				ts  TIMESTAMPTZ NOT NULL DEFAULT now()
-			)`)
+			)`); err != nil {
+				return err
+			}
+			_, err = conn.Exec(cctx,
+				"INSERT INTO dbtest_probe (id, seq) VALUES (1, 0) ON CONFLICT (id) DO NOTHING")
 			return err
 		}()
 		if err == nil {
@@ -89,19 +91,19 @@ func (p *Probe) Run(ctx context.Context) Result {
 			break
 		}
 		started := time.Now()
-		reachErr, writeErr := p.sample(ctx)
+		lost, readErr, writeErr := p.sample(ctx)
 		res.Samples++
 
-		p.reachable.record(started, reachErr)
+		// Attributed while the outage is still open, since it closes later.
+		if lost > 0 {
+			slog.Error("acknowledged commits lost", "count", lost)
+			p.writable.recordLostCommits(lost)
+			res.LostCommits += lost
+		}
+
+		p.readable.record(started, readErr)
 		// Writable recovers last, so it decides when the run is done.
 		if closed := p.writable.record(started, writeErr); closed != nil {
-			lost, err := p.lostCommits(ctx)
-			if err != nil {
-				slog.Error("durability check failed", "error", err)
-			} else {
-				closed.LostCommits = lost
-				res.LostCommits += lost
-			}
 			slog.Info("outage ended",
 				"down_ms", closed.DownMs,
 				"failures", closed.Failures,
@@ -119,10 +121,10 @@ func (p *Probe) Run(ctx context.Context) Result {
 		}
 	}
 
-	res.Reachable = p.reachable.availability()
+	res.Readable = p.readable.availability()
 	res.Writable = p.writable.availability()
 	res.EndedAt = time.Now()
-	res.AckedCommits = p.acked
+	res.AckedCommits = p.seq
 	if len(p.writable.completedOutages) < p.cfg.Repetitions {
 		res.Error = fmt.Sprintf("observed %d completed outages, expected %d",
 			len(p.writable.completedOutages), p.cfg.Repetitions)
@@ -133,54 +135,37 @@ func (p *Probe) Run(ctx context.Context) Result {
 // sample takes both observations from one connection, so they describe the same
 // server at the same moment. The connection is new every time: a held one can
 // keep working after the server would refuse a new one.
-func (p *Probe) sample(ctx context.Context) (reachErr, writeErr error) {
+// It also reports how many acknowledged commits the server has lost.
+func (p *Probe) sample(ctx context.Context) (lost int64, readErr, writeErr error) {
 	cctx, cancel := context.WithTimeout(ctx, p.cfg.Timeout)
 	defer cancel()
 
 	conn, err := pgx.Connect(cctx, p.cfg.DSN)
 	if err != nil {
-		return err, err
+		return 0, err, err
 	}
 	defer conn.Close(context.Background())
 
-	var one int
-	if err := conn.QueryRow(cctx, "SELECT 1").Scan(&one); err != nil {
-		return err, err
+	var stored int64
+	if err := conn.QueryRow(cctx, "SELECT seq FROM dbtest_probe WHERE id = 1").Scan(&stored); err != nil {
+		return 0, err, err
 	}
 
 	// The write gets a shorter timeout than the connect: a hanging write would
 	// stretch the whole sample.
-	p.seq++
 	wctx, wcancel := context.WithTimeout(ctx, p.cfg.WriteTimeout)
 	defer wcancel()
-	if _, err := conn.Exec(wctx, "INSERT INTO dbtest_probe (seq) VALUES ($1)", p.seq); err != nil {
-		return nil, err
+	var seq int64
+	if err := conn.QueryRow(wctx,
+		"UPDATE dbtest_probe SET seq = seq + 1, ts = now() WHERE id = 1 RETURNING seq").Scan(&seq); err != nil {
+		return 0, nil, err
 	}
 
-	p.watermark = p.seq
-	p.acked++
-	return nil, nil
-}
-
-// lostCommits counts rows the server acked and then lost. Extra rows from
-// indeterminate writes are ignored.
-func (p *Probe) lostCommits(ctx context.Context) (int64, error) {
-	cctx, cancel := context.WithTimeout(ctx, p.cfg.Timeout)
-	defer cancel()
-
-	conn, err := pgx.Connect(cctx, p.cfg.DSN)
-	if err != nil {
-		return 0, err
+	// If the newly returned seq is less than or equal to the highest one
+	// already returned, one or more acknowledged commits were lost.
+	if seq <= p.seq {
+		lost = p.seq - seq + 1
 	}
-	defer conn.Close(context.Background())
-
-	var present int64
-	if err := conn.QueryRow(cctx,
-		"SELECT count(*) FROM dbtest_probe WHERE seq <= $1", p.watermark).Scan(&present); err != nil {
-		return 0, err
-	}
-	if lost := p.acked - present; lost > 0 {
-		return lost, nil
-	}
-	return 0, nil
+	p.seq = seq
+	return lost, nil, nil
 }

@@ -2,8 +2,8 @@
 // acknowledged commits survive a disruption.
 //
 // Each sample opens one connection and takes both observations from it:
-// "reachable" (the server answered a trivial query) and "writable" (the server
-// acked an insert).
+// "readable" (the server returned the counter) and "writable" (the server acked
+// an advance of it).
 package main
 
 import (

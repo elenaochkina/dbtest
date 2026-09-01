@@ -39,8 +39,8 @@ type Result struct {
 	Samples     int       `json:"samples"`
 	Repetitions int       `json:"repetitions"` // disruptions expected
 
-	Reachable Availability `json:"reachable"` // connect + SELECT 1
-	Writable  Availability `json:"writable"`  // INSERT acked
+	Readable Availability `json:"readable"` // connect + read the counter
+	Writable Availability `json:"writable"` // counter advanced and acked
 
 	AckedCommits int64  `json:"acked_commits"`
 	LostCommits  int64  `json:"lost_commits"` // acked, then missing after recovery
