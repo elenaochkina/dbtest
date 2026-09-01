@@ -26,16 +26,11 @@ func main() {
 	flag.DurationVar(&cfg.Interval, "interval", 20*time.Millisecond, "time between samples")
 	flag.DurationVar(&cfg.Timeout, "timeout", 2*time.Second, "per-sample connect + read timeout")
 	flag.DurationVar(&cfg.WriteTimeout, "write-timeout", 500*time.Millisecond, "per-sample write timeout")
-	flag.DurationVar(&cfg.MaxDuration, "max-duration", 10*time.Minute, "give up if the expected outages never arrive")
-	flag.IntVar(&cfg.Repetitions, "repetitions", 1, "how many disruptions to observe before exiting")
+	flag.DurationVar(&cfg.MaxDuration, "max-duration", time.Hour, "stop polling even if nothing stops the probe")
 	flag.Parse()
 
 	if cfg.DSN == "" {
 		slog.Error("-dsn is required")
-		os.Exit(2)
-	}
-	if cfg.Repetitions < 1 {
-		slog.Error("-repetitions must be at least 1")
 		os.Exit(2)
 	}
 
@@ -57,13 +52,7 @@ func main() {
 		slog.Error("marshal result", "error", err)
 		os.Exit(1)
 	}
+	// The probe reports what it saw and exits. Whether that matches the
+	// disruptions applied is for the caller that applied them to judge.
 	fmt.Println(string(payload))
-
-	// A measurement that never saw what it was sent to see is a failure of the
-	// prober's job. Lost commits are not — that is a successful measurement of a
-	// bad outcome, and the caller decides what it means.
-	if res.Error != "" {
-		slog.Error("measurement incomplete", "error", res.Error)
-		os.Exit(1)
-	}
 }

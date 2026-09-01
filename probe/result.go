@@ -33,11 +33,10 @@ type Availability struct {
 
 // Result is what the harness reads off stdout.
 type Result struct {
-	StartedAt   time.Time `json:"started_at"`
-	EndedAt     time.Time `json:"ended_at"`
-	IntervalMs  float64   `json:"interval_ms"`
-	Samples     int       `json:"samples"`
-	Repetitions int       `json:"repetitions"` // disruptions expected
+	StartedAt  time.Time `json:"started_at"`
+	EndedAt    time.Time `json:"ended_at"`
+	IntervalMs float64   `json:"interval_ms"`
+	Samples    int       `json:"samples"`
 
 	Readable Availability `json:"readable"` // connect + read the counter
 	Writable Availability `json:"writable"` // counter advanced and acked

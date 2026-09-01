@@ -187,8 +187,10 @@ workflow provisions once and applies the disruption N times, settling between
 repetitions.
 
 The prober spans all N, which is why its result is a **list** of outages rather
-than one — `cmd/probe` models it that way, and `-repetitions` says how many
-disruptions to watch for before exiting.
+than one. It holds no expectation of how many: the workflow applies the
+disruptions, so the workflow is what knows. `cmd/probe` polls until the workflow
+stops it, then prints the outages it saw; `-max-duration` is only a backstop so a
+container nothing stops cannot poll forever.
 
 ## 3. Architecture
 

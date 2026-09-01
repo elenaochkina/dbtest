@@ -2,7 +2,6 @@ package probe
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -15,8 +14,7 @@ type Config struct {
 	Interval     time.Duration // time between samples
 	Timeout      time.Duration // per-sample connect + read timeout
 	WriteTimeout time.Duration // per-sample write timeout
-	MaxDuration  time.Duration // give up if the expected outages never arrive
-	Repetitions  int           // disruptions to observe before returning
+	MaxDuration  time.Duration // backstop if nothing ever stops the probe
 }
 
 // Probe measures database availability at two levels and checks that
@@ -76,13 +74,12 @@ func (p *Probe) Prepare(ctx context.Context) error {
 	}
 }
 
-// Run polls until it has watched the expected number of outages end, the
-// deadline passes, or the context is cancelled.
+// Run polls until it is stopped or the deadline passes. How many disruptions to
+// watch for is the caller's business, not the probe's.
 func (p *Probe) Run(ctx context.Context) Result {
 	res := Result{
-		StartedAt:   time.Now(),
-		IntervalMs:  float64(p.cfg.Interval.Microseconds()) / 1000,
-		Repetitions: p.cfg.Repetitions,
+		StartedAt:  time.Now(),
+		IntervalMs: float64(p.cfg.Interval.Microseconds()) / 1000,
 	}
 	deadline := res.StartedAt.Add(p.cfg.MaxDuration)
 
@@ -92,6 +89,11 @@ func (p *Probe) Run(ctx context.Context) Result {
 		}
 		started := time.Now()
 		lost, readErr, writeErr := p.sample(ctx)
+
+		// A sample cut short by shutdown says nothing about the database.
+		if ctx.Err() != nil {
+			break
+		}
 		res.Samples++
 
 		// Attributed while the outage is still open, since it closes later.
@@ -102,18 +104,14 @@ func (p *Probe) Run(ctx context.Context) Result {
 		}
 
 		p.readable.record(started, readErr)
-		// Writable recovers last, so it decides when the run is done.
+		// Writable recovers last, so it brackets the outage that matters.
 		if closed := p.writable.record(started, writeErr); closed != nil {
 			slog.Info("outage ended",
 				"down_ms", closed.DownMs,
 				"failures", closed.Failures,
 				"lost_commits", closed.LostCommits,
 				"observed", len(p.writable.completedOutages),
-				"expected", p.cfg.Repetitions,
 			)
-			if len(p.writable.completedOutages) >= p.cfg.Repetitions {
-				break
-			}
 		}
 
 		if rest := p.cfg.Interval - time.Since(started); rest > 0 {
@@ -125,10 +123,6 @@ func (p *Probe) Run(ctx context.Context) Result {
 	res.Writable = p.writable.availability()
 	res.EndedAt = time.Now()
 	res.AckedCommits = p.seq
-	if len(p.writable.completedOutages) < p.cfg.Repetitions {
-		res.Error = fmt.Sprintf("observed %d completed outages, expected %d",
-			len(p.writable.completedOutages), p.cfg.Repetitions)
-	}
 	return res
 }
 
