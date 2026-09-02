@@ -31,9 +31,12 @@ type Runner interface {
 	// Wait blocks until the container exits and returns its exit code.
 	Wait(ctx context.Context, h Handle) (int, error)
 
-	// Stop terminates the container if it is still running, then removes it.
-	// Read Output first
+	// Stop asks the container to exit and waits for it. The container is left in
+	// place so its streams can still be read.
 	Stop(ctx context.Context, h Handle) error
+
+	// Remove discards the container and everything it printed. Read Output first.
+	Remove(ctx context.Context, h Handle) error
 
 	Output(ctx context.Context, h Handle) ([]byte, error)
 

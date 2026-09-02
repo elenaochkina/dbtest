@@ -84,15 +84,21 @@ func (r *dockerRunner) Wait(ctx context.Context, h harness.Handle) (int, error) 
 	}
 }
 
-// Stop terminates the container if it is still running, then removes it.
+// Stop sends SIGTERM and waits for the container to exit, leaving it in place.
+// The grace period has to outlast one sample plus writing the result.
 func (r *dockerRunner) Stop(ctx context.Context, h harness.Handle) error {
-	timeout := 5
+	timeout := 10
 	if err := r.client.ContainerStop(ctx, h.ID, container.StopOptions{Timeout: &timeout}); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("container stop: %w", err)
 	}
+	return nil
+}
+
+// Remove discards the container, and with it everything it printed.
+func (r *dockerRunner) Remove(ctx context.Context, h harness.Handle) error {
 	if err := r.client.ContainerRemove(ctx, h.ID, container.RemoveOptions{Force: true}); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil
