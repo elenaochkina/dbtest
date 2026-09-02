@@ -100,8 +100,9 @@ func (o *Outage) succeed(at time.Time) bool {
 		o.FirstOKAfter = at
 		o.DownMs = float64(at.Sub(o.LastOK).Microseconds()) / 1000
 	}
-	// A database mid-recovery can accept one connection and refuse the next.
-	// 20 samples is 400ms of stability at the default interval.
+	// A database mid-recovery can accept one connection and refuse the next, and a
+	// managed failover can flap for seconds. 20 samples is 5s of stability at the
+	// default interval.
 	return o.consecutiveOK >= 20
 }
 
