@@ -1,8 +1,9 @@
-package temporal
+package workflows
 
 import (
 	"github.com/elenaochkina/dbtest/pgbench"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/temporal/activities"
 	"github.com/elenaochkina/dbtest/workload"
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/workflow"
@@ -25,13 +26,13 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 	// Typed-nil receivers: Temporal resolves each ExecuteActivity to the method's
 	// registered name, so no real instance is needed here.
 	var (
-		runs *SaveResultActivities
-		prov *ProviderActivities
-		work *WorkloadActivities
+		runs *activities.SaveResultActivities
+		prov *activities.ProviderActivities
+		work *activities.WorkloadActivities
 	)
 
 	var runID uuid.UUID
-	if err = workflow.ExecuteActivity(ctx, runs.StartRun, StartRunInput{
+	if err = workflow.ExecuteActivity(ctx, runs.StartRun, activities.StartRunInput{
 		Scenario: "pg-bench",
 		Seed:     cfg.Workload.Seed,
 		Provider: cfg.Provider,
@@ -42,7 +43,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 	defer func() {
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
-		_ = workflow.ExecuteActivity(dctx, runs.EndRun, EndRunInput{
+		_ = workflow.ExecuteActivity(dctx, runs.EndRun, activities.EndRunInput{
 			RunID:  runID,
 			Passed: err == nil,
 		}).Get(dctx, nil)
@@ -57,7 +58,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 	}
 
 	var cluster provider.ClusterInfo
-	if err = workflow.ExecuteActivity(ctx, prov.Provision, ProvisionInput{
+	if err = workflow.ExecuteActivity(ctx, prov.Provision, activities.ProvisionInput{
 		Provider: cfg.Provider,
 		Request:  cfg.Request,
 		Token:    runID.String(),
@@ -69,7 +70,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 	defer func() {
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
-		if derr := workflow.ExecuteActivity(dctx, prov.Deprovision, DeprovisionInput{
+		if derr := workflow.ExecuteActivity(dctx, prov.Deprovision, activities.DeprovisionInput{
 			Provider:  cfg.Provider,
 			ClusterID: cluster.ID,
 		}).Get(dctx, nil); derr != nil && err == nil {
@@ -77,7 +78,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 		}
 	}()
 
-	if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, WaitForReadyInput{
+	if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
 		Provider: cfg.Provider,
 		Cluster:  cluster,
 	}).Get(ctx, nil); err != nil {
@@ -86,7 +87,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 
 	workloadCfg := cfg.Workload
 	workloadCfg.ProviderName = string(cfg.Provider)
-	wl := WorkloadInput{Cluster: cluster, Config: workloadCfg}
+	wl := activities.WorkloadInput{Cluster: cluster, Config: workloadCfg}
 
 	// Warehouse is the correctness workload;
 	if err = workflow.ExecuteActivity(ctx, work.RunWarehouse, wl).Get(ctx, nil); err != nil {
@@ -97,7 +98,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 		return err
 	}
 
-	if err = workflow.ExecuteActivity(ctx, runs.SaveResult, SaveResultInput{
+	if err = workflow.ExecuteActivity(ctx, runs.SaveResult, activities.SaveResultInput{
 		RunID:  runID,
 		Result: result,
 	}).Get(ctx, nil); err != nil {
