@@ -46,21 +46,20 @@ type Result struct {
 	Error        string `json:"error,omitempty"`
 }
 
-// Parse reads the result off a container's stdout, which is the last non-empty
-// line.
-func Parse(stdout []byte) (Result, error) {
-	line := ""
-	for l := range strings.SplitSeq(strings.TrimSpace(string(stdout)), "\n") {
-		if s := strings.TrimSpace(l); s != "" {
-			line = s
+// Parse reads the result out of a container's output: the last line that parses
+// as a Result. Runners return stdout and stderr interleaved, so the last
+// non-empty line is a log line as often as it is the result.
+func Parse(out []byte) (Result, error) {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var res Result
+		if err := json.Unmarshal([]byte(line), &res); err == nil {
+			return res, nil
 		}
 	}
-	if line == "" {
-		return Result{}, fmt.Errorf("probe produced no result")
-	}
-	var res Result
-	if err := json.Unmarshal([]byte(line), &res); err != nil {
-		return Result{}, fmt.Errorf("parse probe result %q: %w", line, err)
-	}
-	return res, nil
+	return Result{}, fmt.Errorf("no probe result in %d lines of output", len(lines))
 }

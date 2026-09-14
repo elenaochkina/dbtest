@@ -11,44 +11,42 @@ import (
 )
 
 type Spec struct {
-	Image   string
-	Args    []string // appended to the image's entrypoint
-	Name    string
-	Network string
+	Image string
+	Args  []string // appended to the image's entrypoint
+	Name  string
+	// SelfExits marks a container that ends on its own, the way bench does when
+	// its run finishes. Stop waits for those rather than terminating them.
+	SelfExits bool
 }
 
-// Handle identifies a started container: a container ID on Docker, a task ARN
-// on ECS.
-type Handle struct{ ID string }
+// Handle is the runner's identifier for a started container. It carries
+// everything Stop needs: Run and Stop happen in separate activities, and nothing
+// else travels between them.
+type Handle struct {
+	ID        string
+	SelfExits bool
+}
 
-// Runner starts a container and lets the caller wait for it, stop it, and read
-// its streams.
-// Output streams returns a container stdout as result
-
+// Runner starts a container somewhere and collects what it printed.
 type Runner interface {
-	Start(ctx context.Context, spec Spec) (Handle, error)
+	// Run creates and starts the container and returns once it is running.
+	Run(ctx context.Context, spec Spec) (Handle, error)
 
-	// Wait blocks until the container exits and returns its exit code.
-	Wait(ctx context.Context, h Handle) (int, error)
-
-	// Stop asks the container to exit and waits for it. The container is left in
-	// place so its streams can still be read.
-	Stop(ctx context.Context, h Handle) error
-
-	// Remove discards the container and everything it printed. Read Output first.
-	Remove(ctx context.Context, h Handle) error
-
-	Output(ctx context.Context, h Handle) ([]byte, error)
-
-	Logs(ctx context.Context, h Handle) ([]byte, error)
+	// Stop ends the container and returns everything it printed, stdout and
+	// stderr together. Fargate cannot separate the two, so nothing may depend on
+	// the split. Output is returned even when the error is non-nil, because a
+	// container that exits non-zero has usually still printed its result.
+	//
+	// Not safe to call twice: on Docker it removes the container.
+	Stop(ctx context.Context, h Handle) ([]byte, error)
 }
 
 // RunnerName is the typed identifier for a Runner implementation.
 type RunnerName string
 
 const (
-	Docker RunnerName = "docker"
-	ECS    RunnerName = "ecs"
+	Docker  RunnerName = "docker"
+	Fargate RunnerName = "fargate"
 )
 
 var registry = map[RunnerName]func(*telemetry.Telemetry) (Runner, error){}
@@ -57,8 +55,8 @@ func Register(name RunnerName, fn func(*telemetry.Telemetry) (Runner, error)) {
 	registry[name] = fn
 }
 
-// Run returns a Runner for the given name.
-func Run(name RunnerName, tel *telemetry.Telemetry) (Runner, error) {
+// New returns a Runner for the given name.
+func New(name RunnerName, tel *telemetry.Telemetry) (Runner, error) {
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown runner %q; registered: %v", name, registeredNames())
