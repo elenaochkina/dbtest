@@ -20,8 +20,7 @@ type Config struct {
 }
 
 // Initialize runs `pgbench -i -s <ScaleFactor> <dsn>`, creating and populating
-// the pgbench tables in the target database. Safe to call repeatedly — pgbench
-// drops and recreates the tables each time. Does not emit metrics.
+// the pgbench tables in the target database.
 func Initialize(ctx context.Context, dsn string, cfg Config) error {
 	out, err := exec.CommandContext(ctx,
 		"pgbench", "-i", "-s", strconv.Itoa(cfg.ScaleFactor), dsn,
@@ -32,15 +31,9 @@ func Initialize(ctx context.Context, dsn string, cfg Config) error {
 	return nil
 }
 
-// RunLocal initializes pgbench tables then runs the standard TPC-B workload
-// with -c <Clients> -T <seconds> -P 5 --no-vacuum against dsn.
-// Emits BenchmarkTPS, BenchmarkLatencyAvgMs, and BenchmarkLatencyStddevMs
-// metrics and logs "benchmark complete" if tel is not nil.
-func RunLocal(ctx context.Context, dsn string, cfg Config, tel *telemetry.Telemetry) (Result, error) {
-	if err := Initialize(ctx, dsn, cfg); err != nil {
-		return Result{}, err
-	}
-
+// Run executes the standard TPC-B workload with -c <Clients> -T <seconds> -P 5
+// --no-vacuum against dsn.
+func Run(ctx context.Context, dsn string, cfg Config, tel *telemetry.Telemetry) (Result, error) {
 	seconds := strconv.Itoa(int(cfg.Duration.Seconds()))
 	out, err := exec.CommandContext(ctx,
 		"pgbench",

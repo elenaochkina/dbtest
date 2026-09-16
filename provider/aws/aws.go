@@ -165,9 +165,13 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 		)
 	}
 
+	target := provider.PGTarget{Host: host, Port: port, Database: p.cfg.Database, User: p.cfg.Username}
 	return provider.ClusterInfo{
-		ID:       instanceID,
-		Target:   provider.PGTarget{Host: host, Port: port, Database: p.cfg.Database, User: p.cfg.Username},
+		ID:     instanceID,
+		Target: target,
+		// The RDS endpoint resolves the same from the worker and from a task in
+		// the VPC, so there is no second address to hand out.
+		Internal: target,
 		Password: password,
 	}, nil
 }

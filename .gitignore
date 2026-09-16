@@ -13,6 +13,7 @@
 # Editor
 .idea/
 .vscode/
+.claude/
 *.swp
 
 

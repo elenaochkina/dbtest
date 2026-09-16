@@ -30,12 +30,11 @@ func (t PGTarget) URL(password string) string {
 // ClusterInfo is returned by Provision and used to connect and deprovision.
 type ClusterInfo struct {
 	ID       string   // provider-specific identifier (e.g. Docker container ID, RDS instance ID)
-	Target   PGTarget // how to reach the database
+	Target   PGTarget // how the worker reaches the database
+	Internal PGTarget // a sibling container reaches the same database.
 	Password string   // master password; rendered into a DSN at connect time, never persisted
 }
 
-// ProvisionRequest is the scenario's resource spec for a cluster — the "how
-// much" the scenario declares and Provision honors.
 type ProvisionRequest struct {
 	VCPU            float64
 	MemoryMiB       int
@@ -44,13 +43,7 @@ type ProvisionRequest struct {
 }
 
 // Provider is the interface every database provider must satisfy.
-//
-// token and password pin the provision's identity so it is idempotent under
-// retries: a caller that may retry (the Temporal activity) passes the same
-// values on every attempt, so a retried Provision adopts the instance a prior
-// attempt created instead of orphaning it. Empty means "no stable identity
-// supplied" — the provider mints its own, which is correct for the standalone
-// path that never retries.
+
 type Provider interface {
 	Provision(ctx context.Context, req ProvisionRequest, token, password string) (ClusterInfo, error)
 	WaitForReady(ctx context.Context, cluster ClusterInfo) error
@@ -75,14 +68,12 @@ const (
 // Populated by each provider package via init() + Register().
 var registry = map[ProviderName]func(*telemetry.Telemetry) (Provider, error){}
 
-// Register adds a provider constructor to the registry.
 // Call this from init() in each provider package.
 func Register(name ProviderName, fn func(*telemetry.Telemetry) (Provider, error)) {
 	registry[name] = fn
 }
 
 // Run returns a Provider for the given name.
-// tel may be nil — metrics and logs are skipped when nil.
 func Run(name ProviderName, tel *telemetry.Telemetry) (Provider, error) {
 	fn, ok := registry[name]
 	if !ok {

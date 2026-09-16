@@ -19,13 +19,28 @@ type pgbenchWorkload struct{ cfg Config }
 
 func (s *pgbenchWorkload) Name() string { return string(Pgbench) }
 
-func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) (Result, error) {
-	result, err := pgbench.RunLocal(ctx, dsn, pgbench.Config{
+// pgbenchConfig maps the shared workload Config onto pgbench's own.
+func (s *pgbenchWorkload) pgbenchConfig() pgbench.Config {
+	return pgbench.Config{
 		ScaleFactor: s.cfg.ScaleFactor,
 		Clients:     s.cfg.Clients,
 		Duration:    s.cfg.Duration,
 		Provider:    s.cfg.ProviderName,
-	}, tel)
+	}
+}
+
+// Initialize creates and populates the pgbench tables. It satisfies Initializer,
+// so callers can act between setup and the measured phase.
+func (s *pgbenchWorkload) Initialize(ctx context.Context, dsn string, _ *telemetry.Telemetry) error {
+	if err := pgbench.Initialize(ctx, dsn, s.pgbenchConfig()); err != nil {
+		return fmt.Errorf("pgbench: %w", err)
+	}
+	return nil
+}
+
+// Run assumes Initialize has already run — the tables must exist.
+func (s *pgbenchWorkload) Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) (Result, error) {
+	result, err := pgbench.Run(ctx, dsn, s.pgbenchConfig(), tel)
 	if err != nil {
 		return nil, fmt.Errorf("pgbench: %w", err)
 	}

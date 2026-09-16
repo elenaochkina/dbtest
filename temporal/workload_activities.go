@@ -50,11 +50,20 @@ func (a *WorkloadActivities) RunPgbench(ctx context.Context, input WorkloadInput
 	return result, nil
 }
 
-// runWorkload resolves a workload by name and runs it against the cluster.
+// runWorkload resolves a workload by name, runs its setup phase if it has one,
+// then runs it against the cluster — the single-shot path, for workflows that
+// only want a throughput number. Workflows that must keep the phases apart,
+// because setup is destructive, drive the bench container directly instead.
 func (a *WorkloadActivities) runWorkload(ctx context.Context, name workload.WorkloadName, input WorkloadInput) (workload.Result, error) {
 	w, err := workload.New(name, input.Config)
 	if err != nil {
 		return nil, fmt.Errorf("workload %q: %w", name, err)
 	}
-	return w.Run(ctx, input.Cluster.Target.URL(input.Cluster.Password), a.tel)
+	dsn := input.Cluster.Target.URL(input.Cluster.Password)
+	if init, ok := w.(workload.Initializer); ok {
+		if err := init.Initialize(ctx, dsn, a.tel); err != nil {
+			return nil, fmt.Errorf("workload %q initialize: %w", name, err)
+		}
+	}
+	return w.Run(ctx, dsn, a.tel)
 }

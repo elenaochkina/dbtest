@@ -10,19 +10,19 @@ import (
 )
 
 // Result is the outcome of a workload run. It is domain-neutral: each workload
-// returns its own concrete result type (e.g. pgbench.Result, validator.Checksum)
-// which satisfies this interface structurally — the primitive packages do not
-// import workload. The Metrics map is the observability view (telemetry, logs,
-// dashboards); typed persistence still uses the concrete types. Workloads with
-// no numeric output may return nil.
+// returns its own concrete result type.
 type Result interface {
 	Metrics() map[string]float64
 }
 
-// Workload is the interface every workload must satisfy.
 type Workload interface {
 	Name() string
 	Run(ctx context.Context, dsn string, tel *telemetry.Telemetry) (Result, error)
+}
+
+// Initializer is an optional workload capability
+type Initializer interface {
+	Initialize(ctx context.Context, dsn string, tel *telemetry.Telemetry) error
 }
 
 // WorkloadName is the typed identifier for a workload.
