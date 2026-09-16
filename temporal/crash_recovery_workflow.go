@@ -101,9 +101,10 @@ func CrashRecoveryWorkflow(ctx workflow.Context, cfg CrashRecoveryWorkflowConfig
 	}
 
 	// Kill the instance, then wait for it to recover.
-	if err = workflow.ExecuteActivity(ctx, prov.KillProcess, KillProcessInput{
-		Provider: cfg.Provider,
-		Cluster:  cluster,
+	if err = workflow.ExecuteActivity(ctx, prov.Disrupt, DisruptInput{
+		Provider:   cfg.Provider,
+		Cluster:    cluster,
+		Disruption: provider.Crash,
 	}).Get(ctx, &cluster); err != nil {
 		return err
 	}

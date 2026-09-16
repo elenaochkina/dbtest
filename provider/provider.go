@@ -40,6 +40,9 @@ type ProvisionRequest struct {
 	MemoryMiB       int
 	DiskGiB         int
 	PostgresVersion string
+	// HighAvailability asks for a standby to fail over to: Multi-AZ on RDS, an
+	// HA instance on CloudSQL. Without it Failover is unavailable.
+	HighAvailability bool
 }
 
 // Provider is the interface every database provider must satisfy.
@@ -48,12 +51,21 @@ type Provider interface {
 	Provision(ctx context.Context, req ProvisionRequest, token, password string) (ClusterInfo, error)
 	WaitForReady(ctx context.Context, cluster ClusterInfo) error
 	Deprovision(ctx context.Context, clusterID string) error
-}
 
-// FailureInjector is an optional provider capability: providers that can inject
-// a forced, ungraceful failure into a running cluster implement it.
-type FailureInjector interface {
-	KillProcess(ctx context.Context, cluster ClusterInfo) (ClusterInfo, error)
+	// Supports reports whether req could be disrupted this way. It takes the
+	// request rather than a cluster so the caller can ask before provisioning.
+	Supports(req ProvisionRequest, disruption Disruption) bool
+
+	// Disrupt applies the disruption and returns once the cluster has settled.
+	// Settling is part of the call so that repeated disruptions do not overlap
+	// one recovery with the next.
+	//
+	// The returned ClusterInfo replaces the caller's copy. A restarted container
+	// comes back on a different port.
+	//
+	// Not safe to retry: a second call is a second disruption, which a prober
+	// records as a real outage.
+	Disrupt(ctx context.Context, cluster ClusterInfo, disruption Disruption) (ClusterInfo, error)
 }
 
 // ProviderName is the typed identifier for a provider implementation.

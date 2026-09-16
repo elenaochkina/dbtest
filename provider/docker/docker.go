@@ -224,48 +224,47 @@ func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) erro
 	return nil
 }
 
-// uses for init() as a parameter
-func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
-	return New(tel)
+// Supports reports which disruptions a container can be put through.
+func (p *dockerProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
+	return disruption == provider.Restart || disruption == provider.Crash
 }
 
-func init() {
-	provider.Register(provider.Docker, newProvider)
-}
-
-// KillProcess injects a forced, ungraceful failure: it SIGKILLs the container's
-// main process (postgres) to simulate a crash, waits for it to exit, then starts
-// it again — so the database comes back through WAL crash recovery rather than a
-// clean shutdown.
-func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.ClusterInfo) (provider.ClusterInfo, error) {
+// Disrupt stops the container and starts it again, gracefully for Restart and
+// with a SIGKILL for Crash, so that Crash comes back through WAL recovery rather
+// than a clean shutdown.
+func (p *dockerProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
 	start := time.Now()
 
-	if err := p.client.ContainerKill(ctx, cluster.ID, "SIGKILL"); err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("container kill: %w", err)
-	}
-
-	statusCh, errCh := p.client.ContainerWait(ctx, cluster.ID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return provider.ClusterInfo{}, fmt.Errorf("wait for kill: %w", err)
+	switch disruption {
+	case provider.Restart:
+		timeout := 30
+		if err := p.client.ContainerRestart(ctx, cluster.ID, container.StopOptions{Timeout: &timeout}); err != nil {
+			return provider.ClusterInfo{}, fmt.Errorf("container restart: %w", err)
 		}
-	case <-statusCh:
-	case <-ctx.Done():
-		return provider.ClusterInfo{}, ctx.Err()
+	case provider.Crash:
+		if err := p.client.ContainerKill(ctx, cluster.ID, "SIGKILL"); err != nil {
+			return provider.ClusterInfo{}, fmt.Errorf("container kill: %w", err)
+		}
+		if err := p.waitStopped(ctx, cluster.ID); err != nil {
+			return provider.ClusterInfo{}, err
+		}
+		if err := p.client.ContainerStart(ctx, cluster.ID, container.StartOptions{}); err != nil {
+			return provider.ClusterInfo{}, fmt.Errorf("container start: %w", err)
+		}
+	default:
+		return provider.ClusterInfo{}, fmt.Errorf("docker cannot %s a container", disruption)
 	}
 
-	if err := p.client.ContainerStart(ctx, cluster.ID, container.StartOptions{}); err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("container start: %w", err)
-	}
-
+	// PublishAllPorts reassigns the host port on every start, so the caller's
+	// copy of the target is stale.
 	hostPort, err := p.hostPort(ctx, cluster.ID)
 	if err != nil {
 		return provider.ClusterInfo{}, err
 	}
 
 	if p.tel != nil {
-		p.tel.Logger.Info("force-restarted cluster (SIGKILL)",
+		p.tel.Logger.Info("disrupted cluster",
+			slog.String("disruption", string(disruption)),
 			slog.String("container_id", cluster.ID),
 			slog.String("host_port", hostPort),
 			slog.Duration("took", time.Since(start)),
@@ -280,11 +279,32 @@ func (p *dockerProvider) KillProcess(ctx context.Context, cluster provider.Clust
 	}, nil
 }
 
+func (p *dockerProvider) waitStopped(ctx context.Context, containerID string) error {
+	statusCh, errCh := p.client.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("wait for stop: %w", err)
+		}
+		return nil
+	case <-statusCh:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// uses for init() as a parameter
+func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
+	return New(tel)
+}
+
+func init() {
+	provider.Register(provider.Docker, newProvider)
+}
+
 // Compile-time assertion that dockerProvider satisfies the core Provider contract.
 var _ provider.Provider = (*dockerProvider)(nil)
-
-// Compile-time assertion that the docker provider supports failure injection.
-var _ provider.FailureInjector = (*dockerProvider)(nil)
 
 // hostPort inspects the container and returns the host port mapped to Postgres
 // 5432/tcp.

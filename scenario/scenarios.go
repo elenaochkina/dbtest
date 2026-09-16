@@ -31,7 +31,7 @@ func init() {
 		provisionStep{},
 		workloadStep{workload.Warehouse},
 		snapshotStep{label: "before_kill_process", tables: durabilityTables},
-		killProcessStep{},
+		disruptStep{provider.Crash},
 		verifyStep{label: "after_kill_process", baseline: "before_kill_process", tables: durabilityTables},
 	)
 }

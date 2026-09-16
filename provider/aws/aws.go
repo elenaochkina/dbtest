@@ -304,6 +304,97 @@ func splitNonEmpty(s, sep string) []string {
 	return out
 }
 
+// Supports reports which disruptions RDS can apply. There is no ungraceful kill:
+// the API offers a reboot and, on Multi-AZ, a reboot that fails over.
+func (p *awsProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
+	return disruption == provider.Restart
+}
+
+// Disrupt reboots the instance and returns once it is available again. The
+// endpoint keeps its DNS name across a reboot, so the caller's target still
+// resolves and the cluster is returned unchanged.
+func (p *awsProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
+	if disruption != provider.Restart {
+		return provider.ClusterInfo{}, fmt.Errorf("aws cannot %s an instance", disruption)
+	}
+
+	start := time.Now()
+	if _, err := p.client.RebootDBInstance(ctx, &rds.RebootDBInstanceInput{
+		DBInstanceIdentifier: aws.String(cluster.ID),
+	}); err != nil {
+		return provider.ClusterInfo{}, fmt.Errorf("reboot db instance: %w", err)
+	}
+
+	if err := p.waitForReboot(ctx, cluster.ID); err != nil {
+		return provider.ClusterInfo{}, err
+	}
+
+	if p.tel != nil {
+		p.tel.Logger.Info("disrupted cluster",
+			slog.String("disruption", string(disruption)),
+			slog.String("instance_id", cluster.ID),
+			slog.Duration("took", time.Since(start)),
+		)
+	}
+	return cluster, nil
+}
+
+// waitForReboot waits for the instance to leave "available" and then come back
+// to it. RebootDBInstance returns before the reboot begins, so waiting only for
+// "available" reads the state from before the call and returns immediately.
+func (p *awsProvider) waitForReboot(ctx context.Context, instanceID string) error {
+	// Guards against the false positive: the instance still reports available
+	// because the reboot has not begun, so wait for it to leave that state.
+	left, err := p.waitForStatus(ctx, instanceID, 2*time.Minute, func(s string) bool { return s != "available" })
+	if err != nil {
+		return err
+	}
+	// A reboot takes minutes and the poll is every two seconds, so never seeing the
+	// transition means the reboot did not take, not that it was too quick to see.
+	if !left {
+		return fmt.Errorf("instance %s never left available after a reboot request", instanceID)
+	}
+
+	// The reboot is over once the instance reports available again.
+	back, err := p.waitForStatus(ctx, instanceID, 15*time.Minute, func(s string) bool { return s == "available" })
+	if err != nil {
+		return err
+	}
+	if !back {
+		return fmt.Errorf("instance %s was not available again within 15m", instanceID)
+	}
+	return nil
+}
+
+// waitForStatus polls until the instance status satisfies want and reports
+// whether that happened before the timeout. Timing out is a result, not an
+// error; an error means the poll itself could not be carried out.
+func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, timeout time.Duration, want func(string) bool) (bool, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		out, err := p.client.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+			DBInstanceIdentifier: aws.String(instanceID),
+		})
+		if err != nil {
+			if p.tel != nil {
+				p.tel.Logger.Error("describe db instance failed",
+					slog.String("instance_id", instanceID),
+					slog.Any("error", err),
+				)
+			}
+			return false, fmt.Errorf("describe db instance %s: %w", instanceID, err)
+		}
+		if len(out.DBInstances) > 0 && want(aws.ToString(out.DBInstances[0].DBInstanceStatus)) {
+			return true, nil
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return false, nil
+}
+
 // newProvider adapts New to the registry constructor signature.
 func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
 	return New(tel)

@@ -91,27 +91,23 @@ func (saveResultStep) Run(ctx context.Context, rc *RunContext) error {
 	}
 }
 
-// killProcessStep adapts the provider's optional FailureInjector capability into
-// a step. It injects an ungraceful failure (a forced process kill) into the
-// running cluster, updates rc.Cluster with the refreshed DSN, and waits for the
-// database to accept connections again before later steps run.
-// Fails clearly if the provider cannot inject failures.
-type killProcessStep struct{}
+// disruptStep interrupts the running cluster, updates rc.Cluster with the
+// refreshed DSN, and waits for the database to accept connections again before
+// later steps run.
+type disruptStep struct {
+	disruption provider.Disruption
+}
 
-func (killProcessStep) Name() string { return "kill-process" }
+func (s disruptStep) Name() string { return string(s.disruption) }
 
-func (killProcessStep) Run(ctx context.Context, rc *RunContext) error {
-	r, ok := rc.Provider.(provider.FailureInjector)
-	if !ok {
-		return fmt.Errorf("provider %T does not support failure injection", rc.Provider)
-	}
-	updated, err := r.KillProcess(ctx, rc.Cluster)
+func (s disruptStep) Run(ctx context.Context, rc *RunContext) error {
+	updated, err := rc.Provider.Disrupt(ctx, rc.Cluster, s.disruption)
 	if err != nil {
-		return fmt.Errorf("kill process: %w", err)
+		return fmt.Errorf("%s cluster: %w", s.disruption, err)
 	}
 	rc.Cluster = updated
 	if err := rc.Provider.WaitForReady(ctx, updated); err != nil {
-		return fmt.Errorf("wait for ready after kill: %w", err)
+		return fmt.Errorf("wait for ready after %s: %w", s.disruption, err)
 	}
 	return nil
 }
