@@ -15,10 +15,9 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
-// starter triggers one PgBenchWorkflow execution and waits for it.
-// It talks only to the Temporal server — the worker owns the providers and any
-// infrastructure the activities touch.
+// starter triggers one workflow execution and waits for it. It talks only to the Temporal server;
 func main() {
+	// Parse flags.
 	providerName := flag.String("provider", "docker", "provider name (docker, aws)")
 	vcpu := flag.Float64("vcpu", 2, "cluster vCPU")
 	memoryMiB := flag.Int("memory-mib", 2048, "cluster memory (MiB)")
@@ -53,6 +52,7 @@ func main() {
 	}
 	defer c.Close()
 
+	// Build the workflow config.
 	request := provider.ProvisionRequest{
 		VCPU:            *vcpu,
 		MemoryMiB:       *memoryMiB,
@@ -84,6 +84,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Submit it and wait.
 	we, err := c.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
 		ID:        *workflowID,
 		TaskQueue: dbtemporal.TaskQueue,
