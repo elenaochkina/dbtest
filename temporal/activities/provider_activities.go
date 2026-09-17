@@ -1,3 +1,4 @@
+// Package activities holds the side-effecting step logic the workflows schedule.
 package activities
 
 import (
