@@ -45,7 +45,7 @@ func NewProviderActivities(tel *telemetry.Telemetry) *ProviderActivities {
 func (a *ProviderActivities) Provision(ctx context.Context, input ProvisionInput) (provider.ClusterInfo, error) {
 	p, err := provider.Run(input.Provider, a.tel)
 	if err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("provshow me ider %q: %w", input.Provider, err)
+		return provider.ClusterInfo{}, fmt.Errorf("provider %q: %w", input.Provider, err)
 	}
 	cluster, err := p.Provision(ctx, input.Request, input.Token, input.Password)
 	if err != nil {
