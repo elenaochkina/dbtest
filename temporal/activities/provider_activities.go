@@ -4,9 +4,11 @@ package activities
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/telemetry"
+	"go.temporal.io/sdk/temporal"
 )
 
 type ProvisionInput struct {
@@ -29,6 +31,12 @@ type DeprovisionInput struct {
 type DisruptInput struct {
 	Provider   provider.ProviderName
 	Cluster    provider.ClusterInfo
+	Disruption provider.Disruption
+}
+
+type CheckSupportedInput struct {
+	Provider   provider.ProviderName
+	Request    provider.ProvisionRequest
 	Disruption provider.Disruption
 }
 
@@ -83,4 +91,26 @@ func (a *ProviderActivities) Disrupt(ctx context.Context, input DisruptInput) (p
 		return provider.ClusterInfo{}, fmt.Errorf("%s cluster: %w", input.Disruption, err)
 	}
 	return cluster, nil
+}
+
+// Needs to check whether a certain disruption is supported by a requested provider before faces an eror or waste budget.
+func (a *ProviderActivities) CheckSupported(ctx context.Context, input CheckSupportedInput) error {
+	p, err := provider.Run(input.Provider, a.tel)
+	if err != nil {
+		return fmt.Errorf("provider %q: %w", input.Provider, err)
+	}
+	if !p.Supports(input.Request, input.Disruption) {
+		// Retrying cannot change the answer.
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("provider %q cannot %s this cluster", input.Provider, input.Disruption),
+			"UnsupportedDisruption", nil,
+		)
+	}
+	if a.tel != nil {
+		a.tel.Logger.Info("disruption supported",
+			slog.String("provider", string(input.Provider)),
+			slog.String("disruption", string(input.Disruption)),
+		)
+	}
+	return nil
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/probe"
 	"github.com/elenaochkina/dbtest/telemetry"
-	"go.temporal.io/sdk/activity"
 )
 
 // ProbeInput describes the prober container to start.
@@ -65,11 +64,6 @@ func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (h
 	if err != nil {
 		return harness.Handle{}, fmt.Errorf("runner %q: %w", input.Runner, err)
 	}
-
-	// Starting a task can take a minute in the cloud, waiting on an ENI and an
-	// image pull.
-	stop := heartbeat(ctx)
-	defer stop()
 
 	h, err := r.Run(ctx, probeSpec(input))
 	if err != nil {
@@ -127,13 +121,14 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 		return fmt.Errorf("runner %q: %w", input.Runner, err)
 	}
 
-	stop := heartbeat(ctx)
-	defer stop()
-
 	h, err := r.Run(ctx, benchSpec(input))
 	if err != nil {
 		return fmt.Errorf("start seed: %w", err)
 	}
+	// Cleanup for the paths that never reach the stop below. Stopping a container
+	// that is already gone fails; the error is discarded.
+
+	defer func() { _, _ = r.Stop(context.WithoutCancel(ctx), h) }()
 
 	// SelfExits, so this waits for the seed rather than cutting it off.
 	out, err := r.Stop(ctx, h)
@@ -183,25 +178,6 @@ func benchSpec(in BenchContainerInput) harness.Spec {
 		// Seeding ends on its own, so Stop waits for it.
 		SelfExits: true,
 	}
-}
-
-// heartbeat pings Temporal while an activity blocks, so a dead worker is noticed
-// before StartToCloseTimeout elapses.
-func heartbeat(ctx context.Context) func() {
-	done := make(chan struct{})
-	go func() {
-		t := time.NewTicker(15 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-t.C:
-				activity.RecordHeartbeat(ctx)
-			}
-		}
-	}()
-	return func() { close(done) }
 }
 
 // tailLines returns the last few lines of container output, for an error message.
