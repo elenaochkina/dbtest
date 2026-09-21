@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/elenaochkina/dbtest/harness"
@@ -179,6 +180,17 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		Handle: probeHandle,
 	}).Get(ctx, &result); err != nil {
 		return err
+	}
+
+	// Rows are numbered by outage, so they only describe the disruptions if the
+	// two counts agree. Fewer means a disruption was too brief for the prober to
+	// catch; more means something else interrupted the database. Either way every
+	// row after the first mismatch is mislabelled.
+	if got := len(result.Writable.Outages); got != cfg.Repetitions {
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("observed %d outages, applied %d disruptions", got, cfg.Repetitions),
+			"OutageCountMismatch", nil,
+		)
 	}
 
 	return workflow.ExecuteActivity(ctx, runs.SaveDowntimeResults, activities.SaveDowntimeInput{

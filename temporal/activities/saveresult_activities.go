@@ -77,9 +77,8 @@ func (a *SaveResultActivities) SaveDowntimeResults(ctx context.Context, input Sa
 }
 
 // downtimeRows pairs the two levels the prober records. Writable is the
-// authority: it is the stronger condition, so every outage appears in it, while
-// a disruption too brief to interrupt reads has no readable counterpart. Those
-// rows carry a readable downtime of zero.
+// authority: it is the stronger condition, so every outage appears in it.
+// If there is no readable outage, it is marked as zero.
 func downtimeRows(input SaveDowntimeInput) []state.DowntimeRow {
 	readable := input.Result.Readable.Outages
 	rows := make([]state.DowntimeRow, 0, len(input.Result.Writable.Outages))
@@ -90,6 +89,8 @@ func downtimeRows(input SaveDowntimeInput) []state.DowntimeRow {
 			Disruption:         string(input.Disruption),
 			Repetition:         i + 1,
 			WritableDowntimeMs: w.DownMs,
+			// Stays zero when no readable outage overlapse
+			ReadableDowntimeMs: 0,
 			LostCommits:        w.LostCommits,
 			ProbeIntervalMs:    input.Result.IntervalMs,
 			ProbeFailures:      w.Failures,
