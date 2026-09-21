@@ -89,7 +89,7 @@ func downtimeRows(input SaveDowntimeInput) []state.DowntimeRow {
 			Disruption:         string(input.Disruption),
 			Repetition:         i + 1,
 			WritableDowntimeMs: w.DownMs,
-			// Stays zero when no readable outage overlapse
+			// Stays zero when no readable outage overlapse: reads never broke
 			ReadableDowntimeMs: 0,
 			LostCommits:        w.LostCommits,
 			ProbeIntervalMs:    input.Result.IntervalMs,
