@@ -181,7 +181,12 @@ func (r *dockerRunner) collect(ctx context.Context, id string) ([]byte, error) {
 }
 
 func (r *dockerRunner) remove(ctx context.Context, id string) error {
-	if err := r.client.ContainerRemove(ctx, id, container.RemoveOptions{Force: true}); err != nil {
+	// RemoveVolumes clears the anonymous volume the bench image inherits from
+	// postgres:16, which nothing else would ever reclaim.
+	if err := r.client.ContainerRemove(ctx, id, container.RemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	}); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil
 		}
