@@ -87,6 +87,72 @@ Implement `Run` and `Stop` against the existing interface. Four known traps:
 4. **Double-stop tolerance**, matching the Docker runner — `RecoveryWorkflow`
    stops the probe in both a defer and the main path.
 
+### RUNNING is not "sampling"
+
+Waiting for RUNNING makes `Run` mean the same thing on both runners. It does not
+mean the probe is measuring. There are three levels:
+
+1. Task RUNNING — the container process started.
+2. Probe prepared — connected, created `dbtest_probe`, inserted the counter row.
+   `Prepare` retries with its own sleep, so this is not instant over a network.
+3. Probe has a baseline — enough samples for `lastOK` to mean anything.
+
+Disrupting between 1 and 3 either loses an outage, which the count check catches
+at the end of an expensive run, or leaves the first outage with almost no
+baseline, which nothing catches.
+
+The probe advances a counter row every interval, so the target database reports
+readiness directly:
+
+```sql
+SELECT seq FROM dbtest_probe WHERE id = 1
+```
+
+Once `seq` has advanced several times, the container is up, the probe is
+connected, and it is sampling now. The worker already connects to the target in
+`WaitForReady`, and the check is identical on Docker and Fargate.
+
+Order once added:
+
+```
+StartProbe            → task RUNNING
+WaitForProbeSampling  → seq advanced N times
+Sleep(Settle)         → baseline, now actually baseline
+Disrupt
+```
+
+Until that activity exists, raise `-settle` for AWS runs. It works and costs one
+flag, but it is padding chosen by guesswork and indistinguishable from a working
+run when it is too short.
+
+This gap exists on Docker too — 8s of settle has been absorbing an unknown amount
+of probe startup. Fargate makes it large enough to notice.
+
+### checkProbeReadiness
+
+A harness activity, provider-independent. Connects to the target database and
+reads the probe's counter row:
+
+```sql
+SELECT seq FROM dbtest_probe WHERE id = 1
+```
+
+Returns `true, nil` once `seq > 0`. One completed sample means the probe
+connected, ran `Prepare`, and finished a loop iteration, so it is sampling.
+Correct because every workflow provisions a fresh database and `seq` starts at 0.
+
+It belongs in `HarnessActivities` beside `StartProbe` and `StopProbe`, and it
+reads the target database, not the state DB.
+
+Order:
+
+```
+StartProbe           → task RUNNING
+checkProbeReadiness  → seq > 0
+Sleep(Settle)        → baseline
+Disrupt
+```
+
 **Gate:** drive the probe and bench containers through this runner directly
 against a Postgres, outside Temporal.
 
