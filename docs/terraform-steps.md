@@ -25,15 +25,19 @@ are no longer the plan:
 `terraform-deployment.md` describes the ephemeral EC2 path, which is paused. It
 is not this.
 
-## Stage 0 — Decisions to settle first
+## Stage 0 — Before anything else
 
-1. **Networking.** Public subnet with `assignPublicIp=ENABLED` for the first cut.
+1. **Set a billing alarm and tag every resource.** A forgotten RDS instance bills
+   silently, and the failure mode that creates one — killing the worker, which
+   skips `defer Deprovision` — happens routinely while developing. Do this before
+   the first `terraform apply`, not after.
+2. **Networking.** Public subnet with `assignPublicIp=ENABLED` for the first cut.
    RDS stays private; the task reaches ECR and CloudWatch over the IGW. NAT
    gateway and VPC endpoints deferred.
-2. **`stopTimeout` per container.** The probe must print its result JSON before
+3. **`stopTimeout` per container.** The probe must print its result JSON before
    SIGKILL. Docker uses a 10s grace; in Fargate this lives in the container
    definition, capped at 120s. Bench self-exits and does not need it.
-3. **DSN secrecy.** Plain env override via RunTask, or Secrets Manager. The
+4. **DSN secrecy.** Plain env override via RunTask, or Secrets Manager. The
    instance is throwaway, so plain is defensible — decide it rather than default
    into it.
 
@@ -59,7 +63,13 @@ is not this.
 5. Task security group, plus an ingress rule on the RDS security group allowing
    5432 from it.
 6. CloudWatch log group with short retention.
-7. **Gate:** launch a task with `aws ecs run-task` by hand. Confirm it reaches
+7. **Decide how Terraform outputs reach the worker.** `provider/aws` reads
+   `AWS_REGION`, `AWS_RDS_SUBNET_GROUP`, `AWS_RDS_SECURITY_GROUP_IDS` and
+   `AWS_RDS_PUBLIC` from the environment. Nothing carries new resource IDs there
+   after an apply, so the worker keeps using stale ones until someone updates it.
+   Pick a mechanism — `terraform output` written to a file the worker sources is
+   enough.
+8. **Gate:** launch a task with `aws ecs run-task` by hand. Confirm it reaches
    RUNNING, writes logs, and reaches STOPPED with exit 0. Prove this before
    writing any Go.
 
@@ -97,7 +107,6 @@ against a Postgres, outside Temporal.
 1. Confirm `defer Deprovision` fires against a real RDS instance, including on
    failure paths. This is the expensive one to get wrong.
 2. Add a `terraform destroy` path and confirm nothing survives it.
-3. Set a billing alarm before the first unattended run.
 
 ## Ordering
 
@@ -114,3 +123,10 @@ Not Fargate work, but each will present as a Fargate bug when it bites:
 - `RecoveryWorkflow` has no execution timeout; a wedged AWS control-plane call
   waits indefinitely.
 - `cmd/starter` does not validate `-repetitions >= 1`.
+- The probe stops itself after an hour. `cmd/probe/main.go` defaults
+  `-max-duration` to 1h and `StartProbe` never sets `MaxDuration`, so the default
+  applies. Three repetitions of 17m `Disrupt` plus 5m `WaitForReady` plus settle
+  can exceed that, and `StopProbe` then finds a container that already exited.
+- `waitForReboot` waits up to 17m (2m to leave available, 15m to return) inside an
+  activity whose `StartToCloseTimeout` is 20m with `MaximumAttempts: 1`. The two
+  numbers were set independently and leave three minutes of headroom.
