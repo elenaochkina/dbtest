@@ -26,7 +26,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 	// Typed-nil receivers: Temporal resolves each ExecuteActivity to the method's
 	// registered name, so no real instance is needed here.
 	var (
-		runs *activities.SaveResultActivities
+		runs *activities.StateDBActivities
 		prov *activities.ProviderActivities
 		work *activities.WorkloadActivities
 	)

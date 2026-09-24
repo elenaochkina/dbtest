@@ -39,17 +39,17 @@ type EndRunInput struct {
 	Passed bool
 }
 
-// SaveResultActivities persist the run lifecycle and results to the state DB.
-type SaveResultActivities struct {
+// StateDBActivities cover every write to the state DB.
+type StateDBActivities struct {
 	statePool *pgxpool.Pool
 	tel       *telemetry.Telemetry
 }
 
-func NewSaveResultActivities(statePool *pgxpool.Pool, tel *telemetry.Telemetry) *SaveResultActivities {
-	return &SaveResultActivities{statePool: statePool, tel: tel}
+func NewStateDBActivities(statePool *pgxpool.Pool, tel *telemetry.Telemetry) *StateDBActivities {
+	return &StateDBActivities{statePool: statePool, tel: tel}
 }
 
-func (a *SaveResultActivities) StartRun(ctx context.Context, input StartRunInput) (uuid.UUID, error) {
+func (a *StateDBActivities) StartRun(ctx context.Context, input StartRunInput) (uuid.UUID, error) {
 	run, err := state.StartRun(ctx, a.statePool, state.RunConfig{
 		Seed:     input.Seed,
 		Scenario: input.Scenario,
@@ -61,17 +61,17 @@ func (a *SaveResultActivities) StartRun(ctx context.Context, input StartRunInput
 	return run.ID, nil
 }
 
-func (a *SaveResultActivities) SaveResult(ctx context.Context, input SaveResultInput) error {
+func (a *StateDBActivities) SaveResult(ctx context.Context, input SaveResultInput) error {
 	return state.SaveBenchmarkResult(ctx, a.statePool, input.RunID, input.Result, a.tel)
 }
 
-func (a *SaveResultActivities) EndRun(ctx context.Context, input EndRunInput) error {
+func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error {
 	run := &state.Run{Pool: a.statePool, ID: input.RunID, Logger: a.tel.Logger}
 	return run.End(ctx, input.Passed)
 }
 
 // SaveDowntimeResults writes one row per disruption.
-func (a *SaveResultActivities) SaveDowntimeResults(ctx context.Context, input SaveDowntimeInput) error {
+func (a *StateDBActivities) SaveDowntimeResults(ctx context.Context, input SaveDowntimeInput) error {
 	rows := downtimeRows(input)
 	return state.SaveDowntimeResults(ctx, a.statePool, input.RunID, rows, a.tel)
 }
