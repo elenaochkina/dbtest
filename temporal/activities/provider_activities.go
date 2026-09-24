@@ -1,11 +1,14 @@
-package temporal
+// Package activities holds the side-effecting step logic the workflows schedule.
+package activities
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/telemetry"
+	"go.temporal.io/sdk/temporal"
 )
 
 type ProvisionInput struct {
@@ -25,9 +28,16 @@ type DeprovisionInput struct {
 	ClusterID string
 }
 
-type KillProcessInput struct {
-	Provider provider.ProviderName
-	Cluster  provider.ClusterInfo
+type DisruptInput struct {
+	Provider   provider.ProviderName
+	Cluster    provider.ClusterInfo
+	Disruption provider.Disruption
+}
+
+type CheckSupportedInput struct {
+	Provider   provider.ProviderName
+	Request    provider.ProvisionRequest
+	Disruption provider.Disruption
 }
 
 // ProviderActivities own the cluster lifecycle — provision, wait for ready, and
@@ -43,7 +53,7 @@ func NewProviderActivities(tel *telemetry.Telemetry) *ProviderActivities {
 func (a *ProviderActivities) Provision(ctx context.Context, input ProvisionInput) (provider.ClusterInfo, error) {
 	p, err := provider.Run(input.Provider, a.tel)
 	if err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("provshow me ider %q: %w", input.Provider, err)
+		return provider.ClusterInfo{}, fmt.Errorf("provider %q: %w", input.Provider, err)
 	}
 	cluster, err := p.Provision(ctx, input.Request, input.Token, input.Password)
 	if err != nil {
@@ -68,20 +78,39 @@ func (a *ProviderActivities) Deprovision(ctx context.Context, input DeprovisionI
 	return p.Deprovision(ctx, input.ClusterID)
 }
 
-// KillProcess injects an ungraceful failure into the running cluster and returns
-// refreshed connection info.
-func (a *ProviderActivities) KillProcess(ctx context.Context, input KillProcessInput) (provider.ClusterInfo, error) {
+// Disrupt interrupts the running cluster and returns refreshed connection info.
+// It returns once the cluster has settled, so a caller disrupting repeatedly
+// does not overlap one recovery with the next.
+func (a *ProviderActivities) Disrupt(ctx context.Context, input DisruptInput) (provider.ClusterInfo, error) {
 	p, err := provider.Run(input.Provider, a.tel)
 	if err != nil {
 		return provider.ClusterInfo{}, fmt.Errorf("provider %q: %w", input.Provider, err)
 	}
-	injector, ok := p.(provider.FailureInjector)
-	if !ok {
-		return provider.ClusterInfo{}, fmt.Errorf("provider %q does not support failure injection", input.Provider)
-	}
-	cluster, err := injector.KillProcess(ctx, input.Cluster)
+	cluster, err := p.Disrupt(ctx, input.Cluster, input.Disruption)
 	if err != nil {
-		return provider.ClusterInfo{}, fmt.Errorf("kill process: %w", err)
+		return provider.ClusterInfo{}, fmt.Errorf("%s cluster: %w", input.Disruption, err)
 	}
 	return cluster, nil
+}
+
+// Needs to check whether a certain disruption is supported by a requested provider before faces an eror or waste budget.
+func (a *ProviderActivities) CheckSupported(ctx context.Context, input CheckSupportedInput) error {
+	p, err := provider.Run(input.Provider, a.tel)
+	if err != nil {
+		return fmt.Errorf("provider %q: %w", input.Provider, err)
+	}
+	if !p.Supports(input.Request, input.Disruption) {
+		// Retrying cannot change the answer.
+		return temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("provider %q cannot %s this cluster", input.Provider, input.Disruption),
+			"UnsupportedDisruption", nil,
+		)
+	}
+	if a.tel != nil {
+		a.tel.Logger.Info("disruption supported",
+			slog.String("provider", string(input.Provider)),
+			slog.String("disruption", string(input.Disruption)),
+		)
+	}
+	return nil
 }

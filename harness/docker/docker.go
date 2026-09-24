@@ -144,7 +144,8 @@ func (r *dockerRunner) wait(ctx context.Context, id string) (int, error) {
 	statusCh, errCh := r.client.ContainerWait(ctx, id, container.WaitConditionNotRunning)
 	select {
 	case err := <-errCh:
-		if err != nil {
+		// A container that is gone is not running, which is what this waits for.
+		if err != nil && !errdefs.IsNotFound(err) {
 			return 0, fmt.Errorf("container wait: %w", err)
 		}
 		return 0, nil
@@ -162,6 +163,10 @@ func (r *dockerRunner) collect(ctx context.Context, id string) ([]byte, error) {
 		ShowStderr: true,
 	})
 	if err != nil {
+		// A container that is gone printed nothing this call can still read.
+		if errdefs.IsNotFound(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("container logs: %w", err)
 	}
 	defer rc.Close()
@@ -176,7 +181,12 @@ func (r *dockerRunner) collect(ctx context.Context, id string) ([]byte, error) {
 }
 
 func (r *dockerRunner) remove(ctx context.Context, id string) error {
-	if err := r.client.ContainerRemove(ctx, id, container.RemoveOptions{Force: true}); err != nil {
+	// RemoveVolumes clears the anonymous volume the bench image inherits from
+	// postgres:16, which nothing else would ever reclaim.
+	if err := r.client.ContainerRemove(ctx, id, container.RemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	}); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil
 		}

@@ -37,7 +37,8 @@ type Runner interface {
 	// the split. Output is returned even when the error is non-nil, because a
 	// container that exits non-zero has usually still printed its result.
 	//
-	// Not safe to call twice: on Docker it removes the container.
+	// Calling it twice is not an error, but only the first call returns output:
+	// the second finds the container already gone and discard an error.
 	Stop(ctx context.Context, h Handle) ([]byte, error)
 }
 

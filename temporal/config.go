@@ -1,21 +1,9 @@
-// Package temporal is the only package that imports the Temporal SDK. It holds
-// the durable workflows (scenario orchestration), the activities (the
-// side-effecting step logic), and the config that binds them. E
+// Package temporal holds what the workflow and activity packages share.
+//
+// temporal/workflows   durable scenario orchestration
+// temporal/activities  the side-effecting step logic they schedule
+//
+// The dependency runs one way: workflows import activities, never the reverse.
 package temporal
 
-import (
-	"time"
-
-	"go.temporal.io/sdk/temporal"
-	"go.temporal.io/sdk/workflow"
-)
-
 const TaskQueue = "dbtest-tq"
-
-// defaultActivityOptions apply to every activity a workflow schedules.
-var defaultActivityOptions = workflow.ActivityOptions{
-	StartToCloseTimeout: 20 * time.Minute,
-	RetryPolicy: &temporal.RetryPolicy{
-		MaximumAttempts: 3,
-	},
-}
