@@ -9,3 +9,14 @@ variable "project" {
   type        = string
   default     = "dbtest"
 }
+
+variable "image_tag" {
+  description = "Image tag pushed to ECR; must match TAG in the Makefile"
+  type        = string
+  default     = "dev"
+}
+
+variable "dev_cidr" {
+  description = "Public IP of the machine running the worker, as a /32. Changes when the ISP reassigns it."
+  type        = string
+}
