@@ -41,7 +41,7 @@ var onceOnly = workflow.ActivityOptions{
 func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err error) {
 	ctx = workflow.WithActivityOptions(ctx, defaultActivityOptions)
 	var (
-		runs *activities.SaveResultActivities
+		runs *activities.StateDBActivities
 		prov *activities.ProviderActivities
 		harn *activities.HarnessActivities
 	)

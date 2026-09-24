@@ -36,12 +36,10 @@ type ClusterInfo struct {
 }
 
 type ProvisionRequest struct {
-	VCPU            float64
-	MemoryMiB       int
-	DiskGiB         int
-	PostgresVersion string
-	// HighAvailability asks for a standby to fail over to: Multi-AZ on RDS, an
-	// HA instance on CloudSQL. Without it Failover is unavailable.
+	VCPU             float64
+	MemoryMiB        int
+	DiskGiB          int
+	PostgresVersion  string
 	HighAvailability bool
 }
 
@@ -57,11 +55,7 @@ type Provider interface {
 	Supports(req ProvisionRequest, disruption Disruption) bool
 
 	// Disrupt applies the disruption and returns once the cluster has settled.
-	// Settling is part of the call so that repeated disruptions do not overlap
-	// one recovery with the next.
-	//
-	// The returned ClusterInfo replaces the caller's copy. A restarted container
-	// comes back on a different port.
+	// The returned ClusterInfo replaces the caller's copy.
 	//
 	// Not safe to retry: a second call is a second disruption, which a prober
 	// records as a real outage.

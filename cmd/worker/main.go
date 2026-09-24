@@ -57,7 +57,7 @@ func main() {
 	w := worker.New(c, dbtemporal.TaskQueue, worker.Options{})
 	w.RegisterWorkflow(workflows.PgBenchWorkflow)
 	w.RegisterWorkflow(workflows.RecoveryWorkflow)
-	w.RegisterActivity(activities.NewSaveResultActivities(statePool, tel))
+	w.RegisterActivity(activities.NewStateDBActivities(statePool, tel))
 	w.RegisterActivity(activities.NewProviderActivities(tel))
 	w.RegisterActivity(activities.NewWorkloadActivities(tel))
 	w.RegisterActivity(activities.NewDurabilityActivities(tel))
