@@ -1,0 +1,14 @@
+# Copy to config.mk and fill in. config.mk is not committed.
+
+# --- AWS ECR ---
+REGISTRY       = 118821711998.dkr.ecr.us-west-2.amazonaws.com/dbtest
+REGISTRY_LOGIN = aws ecr get-login-password --region us-west-2 --profile dbtest-terraform \
+                   | docker login --username AWS --password-stdin 118821711998.dkr.ecr.us-west-2.amazonaws.com
+
+# --- GitHub Container Registry ---
+# REGISTRY       = ghcr.io/elenaochkina/dbtest
+# REGISTRY_LOGIN = echo $$GITHUB_TOKEN | docker login ghcr.io -u elenaochkina --password-stdin
+
+# --- Google Artifact Registry ---
+# REGISTRY       = us-west1-docker.pkg.dev/PROJECT/dbtest
+# REGISTRY_LOGIN = gcloud auth configure-docker us-west1-docker.pkg.dev
