@@ -370,15 +370,22 @@ func (p *awsProvider) waitForReboot(ctx context.Context, instanceID string) erro
 // whether that happened before the timeout. Timing out is a result, not an
 // error; an error means the poll itself could not be carried out.
 func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, timeout time.Duration, want func(string) bool) (bool, error) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
+	parent := ctx
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	for {
 		out, err := p.client.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 			DBInstanceIdentifier: aws.String(instanceID),
 		})
 		if err != nil {
+			if parent.Err() != nil {
+				return false, parent.Err()
+			}
+			// The deadline expiring mid-call is the timeout, not a failed poll.
+			if ctx.Err() != nil {
+				return false, nil
+			}
 			if p.tel != nil {
 				p.tel.Logger.Error("describe db instance failed",
 					slog.String("instance_id", instanceID),
@@ -390,9 +397,15 @@ func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, time
 		if len(out.DBInstances) > 0 && want(aws.ToString(out.DBInstances[0].DBInstanceStatus)) {
 			return true, nil
 		}
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			if parent.Err() != nil {
+				return false, parent.Err()
+			}
+			return false, nil
+		case <-time.After(2 * time.Second):
+		}
 	}
-	return false, nil
 }
 
 // newProvider adapts New to the registry constructor signature.

@@ -1,6 +1,10 @@
-# Binaries
+now# Binaries
 *.exe
 *.out
+/bench
+/runbenchmark
+/starter
+/worker
 
 
 # Test cache
@@ -9,6 +13,7 @@
 # Environment / secrets
 .env
 *.env
+config.mk
 
 # Editor
 .idea/
