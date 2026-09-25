@@ -15,6 +15,7 @@ import (
 	_ "github.com/elenaochkina/dbtest/provider/docker"
 
 	// Same for the container runners and harness.New.
+	_ "github.com/elenaochkina/dbtest/harness/aws"
 	_ "github.com/elenaochkina/dbtest/harness/docker"
 
 	"go.temporal.io/sdk/client"
