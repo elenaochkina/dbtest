@@ -189,6 +189,11 @@ Not Fargate work, but each will present as a Fargate bug when it bites:
 - `RecoveryWorkflow` has no execution timeout; a wedged AWS control-plane call
   waits indefinitely.
 - `cmd/starter` does not validate `-repetitions >= 1`.
+- One-click setup is not wired up. `make aws-up` should run `terraform apply` and
+  then write `.env` from `terraform output -raw worker_env`, so the config cannot
+  go stale after a re-apply. Today it is a manual `terraform output` redirect. A
+  `make run-worker` target could source it too, at the cost of running the worker
+  as a child of Make.
 - The probe stops itself after an hour. `cmd/probe/main.go` defaults
   `-max-duration` to 1h and `StartProbe` never sets `MaxDuration`, so the default
   applies. Three repetitions of 17m `Disrupt` plus 5m `WaitForReady` plus settle
