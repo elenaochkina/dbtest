@@ -157,7 +157,7 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 // CheckProbeReadiness reports whether the probe has completed a sample.
 func (a *HarnessActivities) CheckProbeReadiness(ctx context.Context, input ProbeReadyInput) (bool, error) {
 	// The container is already RUNNING, so only Prepare and one sample remain.
-	for attempt := range 5 {
+	for attempt := range 10 {
 		if seq, err := probeSeq(ctx, input.TargetDSN); err == nil && seq > 0 {
 			if a.tel != nil {
 				a.tel.Logger.Info("probe is sampling",
@@ -170,7 +170,7 @@ func (a *HarnessActivities) CheckProbeReadiness(ctx context.Context, input Probe
 		select {
 		case <-ctx.Done():
 			return false, ctx.Err()
-		case <-time.After(5 * time.Second):
+		case <-time.After(time.Second):
 		}
 	}
 	return false, nil
