@@ -20,9 +20,11 @@ type ProbeInput struct {
 	Name   string
 	// DSN addresses the database as a sibling container sees it, which is not the
 	// address the worker uses.
-	DSN         string
-	Interval    time.Duration
-	MaxDuration time.Duration
+	DSN          string
+	Interval     time.Duration
+	Timeout      time.Duration
+	WriteTimeout time.Duration
+	MaxDuration  time.Duration
 }
 
 // BenchContainerInput describes the bench container to run.
@@ -34,8 +36,7 @@ type BenchContainerInput struct {
 	// address the worker uses.
 	DSN      string
 	Workload string // pgbench or warehouse
-	// Scale sets how much data pgbench writes. It has to match across every run
-	// being compared.
+	// Scale sets how much data pgbench writes.
 	Scale int
 }
 
@@ -150,6 +151,12 @@ func probeSpec(in ProbeInput) harness.Spec {
 	args := []string{"-dsn", in.DSN}
 	if in.Interval > 0 {
 		args = append(args, "-interval", in.Interval.String())
+	}
+	if in.Timeout > 0 {
+		args = append(args, "-timeout", in.Timeout.String())
+	}
+	if in.WriteTimeout > 0 {
+		args = append(args, "-write-timeout", in.WriteTimeout.String())
 	}
 	if in.MaxDuration > 0 {
 		args = append(args, "-max-duration", in.MaxDuration.String())

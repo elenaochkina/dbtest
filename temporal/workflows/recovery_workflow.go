@@ -21,11 +21,12 @@ type RecoveryWorkflowConfig struct {
 	// Settle is how long to wait after each disruption before the next one,
 	Settle time.Duration
 
-	ProbeImage string
-	BenchImage string
-	Scale      int
-	// Probe samples frequency
-	ProbeInterval time.Duration
+	ProbeImage        string
+	BenchImage        string
+	Scale             int
+	ProbeInterval     time.Duration
+	ProbeTimeout      time.Duration
+	ProbeWriteTimeout time.Duration
 }
 
 // onceOnly is for activities a retry would corrupt: disrupting twice is two
@@ -125,11 +126,13 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	var probeHandle harness.Handle
 	if err = workflow.ExecuteActivity(ctx, harn.StartProbe, activities.ProbeInput{
-		Runner:   runner,
-		Image:    cfg.ProbeImage,
-		Name:     "dbtest-probe-" + runID.String(),
-		DSN:      cluster.Internal.URL(cluster.Password),
-		Interval: cfg.ProbeInterval,
+		Runner:       runner,
+		Image:        cfg.ProbeImage,
+		Name:         "dbtest-probe-" + runID.String(),
+		DSN:          cluster.Internal.URL(cluster.Password),
+		Interval:     cfg.ProbeInterval,
+		Timeout:      cfg.ProbeTimeout,
+		WriteTimeout: cfg.ProbeWriteTimeout,
 	}).Get(ctx, &probeHandle); err != nil {
 		return err
 	}
