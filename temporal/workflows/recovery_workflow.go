@@ -164,8 +164,12 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		return err
 	}
 
+	// A timestamp per each disruption; when workflow starts it.
+	disruptedAt := make([]time.Time, 0, cfg.Repetitions)
+
 	for i := 0; i < cfg.Repetitions; i++ {
 		octx := workflow.WithActivityOptions(ctx, onceOnly)
+		disruptedAt = append(disruptedAt, workflow.Now(ctx))
 		if err = workflow.ExecuteActivity(octx, prov.Disrupt, activities.DisruptInput{
 			Provider:   cfg.Provider,
 			Cluster:    cluster,
@@ -197,22 +201,23 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		return err
 	}
 
-	// Rows are numbered by outage, so they only describe the disruptions if the
-	// two counts agree. Fewer means a disruption was too brief for the prober to
-	// catch; more means something else interrupted the database. Either way every
-	// row after the first mismatch is mislabelled.
-	if got := len(result.Writable.Outages); got != cfg.Repetitions {
-		return temporal.NewNonRetryableApplicationError(
-			fmt.Sprintf("observed %d outages, applied %d disruptions", got, cfg.Repetitions),
-			"OutageCountMismatch", nil,
-		)
+	// A failover keeps interrupting while the standby rebuilds. Every other
+	// disruption brings the database back for good, so one outage each.
+	if cfg.Disruption != provider.Failover {
+		if got := len(result.Writable.Outages); got != cfg.Repetitions {
+			return temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("observed %d outages, applied %d disruptions", got, cfg.Repetitions),
+				"OutageCountMismatch", nil,
+			)
+		}
 	}
 
 	return workflow.ExecuteActivity(ctx, runs.SaveDowntimeResults, activities.SaveDowntimeInput{
-		RunID:      runID,
-		Provider:   cfg.Provider,
-		Disruption: cfg.Disruption,
-		Result:     result,
+		RunID:       runID,
+		Provider:    cfg.Provider,
+		Disruption:  cfg.Disruption,
+		Result:      result,
+		DisruptedAt: disruptedAt,
 	}).Get(ctx, nil)
 }
 
