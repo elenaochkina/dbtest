@@ -198,7 +198,7 @@ func (p *awsProvider) waitForEndpoint(ctx context.Context, instanceID string) (s
 	return "", 0, fmt.Errorf("instance %s did not become available within 15m", instanceID)
 }
 
-// resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instanceclass.
+// resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instance class.
 // By default is the smallest class returns.
 func resolveInstanceClass(req provider.ProvisionRequest, override string) string {
 	if override != "" {
@@ -313,9 +313,7 @@ func (p *awsProvider) Supports(req provider.ProvisionRequest, disruption provide
 }
 
 // Disrupt reboots the instance and returns once it is available again, promoting
-// the standby when asked for a failover. The endpoint keeps its DNS name either
-// way, so the caller's target still resolves and the cluster is returned
-// unchanged.
+// the standby when asked for a failover.
 func (p *awsProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
 	var failover bool
 	switch disruption {
@@ -371,12 +369,10 @@ func (p *awsProvider) describe(ctx context.Context, instanceID string) (rdstypes
 	return out.DBInstances[0], nil
 }
 
-// waitForReboot waits for the instance to leave "available" and come back, as
-// RebootDBInstance returns before the reboot begins. zoneBefore is the primary's
-// zone before a forced failover and has to change; empty skips the check.
+// waitForReboot waits for the instance to leave "available" and come back.
+// for failover needs to point to a different AZ wher a former standby (primary after failover) instance resides
 func (p *awsProvider) waitForReboot(ctx context.Context, instanceID, zoneBefore string) error {
 	// Guards againist false positive and wait until instance leaves "available" status
-	//change AZ for a failover
 	left, err := p.waitForStatus(ctx, instanceID, 2*time.Minute, func(inst rdstypes.DBInstance) bool {
 		return aws.ToString(inst.DBInstanceStatus) != "available"
 	})
@@ -384,28 +380,36 @@ func (p *awsProvider) waitForReboot(ctx context.Context, instanceID, zoneBefore 
 		return err
 	}
 	// A reboot takes minutes and the poll is every two seconds, so never seeing the
-	// transition means the reboot did not take, not that it was too quick to see.
+	// transition means the reboot did not take.
 	if !left {
 		return fmt.Errorf("instance %s never left available after a reboot request", instanceID)
 	}
 
-	// The reboot is over once the instance reports available again, in a new zone it
-	// Status and zone come from one response.
-	// If zone hasn't been update, it costs another poll
+	// Traffic is restored once the instance reports available again.
 	back, err := p.waitForStatus(ctx, instanceID, 15*time.Minute, func(inst rdstypes.DBInstance) bool {
-		if aws.ToString(inst.DBInstanceStatus) != "available" {
-			return false
-		}
-		return zoneBefore == "" || aws.ToString(inst.AvailabilityZone) != zoneBefore
+		return aws.ToString(inst.DBInstanceStatus) == "available"
 	})
 	if err != nil {
 		return err
 	}
 	if !back {
-		if zoneBefore != "" {
-			return fmt.Errorf("instance %s did not fail over out of %s within 15m", instanceID, zoneBefore)
-		}
 		return fmt.Errorf("instance %s was not available again within 15m", instanceID)
+	}
+
+	if zoneBefore == "" {
+		return nil
+	}
+
+	// The zone swap is the last thing a failover updates.
+	synced, err := p.waitForStatus(ctx, instanceID, 15*time.Minute, func(inst rdstypes.DBInstance) bool {
+		return aws.ToString(inst.DBInstanceStatus) == "available" &&
+			aws.ToString(inst.AvailabilityZone) != zoneBefore
+	})
+	if err != nil {
+		return err
+	}
+	if !synced {
+		return fmt.Errorf("instance %s still reports its primary in %s 15m after a failover", instanceID, zoneBefore)
 	}
 	return nil
 }
