@@ -3,6 +3,7 @@ package activities
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/elenaochkina/dbtest/pgbench"
@@ -76,6 +77,17 @@ func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error
 
 // SaveDowntimeResults writes one row per disruption.
 func (a *StateDBActivities) SaveDowntimeResults(ctx context.Context, input SaveDowntimeInput) error {
+	if pre := beforeFirst(input.Result.Writable.Outages, input.DisruptedAt); len(pre) > 0 && a.tel != nil {
+		var ms float64
+		for _, o := range pre {
+			ms += o.DownMs
+		}
+		a.tel.Logger.Warn("outages before the first disruption",
+			slog.Int("count", len(pre)),
+			slog.Float64("total_down_ms", ms),
+			slog.Time("first", pre[0].FirstFailure),
+		)
+	}
 	rows, err := downtimeRows(input)
 	if err != nil {
 		return err
@@ -159,9 +171,10 @@ func groupByDisruption(outages []probe.Outage, disruptedAt []time.Time) ([][]pro
 	windows := make([][]probe.Outage, len(disruptedAt))
 	for _, o := range outages {
 		i := windowOf(o.FirstFailure, disruptedAt)
+		// A cluster interrupts itself while it is still settling, so an outage
+		// before the first disruption belongs to no window.
 		if i < 0 {
-			return nil, fmt.Errorf("outage at %s precedes the first disruption at %s",
-				o.FirstFailure, disruptedAt[0])
+			continue
 		}
 		windows[i] = append(windows[i], o)
 	}
@@ -175,6 +188,20 @@ func groupByDisruption(outages []probe.Outage, disruptedAt []time.Time) ([][]pro
 		}
 	}
 	return windows, nil
+}
+
+// beforeFirst returns the outages that began before the first disruption.
+func beforeFirst(outages []probe.Outage, disruptedAt []time.Time) []probe.Outage {
+	if len(disruptedAt) == 0 {
+		return nil
+	}
+	var pre []probe.Outage
+	for _, o := range outages {
+		if o.FirstFailure.Before(disruptedAt[0]) {
+			pre = append(pre, o)
+		}
+	}
+	return pre
 }
 
 // windowOf returns the index of the last disruption at or before at, or -1.
