@@ -89,13 +89,15 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 	// A retry must land on the same instance a prior attempt created, so the
 	// identifier and password are derived from the caller's pinned token/password.
 	if token == "" {
-		token = uuid.NewString()
+		token = "dbtest-" + uuid.NewString()
 	}
 	if password == "" {
 		password = uuid.NewString()
 	}
 
-	instanceID := p.cfg.Database + "-" + token
+	// The token is the identifier, so the caller can name the instance before
+	// it exists.
+	instanceID := token
 	instanceClass := resolveInstanceClass(req, p.cfg.InstanceClassOverride)
 
 	input := &rds.CreateDBInstanceInput{
