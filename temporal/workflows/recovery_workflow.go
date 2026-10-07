@@ -229,7 +229,7 @@ func runnerFor(p provider.ProviderName) (harness.RunnerName, error) {
 	switch p {
 	case provider.Docker:
 		return harness.Docker, nil
-	case provider.AWS:
+	case provider.RDS, provider.Aurora:
 		return harness.Fargate, nil
 	default:
 		return "", temporal.NewNonRetryableApplicationError(

@@ -67,7 +67,8 @@ type ProviderName string
 
 const (
 	Docker ProviderName = "docker"
-	AWS    ProviderName = "aws"
+	RDS    ProviderName = "rds"
+	Aurora ProviderName = "aurora"
 )
 
 // registry maps provider names to constructor functions.
