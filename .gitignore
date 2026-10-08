@@ -18,7 +18,8 @@ config.mk
 # Editor
 .idea/
 .vscode/
-.claude/
+.claude/*
+!.claude/CLAUDE.md
 *.swp
 
 
