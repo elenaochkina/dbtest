@@ -28,11 +28,11 @@ type fargateRunner struct {
 }
 
 type fargateConfig struct {
-	Region           string
-	Cluster          string
-	SubnetIDs        []string
-	SecurityGroupIDs []string
-	LogGroup         string
+	region           string
+	cluster          string
+	subnetIDs        []string
+	securityGroupIDs []string
+	logGroup         string
 }
 
 func New(tel *telemetry.Telemetry) (*fargateRunner, error) {
@@ -45,8 +45,8 @@ func New(tel *telemetry.Telemetry) (*fargateRunner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
-	if cfg.Region != "" {
-		awsCfg.Region = cfg.Region
+	if cfg.region != "" {
+		awsCfg.Region = cfg.region
 	}
 
 	return &fargateRunner{
@@ -67,13 +67,13 @@ func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Han
 	}
 
 	out, err := r.ecs.RunTask(ctx, &ecs.RunTaskInput{
-		Cluster:        aws.String(r.cfg.Cluster),
+		Cluster:        aws.String(r.cfg.cluster),
 		TaskDefinition: aws.String(spec.Image),
 		LaunchType:     ecstypes.LaunchTypeFargate,
 		NetworkConfiguration: &ecstypes.NetworkConfiguration{
 			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
-				Subnets:        r.cfg.SubnetIDs,
-				SecurityGroups: r.cfg.SecurityGroupIDs,
+				Subnets:        r.cfg.subnetIDs,
+				SecurityGroups: r.cfg.securityGroupIDs,
 				AssignPublicIp: ecstypes.AssignPublicIpEnabled,
 			},
 		},
@@ -115,7 +115,7 @@ func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Han
 func (r *fargateRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, error) {
 	if !h.SelfExits {
 		if _, err := r.ecs.StopTask(ctx, &ecs.StopTaskInput{
-			Cluster: aws.String(r.cfg.Cluster),
+			Cluster: aws.String(r.cfg.cluster),
 			Task:    aws.String(h.ID),
 			Reason:  aws.String("harness stop"),
 		}); err != nil && !isMissing(err) {
@@ -152,27 +152,27 @@ func init() {
 
 func loadConfig() fargateConfig {
 	return fargateConfig{
-		Region:           os.Getenv("AWS_REGION"),
-		Cluster:          os.Getenv("AWS_ECS_CLUSTER"),
-		SubnetIDs:        splitNonEmpty(os.Getenv("AWS_ECS_SUBNET_IDS"), ","),
-		SecurityGroupIDs: splitNonEmpty(os.Getenv("AWS_ECS_SECURITY_GROUP_IDS"), ","),
-		LogGroup:         os.Getenv("AWS_ECS_LOG_GROUP"),
+		region:           os.Getenv("AWS_REGION"),
+		cluster:          os.Getenv("AWS_ECS_CLUSTER"),
+		subnetIDs:        splitNonEmpty(os.Getenv("AWS_ECS_SUBNET_IDS"), ","),
+		securityGroupIDs: splitNonEmpty(os.Getenv("AWS_ECS_SECURITY_GROUP_IDS"), ","),
+		logGroup:         os.Getenv("AWS_ECS_LOG_GROUP"),
 	}
 }
 
 // validate fails at construction, so a worker throws an error immediately.
 func (c fargateConfig) validate() error {
 	var missing []string
-	if c.Cluster == "" {
+	if c.cluster == "" {
 		missing = append(missing, "AWS_ECS_CLUSTER")
 	}
-	if len(c.SubnetIDs) == 0 {
+	if len(c.subnetIDs) == 0 {
 		missing = append(missing, "AWS_ECS_SUBNET_IDS")
 	}
-	if len(c.SecurityGroupIDs) == 0 {
+	if len(c.securityGroupIDs) == 0 {
 		missing = append(missing, "AWS_ECS_SECURITY_GROUP_IDS")
 	}
-	if c.LogGroup == "" {
+	if c.logGroup == "" {
 		missing = append(missing, "AWS_ECS_LOG_GROUP")
 	}
 	if len(missing) > 0 {
@@ -250,7 +250,7 @@ func (r *fargateRunner) waitStopped(ctx context.Context, arn string) (*ecstypes.
 
 func (r *fargateRunner) describeTask(ctx context.Context, arn string) (*ecstypes.Task, error) {
 	out, err := r.ecs.DescribeTasks(ctx, &ecs.DescribeTasksInput{
-		Cluster: aws.String(r.cfg.Cluster),
+		Cluster: aws.String(r.cfg.cluster),
 		Tasks:   []string{arn},
 	})
 	if err != nil {
@@ -314,7 +314,7 @@ func (r *fargateRunner) readStream(ctx context.Context, stream string) ([]byte, 
 	)
 	for {
 		out, err := r.logs.GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
-			LogGroupName:  aws.String(r.cfg.LogGroup),
+			LogGroupName:  aws.String(r.cfg.logGroup),
 			LogStreamName: aws.String(stream),
 			StartFromHead: aws.Bool(true),
 			NextToken:     token,
