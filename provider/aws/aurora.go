@@ -15,6 +15,7 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // auroraProvider provisions Aurora PostgreSQL clusters.
@@ -309,7 +310,7 @@ func (p *auroraProvider) Deprovision(ctx context.Context, clusterID string) erro
 // reader to promote.
 func (p *auroraProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
 	switch disruption {
-	case provider.Restart:
+	case provider.Restart, provider.Crash:
 		return true
 	case provider.Failover:
 		return req.HighAvailability
@@ -317,9 +318,9 @@ func (p *auroraProvider) Supports(req provider.ProvisionRequest, disruption prov
 	return false
 }
 
-// Disrupt reboots the writer, or promotes the reader, and returns once the
-// cluster has settled. The writer endpoint follows the promotion, so the
-// returned ClusterInfo is unchanged.
+// Disrupt reboots the writer, crashes it, or promotes the reader, and returns
+// once the cluster has settled. The writer endpoint follows the promotion, so
+// the returned ClusterInfo is unchanged.
 func (p *auroraProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
 	before, err := p.describeCluster(ctx, cluster.ID)
 	if err != nil {
@@ -340,6 +341,26 @@ func (p *auroraProvider) Disrupt(ctx context.Context, cluster provider.ClusterIn
 		}
 		if err := p.waitForReboot(ctx, writer); err != nil {
 			return provider.ClusterInfo{}, err
+		}
+
+	case provider.Crash:
+		if err := injectCrash(ctx, cluster); err != nil {
+			return provider.ClusterInfo{}, err
+		}
+		// Aurora restarts the writer in place; the endpoint answering again is the settle.
+		if err := p.WaitForReady(ctx, cluster); err != nil {
+			return provider.ClusterInfo{}, err
+		}
+		after, err := p.describeCluster(ctx, cluster.ID)
+		if err != nil {
+			return provider.ClusterInfo{}, err
+		}
+		if w, _ := roles(after); w != writer && p.tel != nil {
+			p.tel.Logger.Warn("crash moved the writer",
+				slog.String("cluster_id", cluster.ID),
+				slog.String("before", writer),
+				slog.String("after", w),
+			)
 		}
 
 	case provider.Failover:
@@ -379,6 +400,29 @@ func (p *auroraProvider) Disrupt(ctx context.Context, cluster provider.ClusterIn
 		)
 	}
 	return cluster, nil
+}
+
+// injectCrash crashes the writer's Postgres with Aurora's fault injection query.
+// The query cannot return normally: the server dies under it, so a lost
+// connection or a crash-shutdown error is success.
+func injectCrash(ctx context.Context, cluster provider.ClusterInfo) error {
+	connCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
+	if err != nil {
+		return fmt.Errorf("connect to writer of %s: %w", cluster.ID, err)
+	}
+	defer conn.Close(context.Background())
+
+	_, err = conn.Exec(connCtx, "SELECT aurora_inject_crash('instance')")
+	if err == nil {
+		return fmt.Errorf("aurora_inject_crash returned without crashing %s", cluster.ID)
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && !strings.HasPrefix(pgErr.Code, "57P") {
+		return fmt.Errorf("aurora_inject_crash on %s: %w", cluster.ID, err)
+	}
+	return nil
 }
 
 // waitForReboot waits for the instance to leave "available" and come back.

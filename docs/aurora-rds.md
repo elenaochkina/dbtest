@@ -90,8 +90,9 @@ FailoverDBCluster ───────────────▶ Wait Cluster 
 | `resolveAuroraClass` | override, otherwise db.r6g.large → xlarge → 2xlarge → 4xlarge by vCPU/memory; the starter's defaults (2 vCPU, 2 GiB) give **db.r6g.large** |
 | `WaitForReady` | copy of the RDS connect loop (to be shared in PR 2) |
 | `Deprovision` | deletes each member, then `DeleteDBCluster` with `SkipFinalSnapshot` and `DeleteAutomatedBackups`, retrying every 15 s while AWS says the cluster is busy; a missing cluster counts as success |
-| `Supports` | restart always; failover only with `-ha` |
-| `Disrupt` | restart: reboots the current writer and waits for it to leave and return to `available`. Failover: `FailoverDBCluster` targeting the reader, then waits until that reader is the writer and the cluster is `available`; it errors clearly if there's no reader |
+| `Supports` | restart and crash always; failover only with `-ha` |
+| `Disrupt` | restart: reboots the current writer and waits for it to leave and return to `available`. Crash: `aurora_inject_crash('instance')` on the writer, then waits until the endpoint accepts connections; logs a warning if the writer changed. Failover: `FailoverDBCluster` targeting the reader, then waits until that reader is the writer and the cluster is `available`; it errors clearly if there's no reader |
+| `injectCrash` | runs the fault injection query; a dropped connection or a `57P` crash-shutdown error counts as success, any other error or a normal return fails |
 | `waitForReboot`, `describeCluster`, `roles` | small helpers; `roles` returns the writer and the first reader from `DBClusterMembers` |
 | `poll` | generic "check every interval until true or timeout", with the same timeout handling as RDS's `waitForStatus` |
 | `init` | registers `provider.Aurora` |
