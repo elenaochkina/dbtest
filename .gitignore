@@ -1,4 +1,4 @@
-now# Binaries
+# Binaries
 *.exe
 *.out
 /bench
