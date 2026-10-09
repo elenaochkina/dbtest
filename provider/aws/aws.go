@@ -28,16 +28,15 @@ type awsProvider struct {
 }
 
 type awsConfig struct {
-	Region                string   // AWS_REGION
-	Username              string   // AWS_RDS_USERNAME (default "dbtest")
-	Database              string   // AWS_RDS_DATABASE (default "postgres")
-	InstanceClassOverride string   // AWS_RDS_INSTANCE_CLASS (optional; forces a class, bypassing the sizing table)
-	Public                bool     // AWS_RDS_PUBLIC (default true)
-	SubnetGroup           string   // AWS_RDS_SUBNET_GROUP (VPC-internal path)
-	SecurityGroupIDs      []string // AWS_RDS_SECURITY_GROUP_IDS (VPC-internal path)
+	Region                string
+	Username              string
+	Database              string
+	InstanceClassOverride string
+	Public                bool
+	SubnetGroup           string
+	SecurityGroupIDs      []string
 }
 
-// New creates an RDS-backed provider.
 func New(tel *telemetry.Telemetry) (*awsProvider, error) {
 	cfg := loadConfig()
 
@@ -56,7 +55,6 @@ func New(tel *telemetry.Telemetry) (*awsProvider, error) {
 	}, nil
 }
 
-// loadConfig reads the AWS_* / AWS_RDS_* environment into an awsConfig.
 func loadConfig() awsConfig {
 	public := true
 	if b, err := strconv.ParseBool(os.Getenv("AWS_RDS_PUBLIC")); err == nil {
@@ -81,7 +79,6 @@ func envOr(key, def string) string {
 	return def
 }
 
-// Provision creates an RDS instance sized from req
 func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -200,8 +197,7 @@ func (p *awsProvider) waitForEndpoint(ctx context.Context, instanceID string) (s
 	return "", 0, fmt.Errorf("instance %s did not become available within 15m", instanceID)
 }
 
-// resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instance
-// class.
+// resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instanceclass.
 // By default is the smallest class returns.
 func resolveInstanceClass(req provider.ProvisionRequest, override string) string {
 	if override != "" {
@@ -304,15 +300,12 @@ func splitNonEmpty(s, sep string) []string {
 	return out
 }
 
-// Supports reports which disruptions RDS can apply. There is no ungraceful kill:
-// the API offers a reboot and, on Multi-AZ, a reboot that fails over.
+// Supports reports which disruptions RDS can apply.
 func (p *awsProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
 	return disruption == provider.Restart
 }
 
-// Disrupt reboots the instance and returns once it is available again. The
-// endpoint keeps its DNS name across a reboot, so the caller's target still
-// resolves and the cluster is returned unchanged.
+// Disrupt reboots the instance and returns once it is available again.
 func (p *awsProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
 	if disruption != provider.Restart {
 		return provider.ClusterInfo{}, fmt.Errorf("aws cannot %s an instance", disruption)
@@ -370,15 +363,22 @@ func (p *awsProvider) waitForReboot(ctx context.Context, instanceID string) erro
 // whether that happened before the timeout. Timing out is a result, not an
 // error; an error means the poll itself could not be carried out.
 func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, timeout time.Duration, want func(string) bool) (bool, error) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
+	parent := ctx
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	for {
 		out, err := p.client.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 			DBInstanceIdentifier: aws.String(instanceID),
 		})
 		if err != nil {
+			if parent.Err() != nil {
+				return false, parent.Err()
+			}
+			// The deadline expiring mid-call is the timeout, not a failed poll.
+			if ctx.Err() != nil {
+				return false, nil
+			}
 			if p.tel != nil {
 				p.tel.Logger.Error("describe db instance failed",
 					slog.String("instance_id", instanceID),
@@ -390,12 +390,17 @@ func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, time
 		if len(out.DBInstances) > 0 && want(aws.ToString(out.DBInstances[0].DBInstanceStatus)) {
 			return true, nil
 		}
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			if parent.Err() != nil {
+				return false, parent.Err()
+			}
+			return false, nil
+		case <-time.After(2 * time.Second):
+		}
 	}
-	return false, nil
 }
 
-// newProvider adapts New to the registry constructor signature.
 func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
 	return New(tel)
 }
@@ -404,5 +409,4 @@ func init() {
 	provider.Register(provider.AWS, newProvider)
 }
 
-// Compile-time assertion that awsProvider satisfies the core Provider contract.
 var _ provider.Provider = (*awsProvider)(nil)

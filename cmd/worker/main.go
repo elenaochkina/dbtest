@@ -15,6 +15,7 @@ import (
 	_ "github.com/elenaochkina/dbtest/provider/docker"
 
 	// Same for the container runners and harness.New.
+	_ "github.com/elenaochkina/dbtest/harness/aws"
 	_ "github.com/elenaochkina/dbtest/harness/docker"
 
 	"go.temporal.io/sdk/client"
@@ -57,7 +58,7 @@ func main() {
 	w := worker.New(c, dbtemporal.TaskQueue, worker.Options{})
 	w.RegisterWorkflow(workflows.PgBenchWorkflow)
 	w.RegisterWorkflow(workflows.RecoveryWorkflow)
-	w.RegisterActivity(activities.NewSaveResultActivities(statePool, tel))
+	w.RegisterActivity(activities.NewStateDBActivities(statePool, tel))
 	w.RegisterActivity(activities.NewProviderActivities(tel))
 	w.RegisterActivity(activities.NewWorkloadActivities(tel))
 	w.RegisterActivity(activities.NewDurabilityActivities(tel))

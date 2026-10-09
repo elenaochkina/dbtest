@@ -148,7 +148,7 @@ Push to **ECR**.
 
 ECR repo, ECS cluster, task definition (image + log config + roles), the task
 security group, and — if using a private subnet — NAT/VPC endpoints. Region is
-**us-east-2** (where the RDS test SG lives). Idle cost of a cluster + task def
+**us-west-2**. Idle cost of a cluster + task def
 with no running tasks is ~zero. The RDS `AWS_RDS_*` config now lives with the
 **worker's** environment, not the task definition.
 

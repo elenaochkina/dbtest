@@ -11,6 +11,7 @@ import (
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/probe"
 	"github.com/elenaochkina/dbtest/telemetry"
+	"github.com/jackc/pgx/v5"
 )
 
 // ProbeInput describes the prober container to start.
@@ -20,9 +21,17 @@ type ProbeInput struct {
 	Name   string
 	// DSN addresses the database as a sibling container sees it, which is not the
 	// address the worker uses.
-	DSN         string
-	Interval    time.Duration
-	MaxDuration time.Duration
+	DSN          string
+	Interval     time.Duration
+	Timeout      time.Duration
+	WriteTimeout time.Duration
+	MaxDuration  time.Duration
+}
+
+// ProbeReadyInput describes where to watch the probe's counter row.
+type ProbeReadyInput struct {
+	// TargetDSN is the address the worker uses, not the container's.
+	TargetDSN string
 }
 
 // BenchContainerInput describes the bench container to run.
@@ -34,8 +43,7 @@ type BenchContainerInput struct {
 	// address the worker uses.
 	DSN      string
 	Workload string // pgbench or warehouse
-	// Scale sets how much data pgbench writes. It has to match across every run
-	// being compared.
+	// Scale sets how much data pgbench writes.
 	Scale int
 }
 
@@ -146,10 +154,57 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 	return nil
 }
 
+// CheckProbeReadiness reports whether the probe has completed a sample.
+func (a *HarnessActivities) CheckProbeReadiness(ctx context.Context, input ProbeReadyInput) (bool, error) {
+	// The container is already RUNNING, so only Prepare and one sample remain.
+	for attempt := range 10 {
+		if seq, err := probeSeq(ctx, input.TargetDSN); err == nil && seq > 0 {
+			if a.tel != nil {
+				a.tel.Logger.Info("probe is sampling",
+					slog.Int64("seq", seq),
+					slog.Int("attempt", attempt+1),
+				)
+			}
+			return true, nil
+		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return false, nil
+}
+
+// probeSeq reads the counter the prober advances. Errors are expected until the
+// prober has created the table.
+func probeSeq(ctx context.Context, dsn string) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close(context.Background())
+
+	var seq int64
+	if err := conn.QueryRow(ctx, "SELECT seq FROM dbtest_probe WHERE id = 1").Scan(&seq); err != nil {
+		return 0, err
+	}
+	return seq, nil
+}
+
 func probeSpec(in ProbeInput) harness.Spec {
 	args := []string{"-dsn", in.DSN}
 	if in.Interval > 0 {
 		args = append(args, "-interval", in.Interval.String())
+	}
+	if in.Timeout > 0 {
+		args = append(args, "-timeout", in.Timeout.String())
+	}
+	if in.WriteTimeout > 0 {
+		args = append(args, "-write-timeout", in.WriteTimeout.String())
 	}
 	if in.MaxDuration > 0 {
 		args = append(args, "-max-duration", in.MaxDuration.String())
