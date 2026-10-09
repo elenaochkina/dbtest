@@ -9,7 +9,9 @@ PLATFORM ?= linux/arm64
 BENCH_IMAGE ?= dbtest/bench:dev
 PROBE_IMAGE ?= dbtest/probe:dev
 
-.PHONY: build test images bench-image probe-image registry-login push push-bench push-probe
+TF := terraform -chdir=terraform/aws
+
+.PHONY: build test images bench-image probe-image registry-login push push-bench push-probe aws-cidr aws-apply
 
 build:
 	go build ./...
@@ -43,3 +45,13 @@ push-probe:
 	@$(if $(REGISTRY),,$(error REGISTRY is unset - see config.mk.example))
 	docker build --platform $(PLATFORM) -f build/probe.Dockerfile -t $(REGISTRY)/probe:$(TAG) .
 	docker push $(REGISTRY)/probe:$(TAG)
+
+# Point the RDS ingress rule at this machine's current public IP. A rotated IP
+# locks the worker out silently: the packets are dropped, not refused.
+aws-cidr:
+	printf 'dev_cidr = "%s/32"\n' "$$(curl -s https://checkip.amazonaws.com)" \
+	  > terraform/aws/terraform.tfvars
+	$(TF) plan
+
+aws-apply:
+	$(TF) apply

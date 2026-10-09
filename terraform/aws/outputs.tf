@@ -46,5 +46,9 @@ output "worker_env" {
     export AWS_REGION=${var.region}
     export AWS_RDS_SECURITY_GROUP_IDS=${aws_security_group.rds.id}
     export AWS_RDS_SUBNET_GROUP=${aws_db_subnet_group.main.name}
+    export AWS_ECS_CLUSTER=${aws_ecs_cluster.main.name}
+    export AWS_ECS_SUBNET_IDS=${join(",", data.aws_subnets.default.ids)}
+    export AWS_ECS_SECURITY_GROUP_IDS=${aws_security_group.task.id}
+    export AWS_ECS_LOG_GROUP=${aws_cloudwatch_log_group.tasks.name}
   EOT
 }

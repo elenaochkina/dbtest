@@ -39,6 +39,8 @@ func main() {
 	probeImage := flag.String("probe-image", "dbtest/probe:dev", "prober image")
 	benchImage := flag.String("bench-image", "dbtest/bench:dev", "bench image")
 	probeInterval := flag.Duration("probe-interval", 0, "time between probe samples; 0 leaves the prober's default")
+	probeTimeout := flag.Duration("probe-timeout", 0, "probe connect and read timeout; 0 leaves the prober's default")
+	probeWriteTimeout := flag.Duration("probe-write-timeout", 0, "probe write timeout; 0 leaves the prober's default")
 	flag.Parse()
 
 	if *workflowID == "" {
@@ -89,15 +91,17 @@ func main() {
 	case "recovery":
 		wf = workflows.RecoveryWorkflow
 		cfg = workflows.RecoveryWorkflowConfig{
-			Provider:      provider.ProviderName(*providerName),
-			Request:       request,
-			Disruption:    provider.Disruption(*disruption),
-			Repetitions:   *repetitions,
-			Settle:        *settle,
-			ProbeImage:    *probeImage,
-			BenchImage:    *benchImage,
-			Scale:         *scaleFactor,
-			ProbeInterval: *probeInterval,
+			Provider:          provider.ProviderName(*providerName),
+			Request:           request,
+			Disruption:        provider.Disruption(*disruption),
+			Repetitions:       *repetitions,
+			Settle:            *settle,
+			ProbeImage:        *probeImage,
+			BenchImage:        *benchImage,
+			Scale:             *scaleFactor,
+			ProbeInterval:     *probeInterval,
+			ProbeTimeout:      *probeTimeout,
+			ProbeWriteTimeout: *probeWriteTimeout,
 		}
 	default:
 		slog.Error("unknown workflow", "workflow", *workflowName)

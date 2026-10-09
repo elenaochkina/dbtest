@@ -21,11 +21,12 @@ type RecoveryWorkflowConfig struct {
 	// Settle is how long to wait after each disruption before the next one,
 	Settle time.Duration
 
-	ProbeImage string
-	BenchImage string
-	Scale      int
-	// Probe samples frequency
-	ProbeInterval time.Duration
+	ProbeImage        string
+	BenchImage        string
+	Scale             int
+	ProbeInterval     time.Duration
+	ProbeTimeout      time.Duration
+	ProbeWriteTimeout time.Duration
 }
 
 // onceOnly is for activities a retry would corrupt: disrupting twice is two
@@ -125,11 +126,13 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	var probeHandle harness.Handle
 	if err = workflow.ExecuteActivity(ctx, harn.StartProbe, activities.ProbeInput{
-		Runner:   runner,
-		Image:    cfg.ProbeImage,
-		Name:     "dbtest-probe-" + runID.String(),
-		DSN:      cluster.Internal.URL(cluster.Password),
-		Interval: cfg.ProbeInterval,
+		Runner:       runner,
+		Image:        cfg.ProbeImage,
+		Name:         "dbtest-probe-" + runID.String(),
+		DSN:          cluster.Internal.URL(cluster.Password),
+		Interval:     cfg.ProbeInterval,
+		Timeout:      cfg.ProbeTimeout,
+		WriteTimeout: cfg.ProbeWriteTimeout,
 	}).Get(ctx, &probeHandle); err != nil {
 		return err
 	}
@@ -143,8 +146,20 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		}).Get(dctx, nil)
 	}()
 
+	var probing bool
+	if err = workflow.ExecuteActivity(ctx, harn.CheckProbeReadiness, activities.ProbeReadyInput{
+		TargetDSN: cluster.Target.URL(cluster.Password),
+	}).Get(ctx, &probing); err != nil {
+		return err
+	}
+	if !probing {
+		return temporal.NewNonRetryableApplicationError(
+			"probe never advanced its counter", "ProbeNotSampling", nil)
+	}
+
 	// A baseline before the first disruption.
-	// robe needs a few successful samples to establish lastOK before the first disruption has something to measure from.
+	// The prober needs successful samples to establish lastOK before the first
+	// disruption has something to measure from.
 	if err = workflow.Sleep(ctx, cfg.Settle); err != nil {
 		return err
 	}

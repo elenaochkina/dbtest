@@ -26,8 +26,8 @@ func main() {
 	flag.DurationVar(&cfg.Interval, "interval", 250*time.Millisecond, "time between samples")
 	// Must stay under a second: a connect to a host that has gone away is not
 	// refused, it is dropped, and Linux does not retry the SYN for a full second.
-	flag.DurationVar(&cfg.Timeout, "timeout", 100*time.Millisecond, "per-sample connect + read timeout")
-	flag.DurationVar(&cfg.WriteTimeout, "write-timeout", 500*time.Millisecond, "per-sample write timeout")
+	flag.DurationVar(&cfg.Timeout, "timeout", 300*time.Millisecond, "per-sample connect + read timeout")
+	flag.DurationVar(&cfg.WriteTimeout, "write-timeout", 200*time.Millisecond, "per-sample write timeout")
 	flag.DurationVar(&cfg.MaxDuration, "max-duration", time.Hour, "stop polling even if nothing stops the probe")
 	flag.Parse()
 
