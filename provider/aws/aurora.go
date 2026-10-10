@@ -425,6 +425,8 @@ func injectCrash(ctx context.Context, cluster provider.ClusterInfo) error {
 	if errors.As(err, &pgErr) && !strings.HasPrefix(pgErr.Code, "57P") {
 		return fmt.Errorf("aurora_inject_crash on %s: %w", cluster.ID, err)
 	}
+	// TODO: a network failure also breaks the connection; compare
+	// pg_postmaster_start_time before and after to confirm the restart.
 	return nil
 }
 
