@@ -91,7 +91,7 @@ AWS_RDS_PUBLIC=false \
 AWS_RDS_SECURITY_GROUP_IDS=<rds-sg-allowing-ec2-sg> \
 AWS_RDS_INSTANCE_CLASS=db.t3.micro \
 STATE_DSN='postgres://postgres:test@localhost:5433/postgres' \
-./runbenchmark -provider aws -scenario benchmark < /dev/null
+./runbenchmark -provider rds -scenario benchmark < /dev/null
 
 # Docker — local container on the same EC2 (in-region baseline)
 STATE_DSN='postgres://postgres:test@localhost:5433/postgres' \

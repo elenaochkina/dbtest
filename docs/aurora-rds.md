@@ -75,3 +75,24 @@ FailoverDBCluster ───────────────▶ Wait Cluster 
 *   **For Aurora:** The code completely drops individual instance polling and instead loops over `DescribeDBClusters` tracking the nested `DBClusterMembers` roles collection.
 
 
+
+---
+
+## 5. Implementation: `provider/aws/aurora.go`
+
+| piece | what it does |
+|---|---|
+| `auroraProvider`, `NewAurora` | same shape as RDS: `loadConfig` + `newClient` |
+| `Provision` | names the cluster after the token; the writer is `<token>-1`, plus `<token>-2` with `-ha`; on failure it cleans up, like RDS |
+| `create` | `CreateDBCluster` (engine, version, credentials, subnet group, security groups, `dbtest` tag), then `CreateDBInstance` for each member; "already exists" is accepted, so retries are safe |
+| `engineVersion` | `16` → Aurora's default 16.x (16.13) through `DescribeDBEngineVersions`; a full version is used as given |
+| `waitForEndpoint` | polls every 15 s, up to 20 min, until the cluster and all its instances are `available`; returns the writer endpoint |
+| `resolveAuroraClass` | override, otherwise db.r6g.large → xlarge → 2xlarge → 4xlarge by vCPU/memory; the starter's defaults (2 vCPU, 2 GiB) give **db.r6g.large** |
+| `WaitForReady` | copy of the RDS connect loop (to be shared in PR 2) |
+| `Deprovision` | deletes each member, then `DeleteDBCluster` with `SkipFinalSnapshot` and `DeleteAutomatedBackups`, retrying every 15 s while AWS says the cluster is busy; a missing cluster counts as success |
+| `Supports` | restart and crash always; failover only with `-ha` |
+| `Disrupt` | restart: reboots the current writer and waits for it to leave and return to `available`. Crash: `aurora_inject_crash('instance')` on the writer, then waits until the endpoint accepts connections; logs a warning if the writer changed. Failover: `FailoverDBCluster` targeting the reader, then waits until that reader is the writer and the cluster is `available`; it errors clearly if there's no reader |
+| `injectCrash` | runs the fault injection query; a dropped connection or a `57P` crash-shutdown error counts as success, any other error or a normal return fails |
+| `waitForReboot`, `describeCluster`, `roles` | small helpers; `roles` returns the writer and the first reader from `DBClusterMembers` |
+| `poll` | generic "check every interval until true or timeout", with the same timeout handling as RDS's `waitForStatus` |
+| `init` | registers `provider.Aurora` |

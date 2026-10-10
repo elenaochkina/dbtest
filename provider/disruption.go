@@ -12,6 +12,6 @@ const (
 	Failover Disruption = "failover"
 
 	// Crash ends the server without a clean shutdown, leaving WAL to replay.
-	// Only Docker offers it so far.
+	// Docker kills the container; Aurora uses its fault injection query.
 	Crash Disruption = "crash"
 )

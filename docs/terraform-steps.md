@@ -164,7 +164,7 @@ against a Postgres, outside Temporal.
    before the first AWS run. A healthy sample against RDS needs roughly six round
    trips — DNS, TCP, TLS, SCRAM, query — and will otherwise be recorded as a
    failure.
-4. First run is `-workflow recovery -provider aws -disruption restart`. Not
+4. First run is `-workflow recovery -provider rds -disruption restart`. Not
    failover: `Supports` refuses it and `provider/aws.Provision` never sets
    `MultiAZ`.
 
