@@ -170,8 +170,9 @@ func resolveInstanceClass(req provider.ProvisionRequest, override string) string
 		{"db.t3.medium", 2, 4096},
 		{"db.t3.large", 2, 8192},
 		{"db.t3.xlarge", 4, 16384},
-		{"db.t3.2xlarge", 8, 32768},
+		{"db.m6g.2xlarge", 8, 32768},
 	}
+
 	for _, c := range table {
 		if c.vcpu >= req.VCPU && c.memoryMiB >= req.MemoryMiB {
 			return c.name

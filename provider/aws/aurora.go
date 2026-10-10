@@ -403,8 +403,7 @@ func (p *auroraProvider) Disrupt(ctx context.Context, cluster provider.ClusterIn
 }
 
 // injectCrash crashes the writer's Postgres with Aurora's fault injection query.
-// The query cannot return normally: the server dies under it, so a lost
-// connection or a crash-shutdown error is success.
+// A lost connection or a crash-shutdown error is success.
 func injectCrash(ctx context.Context, cluster provider.ClusterInfo) error {
 	connCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
