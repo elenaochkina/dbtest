@@ -418,6 +418,9 @@ func injectCrash(ctx context.Context, cluster provider.ClusterInfo) error {
 	if err == nil {
 		return fmt.Errorf("aurora_inject_crash returned without crashing %s", cluster.ID)
 	}
+	if connCtx.Err() != nil {
+		return fmt.Errorf("aurora_inject_crash on %s timed out: %w", cluster.ID, err)
+	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && !strings.HasPrefix(pgErr.Code, "57P") {
 		return fmt.Errorf("aurora_inject_crash on %s: %w", cluster.ID, err)
