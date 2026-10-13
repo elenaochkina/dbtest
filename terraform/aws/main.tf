@@ -1,6 +1,5 @@
 provider "aws" {
-  region  = var.region
-  profile = "dbtest-terraform"
+  region = var.region
 
   default_tags {
     tags = {
