@@ -1,0 +1,84 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadRDS",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "rds:DescribeDBEngineVersions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageTestDatabases",
+      "Effect": "Allow",
+      "Action": [
+        "rds:CreateDBInstance",
+        "rds:CreateDBCluster",
+        "rds:AddTagsToResource",
+        "rds:RebootDBInstance",
+        "rds:FailoverDBCluster",
+        "rds:DeleteDBInstance",
+        "rds:DeleteDBCluster"
+      ],
+      "Resource": [
+        "arn:aws:rds:*:*:db:dbtest-*",
+        "arn:aws:rds:*:*:cluster:dbtest-*"
+      ]
+    },
+    {
+      "Sid": "UseTestDatabaseSettings",
+      "Effect": "Allow",
+      "Action": [
+        "rds:CreateDBInstance",
+        "rds:CreateDBCluster"
+      ],
+      "Resource": [
+        "arn:aws:rds:*:*:subgrp:dbtest-*",
+        "arn:aws:rds:*:*:pg:default.*",
+        "arn:aws:rds:*:*:cluster-pg:default.*",
+        "arn:aws:rds:*:*:og:default:*"
+      ]
+    },
+    {
+      "Sid": "RunTestTasks",
+      "Effect": "Allow",
+      "Action": "ecs:RunTask",
+      "Resource": "arn:aws:ecs:*:*:task-definition/dbtest-*:*"
+    },
+    {
+      "Sid": "WatchTestTasks",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeTasks",
+        "ecs:StopTask"
+      ],
+      "Resource": "arn:aws:ecs:*:*:task/dbtest/*"
+    },
+    {
+      "Sid": "ReadTaskDefinitions",
+      "Effect": "Allow",
+      "Action": "ecs:DescribeTaskDefinition",
+      "Resource": "*"
+    },
+    {
+      "Sid": "PassExecutionRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/dbtest-ecs-execution",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "ReadTaskLogs",
+      "Effect": "Allow",
+      "Action": "logs:GetLogEvents",
+      "Resource": "arn:aws:logs:*:*:log-group:/ecs/dbtest:log-stream:*"
+    }
+  ]
+}
