@@ -15,7 +15,7 @@ var durabilityTables = []string{"warehouse", "orders"}
 var benchmarkResources = provider.ProvisionRequest{
 	VCPU:            2,
 	MemoryMiB:       2048,
-	PostgresVersion: "16",
+	PostgresVersion: "18",
 }
 
 func init() {

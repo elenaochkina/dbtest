@@ -42,7 +42,7 @@ session, that container — and all `benchmark_results` in it — goes with it. 
 terraform apply
    └─ EC2 + IAM profile + SGs come up
 EC2 (via user-data or SSM):
-   docker run state DB  →  runbenchmark -provider aws  →  runbenchmark -provider docker
+   docker run state DB  →  runbenchmark -provider rds  →  runbenchmark -provider docker
    →  dump benchmark_results to JSON  →  aws s3 cp to results bucket
 verify results in S3
 terraform destroy
