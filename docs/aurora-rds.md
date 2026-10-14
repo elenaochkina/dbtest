@@ -85,7 +85,7 @@ FailoverDBCluster ───────────────▶ Wait Cluster 
 | `auroraProvider`, `NewAurora` | same shape as RDS: `loadConfig` + `newClient` |
 | `Provision` | names the cluster after the token; the writer is `<token>-1`, plus `<token>-2` with `-ha`; on failure it cleans up, like RDS |
 | `create` | `CreateDBCluster` (engine, version, credentials, subnet group, security groups, `dbtest` tag), then `CreateDBInstance` for each member; "already exists" is accepted, so retries are safe |
-| `engineVersion` | `16` → Aurora's default 16.x (16.13) through `DescribeDBEngineVersions`; a full version is used as given |
+| `engineVersion` | `18` → Aurora's default 18.x (18.3) through `DescribeDBEngineVersions`; a full version is used as given |
 | `waitForEndpoint` | polls every 15 s, up to 20 min, until the cluster and all its instances are `available`; returns the writer endpoint |
 | `resolveAuroraClass` | override, otherwise db.r6g.large → xlarge → 2xlarge → 4xlarge by vCPU/memory; the starter's defaults (2 vCPU, 2 GiB) give **db.r6g.large** |
 | `WaitForReady` | copy of the RDS connect loop (to be shared in PR 2) |

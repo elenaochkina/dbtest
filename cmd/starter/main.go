@@ -22,7 +22,7 @@ func main() {
 	vcpu := flag.Float64("vcpu", 2, "cluster vCPU")
 	memoryMiB := flag.Int("memory-mib", 2048, "cluster memory (MiB)")
 	diskGiB := flag.Int("disk-gib", 0, "cluster disk (GiB); 0 = provider default")
-	pgVersion := flag.String("pg-version", "16", "postgres engine version")
+	pgVersion := flag.String("pg-version", "18", "postgres engine version")
 	seed := flag.Int64("seed", 42, "random seed for warehouse data")
 	warehouses := flag.Int("warehouses", 5, "number of warehouses to seed")
 	scaleFactor := flag.Int("scale", 1, "pgbench scale factor")
