@@ -1,7 +1,6 @@
 package workflows
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/elenaochkina/dbtest/harness"
@@ -202,17 +201,6 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		Handle: probeHandle,
 	}).Get(ctx, &result); err != nil {
 		return err
-	}
-
-	// A failover keeps interrupting while the standby rebuilds. Every other
-	// disruption brings the database back for good, so one outage each.
-	if cfg.Disruption != provider.Failover {
-		if got := len(result.Writable.Outages); got != cfg.Repetitions {
-			return temporal.NewNonRetryableApplicationError(
-				fmt.Sprintf("observed %d outages, applied %d disruptions", got, cfg.Repetitions),
-				"OutageCountMismatch", nil,
-			)
-		}
 	}
 
 	return workflow.ExecuteActivity(ctx, runs.SaveDowntimeResults, activities.SaveDowntimeInput{

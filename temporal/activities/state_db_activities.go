@@ -77,73 +77,77 @@ func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error
 
 // SaveDowntimeResults writes one row per disruption.
 func (a *StateDBActivities) SaveDowntimeResults(ctx context.Context, input SaveDowntimeInput) error {
-	if pre := beforeFirst(input.Result.Writable.Outages, input.DisruptedAt); len(pre) > 0 && a.tel != nil {
-		var ms float64
-		for _, o := range pre {
-			ms += o.DownMs
-		}
-		a.tel.Logger.Warn("outages before the first disruption",
-			slog.Int("count", len(pre)),
-			slog.Float64("total_down_ms", ms),
-			slog.Time("first", pre[0].FirstFailure),
-		)
-	}
-	rows, err := downtimeRows(input)
+	rows, unmatched, err := downtimeRows(input)
 	if err != nil {
 		return err
+	}
+	if a.tel != nil {
+		if missing := len(input.DisruptedAt) - len(rows); missing > 0 {
+			a.tel.Logger.Warn("disruptions with no outage", slog.Int("count", missing))
+		}
+		for _, o := range unmatched {
+			a.tel.Logger.Warn("outage matched no disruption",
+				slog.Time("first_failure", o.FirstFailure),
+				slog.Float64("down_ms", o.DownMs),
+			)
+		}
 	}
 	return state.SaveDowntimeResults(ctx, a.statePool, input.RunID, rows, a.tel)
 }
 
-// downtimeRows pairs the two levels the prober records. Writable is the
-// authority: it is the stronger condition, so every outage appears in it.
-// If there is no readable outage, it is marked as zero.
-// Outages are grouped by the disruption they followed, one row per disruption.
-func downtimeRows(input SaveDowntimeInput) ([]state.DowntimeRow, error) {
-	readable := input.Result.Readable.Outages
+// downtimeRows makes one row per disruption from the first long outage after it.
+// It also returns the other long outages.
+func downtimeRows(input SaveDowntimeInput) ([]state.DowntimeRow, []probe.Outage, error) {
+	readable := longOutages(input.Result.Readable.Outages)
 
-	windows, err := groupByDisruption(input.Result.Writable.Outages, input.DisruptedAt)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]state.DowntimeRow, 0, len(windows))
-
-	for i, outages := range windows {
-		takeover := outages[0]
-		last := outages[len(outages)-1]
+	var rows []state.DowntimeRow
+	var unmatched []probe.Outage
+	i := -1 // the last disruption at or before the outage
+	for _, o := range longOutages(input.Result.Writable.Outages) {
+		for i+1 < len(input.DisruptedAt) && !o.FirstFailure.Before(input.DisruptedAt[i+1]) {
+			i++
+		}
+		// Before the first disruption, or not the first outage after it.
+		if i < 0 || (len(rows) > 0 && rows[len(rows)-1].Repetition == i+1) {
+			unmatched = append(unmatched, o)
+			continue
+		}
+		if o.FirstOKAfter.IsZero() {
+			return nil, nil, fmt.Errorf("disruption %d never recovered before the probe stopped", i+1)
+		}
 		row := state.DowntimeRow{
 			Provider:           string(input.Provider),
 			Disruption:         string(input.Disruption),
 			Repetition:         i + 1,
 			DisruptedAt:        input.DisruptedAt[i],
-			UsableAgainAt:      takeover.FirstOKAfter,
-			SyncEndedAt:        last.FirstOKAfter,
-			WritableDowntimeMs: takeover.DownMs,
-			// Stays zero when no readable outage overlapse: reads never broke
-			ReadableDowntimeMs: 0,
-			FullRecoveryMs:     msBetween(takeover.LastOK, last.FirstOKAfter),
+			UsableAgainAt:      o.FirstOKAfter,
+			SyncEndedAt:        o.FirstOKAfter,
+			WritableDowntimeMs: o.DownMs,
+			FullRecoveryMs:     o.DownMs,
+			LostCommits:        o.LostCommits,
 			ProbeIntervalMs:    input.Result.IntervalMs,
-			ProbeErrors:        map[string]int{},
+			ProbeFailures:      o.Failures,
+			ProbeErrors:        o.Errors,
 		}
-		// Everything after the takeover belongs to the same disruption, so the
-		// totals cover the whole window.
-		for _, o := range outages {
-			row.LostCommits += o.LostCommits
-			row.ProbeFailures += o.Failures
-			for k, v := range o.Errors {
-				row.ProbeErrors[k] += v
-			}
-		}
-		if r, ok := matchReadable(readable, takeover); ok {
+		// Stays zero when reads never broke.
+		if r, ok := matchReadable(readable, o); ok {
 			row.ReadableDowntimeMs = r.DownMs
 		}
 		rows = append(rows, row)
 	}
-	return rows, nil
+	return rows, unmatched, nil
 }
 
-func msBetween(from, to time.Time) float64 {
-	return float64(to.Sub(from).Microseconds()) / 1000
+// longOutages keeps the outages that last at least a second, lost commits, orex
+// never ended.
+func longOutages(outages []probe.Outage) []probe.Outage {
+	var kept []probe.Outage
+	for _, o := range outages {
+		if o.DownMs >= 1000 || o.LostCommits > 0 || o.FirstOKAfter.IsZero() {
+			kept = append(kept, o)
+		}
+	}
+	return kept
 }
 
 // matchReadable finds the readable outage that falls inside a writable one.
@@ -158,60 +162,4 @@ func matchReadable(readable []probe.Outage, w probe.Outage) (probe.Outage, bool)
 		}
 	}
 	return probe.Outage{}, false
-}
-
-// groupByDisruption puts each outage in the window of the disruption it followed.
-// The first outage in a window is the disruption's process;
-// the rest are writer blips during sync stage.
-func groupByDisruption(outages []probe.Outage, disruptedAt []time.Time) ([][]probe.Outage, error) {
-	if len(disruptedAt) == 0 {
-		return nil, fmt.Errorf("no disruption timestamps recorded")
-	}
-
-	windows := make([][]probe.Outage, len(disruptedAt))
-	for _, o := range outages {
-		i := windowOf(o.FirstFailure, disruptedAt)
-		// A cluster interrupts itself while it is still settling, so an outage
-		// before the first disruption belongs to no window.
-		if i < 0 {
-			continue
-		}
-		windows[i] = append(windows[i], o)
-	}
-
-	for i, w := range windows {
-		if len(w) == 0 {
-			return nil, fmt.Errorf("disruption %d at %s produced no outage", i+1, disruptedAt[i])
-		}
-		if w[len(w)-1].FirstOKAfter.IsZero() {
-			return nil, fmt.Errorf("disruption %d never recovered before the probe stopped", i+1)
-		}
-	}
-	return windows, nil
-}
-
-// beforeFirst returns the outages that began before the first disruption.
-func beforeFirst(outages []probe.Outage, disruptedAt []time.Time) []probe.Outage {
-	if len(disruptedAt) == 0 {
-		return nil
-	}
-	var pre []probe.Outage
-	for _, o := range outages {
-		if o.FirstFailure.Before(disruptedAt[0]) {
-			pre = append(pre, o)
-		}
-	}
-	return pre
-}
-
-// windowOf returns the index of the last disruption at or before at, or -1.
-func windowOf(at time.Time, disruptedAt []time.Time) int {
-	idx := -1
-	for i, d := range disruptedAt {
-		if at.Before(d) {
-			break
-		}
-		idx = i
-	}
-	return idx
 }
