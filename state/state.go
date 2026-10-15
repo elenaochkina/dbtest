@@ -102,10 +102,8 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			repetition            INT         NOT NULL,
 			disrupted_at          TIMESTAMPTZ NOT NULL,
 			usable_again_at       TIMESTAMPTZ NOT NULL,
-			sync_ended_at         TIMESTAMPTZ NOT NULL,
 			readable_downtime_ms FLOAT8      NOT NULL,
 			writable_downtime_ms  FLOAT8      NOT NULL,
-			full_recovery_ms      FLOAT8      NOT NULL,
 			lost_commits          BIGINT      NOT NULL,
 			probe_interval_ms     FLOAT8      NOT NULL,
 			probe_failures        INT         NOT NULL,
@@ -141,6 +139,16 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	} {
 		if _, err = pool.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("migrate clusters table: %w", err)
+		}
+	}
+
+	// Drop columns that existing installations still have.
+	for _, stmt := range []string{
+		`ALTER TABLE downtime_results DROP COLUMN IF EXISTS sync_ended_at`,
+		`ALTER TABLE downtime_results DROP COLUMN IF EXISTS full_recovery_ms`,
+	} {
+		if _, err = pool.Exec(ctx, stmt); err != nil {
+			return fmt.Errorf("migrate downtime_results table: %w", err)
 		}
 	}
 
