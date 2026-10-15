@@ -101,41 +101,70 @@ func downtimeRows(input SaveDowntimeInput) ([]state.DowntimeRow, []probe.Outage,
 	readable := longOutages(input.Result.Readable.Outages)
 
 	var rows []state.DowntimeRow
-	var unmatched []probe.Outage
-	i := -1 // the last disruption at or before the outage
-	for _, o := range longOutages(input.Result.Writable.Outages) {
-		for i+1 < len(input.DisruptedAt) && !o.FirstFailure.Before(input.DisruptedAt[i+1]) {
-			i++
+	var skippedOutages []probe.Outage
+
+	if len(input.DisruptedAt) == 0 {
+		return nil, nil, fmt.Errorf("no disruption timestamps recorded")
+	}
+
+	disruptedAtIndex := 0
+	disruptionAt := input.DisruptedAt[disruptedAtIndex]
+	writable := longOutages(input.Result.Writable.Outages)
+	outageIndex := 0
+	for outageIndex < len(writable) && disruptedAtIndex < len(input.DisruptedAt) {
+		//outage happens before a certain disruption window, incliuding extra outages happens after the previous failover
+		for outageIndex < len(writable) && writable[outageIndex].FirstFailure.Before(disruptionAt) {
+			skippedOutages = append(skippedOutages, writable[outageIndex])
+			outageIndex++
 		}
-		// Before the first disruption, or not the first outage after it.
-		if i < 0 || (len(rows) > 0 && rows[len(rows)-1].Repetition == i+1) {
-			unmatched = append(unmatched, o)
-			continue
+
+		if outageIndex == len(writable) {
+			break
 		}
-		if o.FirstOKAfter.IsZero() {
-			return nil, nil, fmt.Errorf("disruption %d never recovered before the probe stopped", i+1)
+		outage := writable[outageIndex]
+
+		//Skips disruption that has no outages (rare edge case)
+		for disruptedAtIndex+1 < len(input.DisruptedAt) && !outage.FirstFailure.Before(input.DisruptedAt[disruptedAtIndex+1]) {
+			disruptedAtIndex++
 		}
+
+		disruptionAt = input.DisruptedAt[disruptedAtIndex]
+
+		if outage.FirstOKAfter.IsZero() {
+			return nil, nil, fmt.Errorf("disruption %d never recovered before the probe stopped", disruptedAtIndex+1)
+		}
+		//outage during a failover
 		row := state.DowntimeRow{
 			Provider:           string(input.Provider),
 			Disruption:         string(input.Disruption),
-			Repetition:         i + 1,
-			DisruptedAt:        input.DisruptedAt[i],
-			UsableAgainAt:      o.FirstOKAfter,
-			SyncEndedAt:        o.FirstOKAfter,
-			WritableDowntimeMs: o.DownMs,
-			FullRecoveryMs:     o.DownMs,
-			LostCommits:        o.LostCommits,
+			Repetition:         disruptedAtIndex + 1,
+			DisruptedAt:        disruptionAt,
+			UsableAgainAt:      outage.FirstOKAfter,
+			SyncEndedAt:        outage.FirstOKAfter,
+			WritableDowntimeMs: outage.DownMs,
+			FullRecoveryMs:     outage.DownMs,
+			LostCommits:        outage.LostCommits,
 			ProbeIntervalMs:    input.Result.IntervalMs,
-			ProbeFailures:      o.Failures,
-			ProbeErrors:        o.Errors,
+			ProbeFailures:      outage.Failures,
+			ProbeErrors:        outage.Errors,
 		}
-		// Stays zero when reads never broke.
-		if r, ok := matchReadable(readable, o); ok {
-			row.ReadableDowntimeMs = r.DownMs
+		// reads downtime states zero when reads are never broken
+		if read, ok := matchReadable(readable, outage); ok {
+			row.ReadableDowntimeMs = read.DownMs
 		}
+
 		rows = append(rows, row)
+		disruptedAtIndex++
+		outageIndex++
+		if disruptedAtIndex < len(input.DisruptedAt) {
+			disruptionAt = input.DisruptedAt[disruptedAtIndex]
+		}
 	}
-	return rows, unmatched, nil
+
+	// Outages happens after the last disruption's window
+	skippedOutages = append(skippedOutages, writable[outageIndex:]...)
+
+	return rows, skippedOutages, nil
 }
 
 // longOutages keeps the outages that last at least a second, lost commits, orex
