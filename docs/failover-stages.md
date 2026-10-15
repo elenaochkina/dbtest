@@ -69,6 +69,10 @@ Because Amazon Aurora utilizes a distributed, cloud-native **shared storage arch
 
 # Revised RDS Multi-AZ Failover Measurement Specification
 
+> **Superseded.** Outages under a second are dropped and each disruption
+> records only its first outage; `full_recovery_ms` is removed. See
+> `failover-findings.md` §7.
+
 This document details the refined measurement model for tracking Multi-AZ RDS failovers. Instead of expecting a single clean outage block, the system now embraces multi-outage "blips" by capturing **one disruption window** per test, recording two discrete recovery metrics, an interruption counter, and tail latency overhead.
 
 ---
