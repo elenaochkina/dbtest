@@ -57,26 +57,29 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 		return err
 	}
 
-	var cluster provider.ClusterInfo
-	if err = workflow.ExecuteActivity(ctx, prov.Provision, activities.ProvisionInput{
-		Provider: cfg.Provider,
-		Request:  cfg.Request,
-		Token:    runID.String(),
-		Password: password,
-	}).Get(ctx, &cluster); err != nil {
-		return err
-	}
-	// Registered after Provision → runs BEFORE EndRun.
+	// Assign clusterID before it exists, so cleanup is registered before Provision can fail.
+	// Deprovision treats a missing cluster as success.
+	clusterID := "dbtest-" + runID.String()
 	defer func() {
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
 		if derr := workflow.ExecuteActivity(dctx, prov.Deprovision, activities.DeprovisionInput{
 			Provider:  cfg.Provider,
-			ClusterID: cluster.ID,
+			ClusterID: clusterID,
 		}).Get(dctx, nil); derr != nil && err == nil {
 			err = derr
 		}
 	}()
+
+	var cluster provider.ClusterInfo
+	if err = workflow.ExecuteActivity(ctx, prov.Provision, activities.ProvisionInput{
+		Provider: cfg.Provider,
+		Request:  cfg.Request,
+		Token:    clusterID,
+		Password: password,
+	}).Get(ctx, &cluster); err != nil {
+		return err
+	}
 
 	if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
 		Provider: cfg.Provider,

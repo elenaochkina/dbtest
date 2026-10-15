@@ -61,7 +61,7 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 	// A named container on a shared network is what lets bench and probe address
 	// the database as <name>:5432 — an address that survives the restart
 	// the published host port, which PublishAllPorts reassigns on every start.
-	name := containerName(token)
+	name := token // empty lets Docker pick
 	if err := p.ensureNetwork(ctx); err != nil {
 		return provider.ClusterInfo{}, err
 	}
@@ -146,14 +146,6 @@ func (p *dockerProvider) ensureNetwork(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// containerName derives a stable name from the provisioning token
-func containerName(token string) string {
-	if token == "" {
-		return "" // no stable identity supplied — let Docker pick
-	}
-	return "dbtest-" + token
 }
 
 // dockerResources maps the cross-provider ProvisionRequest onto Docker's cgroup
