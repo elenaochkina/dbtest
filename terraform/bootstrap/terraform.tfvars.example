@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars. Each user finds their ARN with:
+#   aws sts get-caller-identity --query Arn --output text
+# For an SSO user, use the role ARN, including its path:
+#   arn:aws:iam::<account>:role/aws-reserved/sso.amazonaws.com/<region>/AWSReservedSSO_<set>_<id>
+trusted_principals = [
+  "arn:aws:iam::111122223333:user/alex",
+]
