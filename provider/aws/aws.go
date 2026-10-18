@@ -89,13 +89,15 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 	// A retry must land on the same instance a prior attempt created, so the
 	// identifier and password are derived from the caller's pinned token/password.
 	if token == "" {
-		token = uuid.NewString()
+		token = "dbtest-" + uuid.NewString()
 	}
 	if password == "" {
 		password = uuid.NewString()
 	}
 
-	instanceID := p.cfg.Database + "-" + token
+	// The token is the identifier, so the caller can name the instance before
+	// it exists.
+	instanceID := token
 	instanceClass := resolveInstanceClass(req, p.cfg.InstanceClassOverride)
 
 	input := &rds.CreateDBInstanceInput{
@@ -106,6 +108,7 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 		MasterUsername:       aws.String(p.cfg.Username),
 		MasterUserPassword:   aws.String(password),
 		PubliclyAccessible:   aws.Bool(p.cfg.Public),
+		MultiAZ:              aws.Bool(req.HighAvailability),
 		Tags: []rdstypes.Tag{
 			{Key: aws.String("dbtest"), Value: aws.String("true")},
 		},
@@ -175,7 +178,7 @@ func (p *awsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 
 // waitForEndpoint polls DescribeDBInstances until the instance reports "available"
 func (p *awsProvider) waitForEndpoint(ctx context.Context, instanceID string) (string, int, error) {
-	deadline := time.Now().Add(15 * time.Minute)
+	deadline := time.Now().Add(25 * time.Minute)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
 			return "", 0, err
@@ -197,7 +200,7 @@ func (p *awsProvider) waitForEndpoint(ctx context.Context, instanceID string) (s
 	return "", 0, fmt.Errorf("instance %s did not become available within 15m", instanceID)
 }
 
-// resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instanceclass.
+// resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instance class.
 // By default is the smallest class returns.
 func resolveInstanceClass(req provider.ProvisionRequest, override string) string {
 	if override != "" {
@@ -302,23 +305,45 @@ func splitNonEmpty(s, sep string) []string {
 
 // Supports reports which disruptions RDS can apply.
 func (p *awsProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
-	return disruption == provider.Restart
+	switch disruption {
+	case provider.Restart:
+		return true
+	case provider.Failover:
+		return req.HighAvailability
+	}
+	return false
 }
 
-// Disrupt reboots the instance and returns once it is available again.
+// Disrupt reboots the instance and returns once it is available again, promoting
+// the standby when asked for a failover.
 func (p *awsProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
-	if disruption != provider.Restart {
+	var failover bool
+	switch disruption {
+	case provider.Restart:
+	case provider.Failover:
+		failover = true
+	default:
 		return provider.ClusterInfo{}, fmt.Errorf("aws cannot %s an instance", disruption)
+	}
+
+	var zoneBefore string
+	if failover {
+		inst, err := p.describe(ctx, cluster.ID)
+		if err != nil {
+			return provider.ClusterInfo{}, err
+		}
+		zoneBefore = aws.ToString(inst.AvailabilityZone)
 	}
 
 	start := time.Now()
 	if _, err := p.client.RebootDBInstance(ctx, &rds.RebootDBInstanceInput{
 		DBInstanceIdentifier: aws.String(cluster.ID),
+		ForceFailover:        aws.Bool(failover),
 	}); err != nil {
 		return provider.ClusterInfo{}, fmt.Errorf("reboot db instance: %w", err)
 	}
 
-	if err := p.waitForReboot(ctx, cluster.ID); err != nil {
+	if err := p.waitForReboot(ctx, cluster.ID, zoneBefore); err != nil {
 		return provider.ClusterInfo{}, err
 	}
 
@@ -332,37 +357,68 @@ func (p *awsProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo,
 	return cluster, nil
 }
 
-// waitForReboot waits for the instance to leave "available" and then come back
-// to it. RebootDBInstance returns before the reboot begins, so waiting only for
-// "available" reads the state from before the call and returns immediately.
-func (p *awsProvider) waitForReboot(ctx context.Context, instanceID string) error {
-	// Guards against the false positive: the instance still reports available
-	// because the reboot has not begun, so wait for it to leave that state.
-	left, err := p.waitForStatus(ctx, instanceID, 2*time.Minute, func(s string) bool { return s != "available" })
+// describe returns the instance's current state.
+func (p *awsProvider) describe(ctx context.Context, instanceID string) (rdstypes.DBInstance, error) {
+	out, err := p.client.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
+		DBInstanceIdentifier: aws.String(instanceID),
+	})
+	if err != nil {
+		return rdstypes.DBInstance{}, fmt.Errorf("describe db instance %s: %w", instanceID, err)
+	}
+	if len(out.DBInstances) == 0 {
+		return rdstypes.DBInstance{}, fmt.Errorf("instance %s not found", instanceID)
+	}
+	return out.DBInstances[0], nil
+}
+
+// waitForReboot waits for the instance to leave "available" and come back.
+// for failover needs to point to a different AZ wher a former standby (primary after failover) instance resides
+func (p *awsProvider) waitForReboot(ctx context.Context, instanceID, zoneBefore string) error {
+	// Guards againist false positive and wait until instance leaves "available" status
+	left, err := p.waitForStatus(ctx, instanceID, 2*time.Minute, func(inst rdstypes.DBInstance) bool {
+		return aws.ToString(inst.DBInstanceStatus) != "available"
+	})
 	if err != nil {
 		return err
 	}
 	// A reboot takes minutes and the poll is every two seconds, so never seeing the
-	// transition means the reboot did not take, not that it was too quick to see.
+	// transition means the reboot did not take.
 	if !left {
 		return fmt.Errorf("instance %s never left available after a reboot request", instanceID)
 	}
 
-	// The reboot is over once the instance reports available again.
-	back, err := p.waitForStatus(ctx, instanceID, 15*time.Minute, func(s string) bool { return s == "available" })
+	// Traffic is restored once the instance reports available again.
+	back, err := p.waitForStatus(ctx, instanceID, 15*time.Minute, func(inst rdstypes.DBInstance) bool {
+		return aws.ToString(inst.DBInstanceStatus) == "available"
+	})
 	if err != nil {
 		return err
 	}
 	if !back {
 		return fmt.Errorf("instance %s was not available again within 15m", instanceID)
 	}
+
+	if zoneBefore == "" {
+		return nil
+	}
+
+	// The zone swap is the last thing a failover updates.
+	synced, err := p.waitForStatus(ctx, instanceID, 15*time.Minute, func(inst rdstypes.DBInstance) bool {
+		return aws.ToString(inst.DBInstanceStatus) == "available" &&
+			aws.ToString(inst.AvailabilityZone) != zoneBefore
+	})
+	if err != nil {
+		return err
+	}
+	if !synced {
+		return fmt.Errorf("instance %s still reports its primary in %s 15m after a failover", instanceID, zoneBefore)
+	}
 	return nil
 }
 
-// waitForStatus polls until the instance status satisfies want and reports
-// whether that happened before the timeout. Timing out is a result, not an
-// error; an error means the poll itself could not be carried out.
-func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, timeout time.Duration, want func(string) bool) (bool, error) {
+// waitForStatus polls DescribeDBInstances until want returns true. It returns
+// false if the timeout passes first, and an error only if the poll itself fails.
+func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, timeout time.Duration, want func(rdstypes.DBInstance) bool) (bool, error) {
 	parent := ctx
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
@@ -387,7 +443,7 @@ func (p *awsProvider) waitForStatus(ctx context.Context, instanceID string, time
 			}
 			return false, fmt.Errorf("describe db instance %s: %w", instanceID, err)
 		}
-		if len(out.DBInstances) > 0 && want(aws.ToString(out.DBInstances[0].DBInstanceStatus)) {
+		if len(out.DBInstances) > 0 && want(out.DBInstances[0]) {
 			return true, nil
 		}
 		select {
