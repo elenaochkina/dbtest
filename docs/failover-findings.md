@@ -183,11 +183,11 @@ is not evidence of the primary waiting on its standby, and the per-minute
 stalls in run C were never shown to depend on the pair being degraded.
 
 **Consequence for the results table.** `sync_ended_at` and `full_recovery_ms`
-record the last outage in a disruption's window. On RDS Multi-AZ that is
+recorded the last outage in a disruption's window. On RDS Multi-AZ that was
 whichever background stall last crossed a deadline before the window closed,
-so the values (614 s to 1248 s at `-settle 15m` or more) measure the window,
-not recovery. The columns are kept until Aurora shows whether another topology
-gives them a meaning.
+so the values (614 s to 1248 s at `-settle 15m` or more) measured the window,
+not recovery. Outages under a second are now dropped, each disruption records
+only its first outage, and both columns are removed.
 
 ## Measurement caveats
 
