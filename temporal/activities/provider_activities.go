@@ -70,6 +70,9 @@ func (a *ProviderActivities) WaitForReady(ctx context.Context, input WaitForRead
 	return p.WaitForReady(ctx, input.Cluster)
 }
 
+// TODO: expired AWS credentials exhaust the default retries within seconds and
+// leave the cluster running. Schedule this activity with a slower retry policy
+// (30s backoff up to 5m, bounded by a ScheduleToCloseTimeout).
 func (a *ProviderActivities) Deprovision(ctx context.Context, input DeprovisionInput) error {
 	p, err := provider.Run(input.Provider, a.tel)
 	if err != nil {
