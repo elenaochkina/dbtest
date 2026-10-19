@@ -30,7 +30,8 @@ components up, then presents a persistent three-panel view — component status,
 actions, and live logs from the active run. Existing binaries (`cmd/worker`, `cmd/starter`,
 `cmd/runbenchmark`) keep working unchanged so CI and scripting are unaffected.
 
-Decisions already made: **Bubble Tea + Lipgloss + Bubbles**; **three stacked full-width rows**;
+Decisions already made: **Bubble Tea + Lip Gloss + Bubbles v2** (`charm.land/*/v2`; Bubble Tea
+v2.0.8 is the last release that builds on Go 1.25); **three stacked full-width rows**;
 the worker sits **behind an interface** with an in-process implementation first.
 
 "Provider" here means a **managed Postgres provider**, and the list is expected to grow. Today
@@ -84,7 +85,7 @@ fakes and no terminal.
 cmd/dbtest/main.go              flags, slog redirect, tea.NewProgram
 internal/console/               Bubble Tea (UI only)
   model.go                      root Model, Init/Update/View, nav stack ([]screen; esc = pop)
-  msgs.go                       the event vocabulary (all tea.Msg types)
+  messages.go                   the event vocabulary (all tea.Msg types)
   keys.go  theme.go             keymap; lipgloss styles
   panel_status.go               STATUS row
   panel_actions.go              ACTIONS row + Model.actions() gating
@@ -93,7 +94,7 @@ internal/console/               Bubble Tea (UI only)
   screen_resources.go  screen_history.go
 internal/stack/                 engine the console drives (no UI imports)
   supervisor.go                 Component interface + state machine + health polling
-  statedb.go  temporalsrv.go    managed containers via the docker SDK
+  statedb.go  temporalserver.go managed containers via the docker SDK
   telemetry.go                  metrics server component
   ports.go  config.go           free-port picker; .dbtest.local.json
   resources.go  history.go      leaked-resource listing; past runs
@@ -227,50 +228,59 @@ conditional in the UI.
      Terraform.
   4. **Reachability guard.** Public + no `AWS_RDS_SECURITY_GROUP_IDS` = stop here, per
      `rds.go:81`.
-  5. **Cost preview** from exported `resolveInstanceClass` / `allocatedStorageGiB`
-     (`rds.go:160`, `rds.go:184`) and `resolveAuroraClass` (`aurora.go:212`), with typed
+  5. **Cost preview** from `resolveInstanceClass` / `allocatedStorageGiB` (`rds.go:160`,
+     `rds.go:184`) and `resolveAuroraClass` (`aurora.go:212`), exported in step 6, with typed
      confirmation. A Multi-AZ RDS or a two-instance Aurora cluster is shown as two instances.
 
   Auto-creating security groups is deliberately out of v1 — it mutates the user's account.
 
 ## Implementation steps
 
-**Step 0 — minimum scaffolding.** Add the three deps; `cmd/dbtest` starts a Bubble Tea program
-rendering the three-panel frame from a `Model` populated with **stub** state; number/arrow
-selection moves the cursor; a ticker pushes fake log lines through the real `logBatchMsg` path;
-`q` quits; resize works. No docker, no Temporal, no DB. Proves layout, keys, resize and the
-message plumbing. ~150 lines.
+One step is one branch and one PR. Steps 1–5 need only docker; steps 6 and 7 need the `dbtest`
+role and spend a few cents per AWS run.
 
-**Step 1 — engine seams + live status.** Extract `temporal.NewWorker` (registration list
+**Step 1 — scaffold** (`tui-scaffold`). Add the three deps; `cmd/dbtest` renders the three-panel
+frame from **fake** state; arrows and digits move the cursor; a fake event channel feeds
+component states and log lines through the real `componentStateMsg`/`logBatchMsg` path; `q`
+quits; resize works. No docker, no Temporal, no DB. The LOG panel shows the newest lines that
+fit; `bubbles/viewport` arrives with scrollback in step 8.
+
+**Step 2 — engine seams** (`tui-engine-seams`). Extract `temporal.NewWorker` (registration list
 currently only in `cmd/worker/main.go:59-65`); telemetry auto-port + surfaced bind error + writer
-wiring; export the AWS sizing helpers. Then `stack.Supervisor` with the three real components,
-driving the STATUS panel and `r`-to-retry.
+wiring; fix the `telemetry/logs.go` comment. The only step that changes existing behavior.
 
-**Step 2 — logs + worker.** `logbus` slog handler; `workerhost.WorkerHost` with the in-process
-implementation; real log lines in the LOG panel; worker health in STATUS.
+**Step 3 — live status** (`tui-live-status`). `stack.Supervisor` with the three real components
+(state db, temporal, telemetry), free-port picking, driving the STATUS panel and `r`-to-retry.
 
-**Step 3 — start workflows.** Two form screens (`bubbles/textinput`) mirroring `cmd/starter`'s
-flags. **pgbench:** provider, vCPU, memory, disk, Postgres version (default 18), seed,
-warehouses, scale, clients, duration. **recovery:** the same sizing plus disruption, repetitions,
-settle, `-ha`, probe/bench images and probe timings. Timestamped workflow IDs
-(`<workflow>-<yyyymmdd-hhmmss>` — the current default at `cmd/starter/main.go:46-48` reuses the
-bare workflow name and collides on rerun), active-run header, completion/failure, and two-stage
-cancel-and-quit.
+**Step 4 — worker + logs** (`tui-worker-logs`). `logbus` slog handler; `workerhost.WorkerHost`
+with the in-process implementation; real log lines in the LOG panel, batched every ~75 ms into a
+~2000-line ring; worker health in STATUS.
 
-**Step 4 — providers.** Providers and runners rows in STATUS rendered from the registries;
-`configure providers` screen listing every registered provider; the
-`Configurator`/`SizingPreview` interfaces with **AWS as the first implementation** (one section
-for `rds` and `aurora`), persisted per provider to a gitignored `.dbtest.local.json`. Cloud SQL
-and Flexible Server then land as added files, not console edits.
+**Step 5 — start workflows** (`tui-start-workflows`). Two form screens (`bubbles/textinput`)
+mirroring `cmd/starter`'s flags. **pgbench:** provider, vCPU, memory, disk, Postgres version
+(default 18), seed, warehouses, scale, clients, duration. **recovery:** the same sizing plus
+disruption, repetitions, settle, `-ha`, probe/bench images and probe timings. Timestamped
+workflow IDs (`<workflow>-<yyyymmdd-hhmmss>` — the current default at `cmd/starter/main.go:46-48`
+reuses the bare workflow name and collides on rerun), the probe/bench image check, active-run
+header, completion/failure, and two-stage cancel-and-quit.
 
-**Step 5 — resources + history.** `list resources`: containers by label, RDS instances and
-Aurora clusters by the `dbtest=true` tag (`rds.go:68`, `aurora.go:101`), running Fargate tasks
-in the `dbtest` cluster, and the `clusters` table — with a confirmed delete. `past workflows`:
-`runs` joined with `benchmark_results` (pgbench) and `downtime_results` (recovery, one row per
-disruption) from the state DB, plus Temporal `ListWorkflow` status.
+**Step 6 — providers** (`tui-providers`). Providers and runners rows in STATUS rendered from the
+registries; `configure providers` screen listing every registered provider; the
+`Configurator`/`SizingPreview` interfaces in `internal/providercfg` with **AWS as the first
+implementation** (one section for `rds` and `aurora`), persisted per provider to a gitignored
+`.dbtest.local.json`; export the AWS sizing helpers for the cost preview. Cloud SQL and Flexible
+Server then land as added files, not console edits.
 
-**Step 6 — polish.** README quickstart rewrite (the current one documents only "Phase 1" and
-predates providers, the state DB and Temporal), help overlay, log filter/scrollback.
+**Step 7 — resources + history** (`tui-resources-history`). `list resources`: containers by
+label, RDS instances and Aurora clusters by the `dbtest=true` tag (`rds.go:68`, `aurora.go:101`),
+running Fargate tasks in the `dbtest` cluster, and the `clusters` table — with a confirmed
+delete. `past workflows`: `runs` joined with `benchmark_results` (pgbench) and
+`downtime_results` (recovery, one row per disruption) from the state DB, plus Temporal
+`ListWorkflow` status.
+
+**Step 8 — polish** (`tui-polish`). README quickstart rewrite (the current one documents only
+"Phase 1" and predates providers, the state DB and Temporal), help overlay, log
+filter/scrollback.
 
 ## Files touched outside the new folders
 
@@ -280,39 +290,42 @@ predates providers, the state DB and Temporal), help overlay, log filter/scrollb
 | `cmd/worker/main.go` | reduce to client dial + `temporal.NewWorker` |
 | `telemetry/metrics.go` | port 0 = auto; return bind error |
 | `telemetry/logs.go` | fix the stale "installs global default" comment |
-| `provider/provider.go` | add `Configurator` / `SizingPreview` optional capability interfaces |
-| `provider/aws/aws.go`, `rds.go`, `aurora.go` | implement them — first managed provider; export the sizing helpers |
+| `provider/aws/rds.go`, `aurora.go` | export the sizing helpers |
 | `go.mod` | add bubbletea/lipgloss/bubbles; `service/sts` indirect → direct |
 | `.gitignore` | add `.dbtest.local.json`, `.dbtest/` |
 | `README.md` | quickstart rewrite around the console |
 
 ## Verification
 
-Per step, and cumulative at the end:
+Every step:
 
 ```bash
 go build ./... && go vet ./...
 go test ./internal/console/...            # Update() is pure: state → available actions
-go run ./cmd/dbtest                       # step 0: frame renders, resize, q quits
 ```
 
-- **Step 0/1:** nothing may reach stdout while the program runs (redirect `os.Stdout` in a test
-  and assert empty); shrink the terminal to ~60×15 and confirm no panic or overlap.
-- **Step 1:** kill `dbtest-state` from another shell → STATUS flips to `error` within a poll
+- **Step 1:** `go run ./cmd/dbtest` renders at ~60×15 and up with no panic or overlap; resize
+  works; `q` quits. Tests cover the cursor and `actions()`.
+- **Step 2:** `cmd/worker` behaves as before; one docker run passes.
+- **Step 3:** kill `dbtest-state` from another shell → STATUS flips to `error` within a poll
   interval and `r` recovers it. Hold listeners on 7233 and 5433 → the console picks other ports.
-- **Step 2/3:** run pgbench end to end; assert via
+- **Step 4:** nothing may reach stdout while the program runs (redirect `os.Stdout` in a test
+  and assert empty); a docker seed doesn't freeze the UI.
+- **Step 5:** run pgbench end to end; assert via
   `psql "$STATE_DSN" -c 'select scenario,passed from runs order by started_at desc limit 3'` and a
   fresh `benchmark_results` row. Then a docker recovery run with `-disruption crash
   -repetitions 2` → two `downtime_results` rows for the run.
-- **Quit safety:** quit mid-run → provisioned container gone (`docker ps -a`), the probe
-  container stopped, and the `runs` row reads `passed = false`.
-- **Durability demo (the whole point):** `kill -9` the console mid-run, relaunch → the new
-  in-process worker rejoins the still-live workflow in the Temporal container and completes the
-  deferred teardown. Assert no leftover cluster.
-- **Step 4, no cost:** with `AWS_PROFILE` unset → guidance; expired SSO → login prompt then
+  - **Quit safety:** quit mid-run → provisioned container gone (`docker ps -a`), the probe
+    container stopped, and the `runs` row reads `passed = false`.
+  - **Durability demo (the whole point):** `kill -9` the console mid-run, relaunch → the new
+    in-process worker rejoins the still-live workflow in the Temporal container and completes
+    the deferred teardown. Assert no leftover cluster.
+- **Step 6, no cost:** with `AWS_PROFILE` unset → guidance; expired SSO → login prompt then
   success; `.env` missing → pointer to `terraform/README.md`; public + no SG → refusal *before*
-  any create, confirmed by `aws rds describe-db-instances` showing nothing new.
-- **Step 5:** leak a container by hand, confirm `list resources` finds it and the delete works.
+  any create, confirmed by `aws rds describe-db-instances` showing nothing new. Then one RDS
+  restart started from the console passes.
+- **Step 7:** leak a container by hand, confirm `list resources` finds it and the delete works;
+  a running Fargate task shows up under the `dbtest` role.
 
 ## Out of scope
 
