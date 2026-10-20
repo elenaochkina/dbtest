@@ -12,7 +12,7 @@ type LogConfig struct {
 	Output   io.Writer // where to write logs; defaults to os.Stdout if nil
 }
 
-// InitLogging sets up a JSON structured logger and installs it as the global default.
+// InitLogging returns a JSON structured logger.
 func InitLogging(cfg LogConfig) *slog.Logger {
 	var level slog.Level
 	switch cfg.LogLevel {

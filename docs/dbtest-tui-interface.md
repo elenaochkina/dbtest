@@ -106,7 +106,7 @@ internal/providercfg/           per-provider config + credential flows
   configurator.go               the interface; lookup by provider name
   aws.go                        SSO login; dbtest role; .env; reachability; cost preview
   (gcp.go, azure.go)            later — one file per cloud, no console changes
-temporal/worker.go              NEW shared registration list
+temporal/worker/worker.go       NEW shared registration list (worker.New)
 ```
 
 **The worker seam** — swapping to a child process or container later touches no console code:
@@ -126,7 +126,8 @@ the same type; a container host would tail container logs. The console only ever
 
 The in-process host must register what `cmd/worker` registers today: the providers and container
 runners through blank imports (`cmd/worker/main.go:13-19`), and both workflows plus five activity
-structs (`cmd/worker/main.go:59-65`). `temporal/worker.go` holds that list once for both.
+structs (`cmd/worker/main.go:59-65`). `temporal/worker` holds that list once for both, in its own
+package so `cmd/starter`, which imports `temporal` only for the task queue, doesn't link the providers.
 
 **Component supervisor** — each of state db / temporal / telemetry implements one interface with
 states `unknown → starting → up → error`, emitting `componentStateMsg` on every transition so the
@@ -245,9 +246,9 @@ component states and log lines through the real `componentStateMsg`/`logBatchMsg
 quits; resize works. No docker, no Temporal, no DB. The LOG panel shows the newest lines that
 fit; `bubbles/viewport` arrives with scrollback in step 8.
 
-**Step 2 — engine seams** (`tui-engine-seams`). Extract `temporal.NewWorker` (registration list
-currently only in `cmd/worker/main.go:59-65`); telemetry auto-port + surfaced bind error + writer
-wiring; fix the `telemetry/logs.go` comment. The only step that changes existing behavior.
+**Step 2 — engine seams** (`tui-engine-seams`). Extract `worker.New` into `temporal/worker`
+(registration list currently only in `cmd/worker/main.go:59-65`); telemetry auto-port + surfaced
+bind error; fix the `telemetry/logs.go` comment. The only step that changes existing behavior.
 
 **Step 3 — live status** (`tui-live-status`). `stack.Supervisor` with the three real components
 (state db, temporal, telemetry), free-port picking, driving the STATUS panel and `r`-to-retry.
@@ -286,8 +287,8 @@ filter/scrollback.
 
 | File | Change |
 |---|---|
-| `temporal/worker.go` | new — shared registration used by `cmd/worker` and the in-process host |
-| `cmd/worker/main.go` | reduce to client dial + `temporal.NewWorker` |
+| `temporal/worker/worker.go` | new — shared registration used by `cmd/worker` and the in-process host |
+| `cmd/worker/main.go` | reduce to client dial + `worker.New` |
 | `telemetry/metrics.go` | port 0 = auto; return bind error |
 | `telemetry/logs.go` | fix the stale "installs global default" comment |
 | `provider/aws/rds.go`, `aurora.go` | export the sizing helpers |

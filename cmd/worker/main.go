@@ -7,16 +7,7 @@ import (
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	dbtemporal "github.com/elenaochkina/dbtest/temporal"
-	"github.com/elenaochkina/dbtest/temporal/activities"
-	"github.com/elenaochkina/dbtest/temporal/workflows"
-
-	// Register the providers so provider.Run can resolve them inside activities.
-	_ "github.com/elenaochkina/dbtest/provider/aws"
-	_ "github.com/elenaochkina/dbtest/provider/docker"
-
-	// Same for the container runners and harness.New.
-	_ "github.com/elenaochkina/dbtest/harness/aws"
-	_ "github.com/elenaochkina/dbtest/harness/docker"
+	dbworker "github.com/elenaochkina/dbtest/temporal/worker"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -26,10 +17,14 @@ import (
 // holds the live dependencies (state pool, telemetry) injected into the activity
 // structs the workflow's typed-nil receivers resolve to at run time.
 func main() {
-	tel := telemetry.Init(telemetry.Config{
+	tel, err := telemetry.Init(telemetry.Config{
 		Log:     telemetry.LogConfig{LogLevel: "info", Output: nil},
 		Metrics: telemetry.MetricsConfig{MetricsPort: 9090},
 	})
+	if err != nil {
+		slog.Error("telemetry init failed", "error", err)
+		os.Exit(1)
+	}
 	defer tel.Shutdown()
 
 	stateDSN := os.Getenv("STATE_DSN")
@@ -55,14 +50,7 @@ func main() {
 	}
 	defer c.Close()
 
-	w := worker.New(c, dbtemporal.TaskQueue, worker.Options{})
-	w.RegisterWorkflow(workflows.PgBenchWorkflow)
-	w.RegisterWorkflow(workflows.RecoveryWorkflow)
-	w.RegisterActivity(activities.NewStateDBActivities(statePool, tel))
-	w.RegisterActivity(activities.NewProviderActivities(tel))
-	w.RegisterActivity(activities.NewWorkloadActivities(tel))
-	w.RegisterActivity(activities.NewDurabilityActivities(tel))
-	w.RegisterActivity(activities.NewHarnessActivities(tel))
+	w := dbworker.New(c, statePool, tel)
 
 	slog.Info("worker started", "task_queue", dbtemporal.TaskQueue, "temporal", hostPort)
 	if err := w.Run(worker.InterruptCh()); err != nil {
