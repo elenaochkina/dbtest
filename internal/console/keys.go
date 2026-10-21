@@ -2,7 +2,8 @@ package console
 
 import tea "charm.land/bubbletea/v2"
 
-// handleKey moves the cursor, runs the selected action or quits.
+// handleKey moves the cursor, runs the selected action, retries failed
+// components or quits.
 func (m model) handleKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key := message.String(); key {
 	case "up":
@@ -15,6 +16,8 @@ func (m model) handleKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if actions[m.cursor] == "exit" {
 			return m, tea.Quit
 		}
+	case "r":
+		m.retry()
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	}

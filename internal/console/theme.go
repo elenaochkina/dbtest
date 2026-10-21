@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/elenaochkina/dbtest/internal/stack"
 )
 
 var (
@@ -12,10 +14,10 @@ var (
 	cursorStyle = lipgloss.NewStyle().Bold(true)
 	timeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 
-	stateStyles = map[componentState]lipgloss.Style{
-		stateStarting: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		stateUp:       lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		stateError:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+	stateStyles = map[stack.State]lipgloss.Style{
+		stack.StateStarting: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		stack.StateUp:       lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		stack.StateError:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 	}
 )
 

@@ -8,16 +8,20 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/elenaochkina/dbtest/internal/stack"
 )
 
-// newTestModel returns a model with all components starting and no log feed.
+// newTestModel returns a model with all components starting, no event or log
+// feed, and a retry that does nothing.
 func newTestModel() model {
 	return model{
 		components: []component{
-			{name: "state db", state: stateStarting},
-			{name: "temporal", state: stateStarting},
-			{name: "telemetry", state: stateStarting},
+			{name: "state db", state: stack.StateStarting},
+			{name: "temporal", state: stack.StateStarting},
+			{name: "telemetry", state: stack.StateStarting},
 		},
+		retry: func() {},
 	}
 }
 
@@ -92,13 +96,36 @@ func TestEnterOnOtherActionDoesNotQuit(t *testing.T) {
 }
 
 func TestComponentStateIsStored(t *testing.T) {
-	current := send(newTestModel(), componentStateMsg{name: "temporal", state: stateUp, detail: "localhost:7233"})
+	current := send(newTestModel(), stack.Event{Name: "temporal", State: stack.StateUp, Detail: "localhost:7233"})
 	temporal := current.components[1]
-	if temporal.state != stateUp || temporal.detail != "localhost:7233" {
+	if temporal.state != stack.StateUp || temporal.detail != "localhost:7233" {
 		t.Fatalf("temporal = %+v, want up at localhost:7233", temporal)
 	}
-	if current.components[0].state != stateStarting {
+	if current.components[0].state != stack.StateStarting {
 		t.Fatal("state db changed too")
+	}
+}
+
+func TestStatusShowsOneLinePerDetailLine(t *testing.T) {
+	current := send(newTestModel(), stack.Event{Name: "temporal", State: stack.StateUp, Detail: "API\tlocalhost:7233\nUI\thttp://localhost:8233"})
+	lines := current.statusLines()
+	if len(lines) != 4 {
+		t.Fatalf("got %d status lines, want 4", len(lines))
+	}
+	for index, want := range [][2]string{{"temporal API", "localhost:7233"}, {"temporal UI", "http://localhost:8233"}} {
+		if line := lines[1+index]; !strings.HasPrefix(line, want[0]+" ") || !strings.HasSuffix(line, " "+want[1]) {
+			t.Fatalf("line %d = %q, want %s ... %s", 1+index, line, want[0], want[1])
+		}
+	}
+}
+
+func TestRetryKeyCallsRetry(t *testing.T) {
+	retries := 0
+	current := newTestModel()
+	current.retry = func() { retries++ }
+	send(current, keyPress("r"))
+	if retries != 1 {
+		t.Fatalf("retry called %d times, want 1", retries)
 	}
 }
 

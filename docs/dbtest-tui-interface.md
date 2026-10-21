@@ -93,9 +93,9 @@ internal/console/               Bubble Tea (UI only)
   screen_root.go  screen_pgbench.go  screen_recovery.go  screen_providers.go
   screen_resources.go  screen_history.go
 internal/stack/                 engine the console drives (no UI imports)
-  supervisor.go                 Component interface + state machine + health polling
+  orchestrator.go               Component interface + state machine + health polling
   statedb.go  temporalserver.go managed containers via the docker SDK
-  telemetry.go                  metrics server component
+  telemetryservice.go           metrics server component
   ports.go  config.go           free-port picker; .dbtest.local.json
   resources.go  history.go      leaked-resource listing; past runs
 internal/workerhost/            THE SEAM
@@ -129,11 +129,14 @@ runners through blank imports (`cmd/worker/main.go:13-19`), and both workflows p
 structs (`cmd/worker/main.go:59-65`). `temporal/worker` holds that list once for both, in its own
 package so `cmd/starter`, which imports `temporal` only for the task queue, doesn't link the providers.
 
-**Component supervisor** — each of state db / temporal / telemetry implements one interface with
-states `unknown → starting → up → error`, emitting `componentStateMsg` on every transition so the
-STATUS panel is live rather than polled once at boot. Containers are **adopted, not recreated**:
+**Component orchestrator** — each of state db / temporal / telemetry implements one interface
+(`start`, `check`) with states `starting → up → error`. The orchestrator checks each every 2
+seconds and sends a `stack.Event` on every change, so the STATUS panel is live rather than polled
+once at boot; `r` starts again any component in error. Containers are **adopted, not recreated**:
 names `dbtest-state`/`dbtest-temporal`, labels `dbtest.managed=true` + `dbtest.role=…`; running →
-adopt its published port, stopped → start, absent → create.
+adopt its published port, stopped → start, absent → create. Quitting the console leaves them
+running. A new state db container is `postgres:18` on a free host port, preferably 5433, with a
+named volume at `/var/lib/postgresql`.
 
 ## Provider set and the config seam
 
@@ -188,12 +191,11 @@ conditional in the UI.
 ## Engine decisions
 
 - **Temporal server** = `temporalio/temporal:1.8.2` container running `server start-dev --ip
-  0.0.0.0 --ui-ip 0.0.0.0 --port <P> --ui-port <P+1000> --db-filename /data/temporal.db` (tag
-  confirmed on Docker Hub 2026-07-31; flags against docs.temporal.io/cli/server). Publish
-  **identical inside/outside ports** (`P:P`) so no advertise-address mismatch is possible; named
-  volume for `/data` so history survives. *Verify at build time:* `docker run --rm
-  temporalio/temporal:1.8.2 server start-dev --help`. Fallbacks: `temporalio/auto-setup` against
-  the state Postgres, or fail with `brew install temporal`.
+  0.0.0.0 --ui-ip 0.0.0.0 --db-filename /home/temporal/temporal.db`. Inside the container the API
+  is on 7233 and the UI on 8233; each is published on `127.0.0.1` at a free host port, preferably
+  7233 and 8233. A named volume at `/home/temporal` keeps history across restarts; the image runs
+  as user `temporal`, which owns that directory, so a volume at a path absent from the image
+  (such as `/data`) is root-owned and SQLite cannot create its file.
 - **Worker stays on the host.** `provider/docker/docker.go:321` hardcodes `Host: "localhost"`, so
   a containerized worker would dial itself. The pgbench workflow runs `pgbench` from the worker's
   PATH (`pgbench/runner.go`); the recovery workflow runs its probe and bench in containers
@@ -250,7 +252,7 @@ fit; `bubbles/viewport` arrives with scrollback in step 8.
 (registration list currently only in `cmd/worker/main.go:59-65`); telemetry auto-port + surfaced
 bind error; fix the `telemetry/logs.go` comment. The only step that changes existing behavior.
 
-**Step 3 — live status** (`tui-live-status`). `stack.Supervisor` with the three real components
+**Step 3 — live status** (`tui-live-status`). `stack.Orchestrator` with the three real components
 (state db, temporal, telemetry), free-port picking, driving the STATUS panel and `r`-to-retry.
 
 **Step 4 — worker + logs** (`tui-worker-logs`). `logbus` slog handler; `workerhost.WorkerHost`
