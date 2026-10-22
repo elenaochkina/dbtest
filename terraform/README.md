@@ -6,11 +6,13 @@ here: the worker creates and deletes them on every run.
 
 | Module | Creates | Applied by | How often |
 |---|---|---|---|
-| `bootstrap/` | Policies and roles `dbtest-deployer`, `dbtest-runner` | An account admin (`AdministratorAccess` or `IAMFullAccess`) | Once, and when a policy or the user list changes |
-| `aws/` | ECR repos, ECS cluster and task definitions, log group, security groups, RDS subnet group, ECS execution role | `dbtest-deployer` | Once, and when the infrastructure changes |
+| `bootstrap/` | Policies `dbtest-infra`, `dbtest-run` and the role `dbtest` | An account admin (`AdministratorAccess` or `IAMFullAccess`) | Once, and when a policy or the user list changes |
+| `aws/` | ECR repos, ECS cluster and task definitions, log group, security groups, RDS subnet group, ECS execution role | `dbtest` | Once, and when the infrastructure changes |
 
-The worker runs as `dbtest-runner`. Nobody needs admin access after the
-bootstrap.
+Applying `aws/`, pushing images and running the worker all use the `dbtest`
+role. Its two policies split the permissions: `dbtest-infra` for the
+infrastructure and images, `dbtest-run` for what the worker calls. Nobody needs
+admin access after the bootstrap.
 
 ## Credentials
 
@@ -41,34 +43,29 @@ AWS_PROFILE=<admin> terraform -chdir=terraform/bootstrap apply
 AWS_PROFILE=<admin> terraform -chdir=terraform/bootstrap output
 ```
 
-Hand the two role ARNs to the users. An admin who does not use Terraform can
-create the same policies from `bootstrap/dbtest-deployer.json` and
-`bootstrap/dbtest-runner.json`, or attach them to an Identity Center
+Hand the role ARN to the users. An admin who does not use Terraform can
+create the same policies from `bootstrap/dbtest-infra.json` and
+`bootstrap/dbtest-run.json`, or attach them to an Identity Center
 permission set.
 
-## 2. Profiles (each user, once)
+## 2. Profile (each user, once)
 
 Add to `~/.aws/config`, with `source_profile` naming the user's own login:
 
 ```ini
-[profile dbtest-deployer]
-role_arn       = <deployer_role_arn>
-source_profile = <your profile>
-region         = us-west-2
-
-[profile dbtest-runner]
-role_arn       = <runner_role_arn>
+[profile dbtest]
+role_arn       = <role_arn>
 source_profile = <your profile>
 region         = us-west-2
 ```
 
-`aws sts get-caller-identity --profile dbtest-runner` should print
-`assumed-role/dbtest-runner/...`.
+`aws sts get-caller-identity --profile dbtest` should print
+`assumed-role/dbtest/...`.
 
-## 3. Infrastructure (deployer)
+## 3. Infrastructure
 
 ```sh
-export AWS_PROFILE=dbtest-deployer
+export AWS_PROFILE=dbtest
 make aws-cidr     # writes this machine's public IP to terraform/aws/terraform.tfvars and plans
 make aws-apply
 terraform -chdir=terraform/aws output -raw worker_env > .env
@@ -78,10 +75,10 @@ make push         # needs config.mk; see the Makefile
 Regenerate `.env` after every apply that replaces a security group; the worker
 reads their IDs from it.
 
-## 4. Runs (runner)
+## 4. Runs
 
 ```sh
-export AWS_PROFILE=dbtest-runner
+export AWS_PROFILE=dbtest
 source .env
 STATE_DSN='postgres://postgres:test@localhost:5433/postgres' ./worker
 ```
@@ -92,7 +89,7 @@ Fargate runs take task definition names as images:
 ## Changes
 
 - **Public IP changed.** The worker's connections to the database time out.
-  Run `make aws-cidr` and `make aws-apply` as the deployer.
+  Run `make aws-cidr` and `make aws-apply`.
 - **A policy JSON changed.** Re-apply `bootstrap` as the admin. IAM takes a few
   seconds to pick it up.
 - **AccessDenied.** The message names the missing action. Add it to the
@@ -101,19 +98,19 @@ Fargate runs take task definition names as images:
 ## Teardown
 
 ```sh
-AWS_PROFILE=dbtest-deployer terraform -chdir=terraform/aws destroy
+AWS_PROFILE=dbtest terraform -chdir=terraform/aws destroy
 AWS_PROFILE=<admin> terraform -chdir=terraform/bootstrap destroy
 ```
 
 ECR repositories that still hold images are not deleted; empty them first.
-Destroy `aws` before `bootstrap`, which removes the deployer role.
+Destroy `aws` before `bootstrap`, which removes the `dbtest` role.
 
 ## Notes
 
 - The policies match resources by the `dbtest` prefix and the
   `Project = dbtest` tag. Changing `var.project` in `aws/` needs the same
   change in both JSON files.
-- `dbtest-runner` covers what the worker calls, not the AWS console. Use an
-  admin login to browse.
+- The `dbtest` role covers what Terraform, `make push` and the worker call,
+  not the AWS console. Use an admin login to browse.
 - `terraform.tfvars` and state files are git-ignored. Keep account IDs out of
   committed files.

@@ -1,15 +1,16 @@
 # The JSON files are the source of truth, so an admin who does not use
-# Terraform can create the same policies by hand.
-resource "aws_iam_policy" "deployer" {
-  name        = "dbtest-deployer"
+# Terraform can create the same policies by hand. They stay two policies
+# because one would be close to IAM's 6,144-character limit.
+resource "aws_iam_policy" "infra" {
+  name        = "dbtest-infra"
   description = "Apply terraform/aws and push dbtest images"
-  policy      = file("${path.module}/dbtest-deployer.json")
+  policy      = file("${path.module}/dbtest-infra.json")
 }
 
-resource "aws_iam_policy" "runner" {
-  name        = "dbtest-runner"
+resource "aws_iam_policy" "run" {
+  name        = "dbtest-run"
   description = "Create, disrupt and delete dbtest databases and run its Fargate tasks"
-  policy      = file("${path.module}/dbtest-runner.json")
+  policy      = file("${path.module}/dbtest-run.json")
 }
 
 data "aws_iam_policy_document" "assume" {
@@ -23,22 +24,17 @@ data "aws_iam_policy_document" "assume" {
   }
 }
 
-resource "aws_iam_role" "deployer" {
-  name               = "dbtest-deployer"
+resource "aws_iam_role" "dbtest" {
+  name               = "dbtest"
   assume_role_policy = data.aws_iam_policy_document.assume.json
 }
 
-resource "aws_iam_role_policy_attachment" "deployer" {
-  role       = aws_iam_role.deployer.name
-  policy_arn = aws_iam_policy.deployer.arn
+resource "aws_iam_role_policy_attachment" "infra" {
+  role       = aws_iam_role.dbtest.name
+  policy_arn = aws_iam_policy.infra.arn
 }
 
-resource "aws_iam_role" "runner" {
-  name               = "dbtest-runner"
-  assume_role_policy = data.aws_iam_policy_document.assume.json
-}
-
-resource "aws_iam_role_policy_attachment" "runner" {
-  role       = aws_iam_role.runner.name
-  policy_arn = aws_iam_policy.runner.arn
+resource "aws_iam_role_policy_attachment" "run" {
+  role       = aws_iam_role.dbtest.name
+  policy_arn = aws_iam_policy.run.arn
 }

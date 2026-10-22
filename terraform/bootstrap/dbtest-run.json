@@ -58,6 +58,12 @@
       "Resource": "arn:aws:ecs:*:*:task/dbtest/*"
     },
     {
+      "Sid": "ListTestTasks",
+      "Effect": "Allow",
+      "Action": "ecs:ListTasks",
+      "Resource": "arn:aws:ecs:*:*:container-instance/dbtest/*"
+    },
+    {
       "Sid": "ReadTaskDefinitions",
       "Effect": "Allow",
       "Action": "ecs:DescribeTaskDefinition",
