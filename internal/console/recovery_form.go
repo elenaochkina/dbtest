@@ -227,7 +227,7 @@ func (form recoveryForm) set(text string) (recoveryForm, error) {
 
 // lines draws the step's options with the cursor, the input with its error, or
 // the summary, and the keys.
-func (form recoveryForm) lines() []string {
+func (form recoveryForm) lines(estimate string) []string {
 	var lines []string
 	for index, option := range form.options() {
 		if index == form.cursor {
@@ -246,7 +246,11 @@ func (form recoveryForm) lines() []string {
 		}
 	}
 	if form.step == "confirm" {
-		return append(append(lines, form.summary()...), keyHelp("start", "enter", "back", "esc", "menu", "m", "exit", "q"))
+		lines = append(lines, form.summary()...)
+		if estimate != "" {
+			lines = append(lines, estimate)
+		}
+		return append(lines, keyHelp("start", "enter", "back", "esc", "menu", "m", "exit", "q"))
 	}
 	return append(lines, keyHelp("next", "enter", "back", "esc", "menu", "m", "exit", "q"))
 }
