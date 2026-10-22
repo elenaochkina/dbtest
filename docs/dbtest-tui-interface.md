@@ -93,7 +93,7 @@ internal/console/               Bubble Tea (UI only)
   screen_root.go  screen_pgbench.go  screen_recovery.go  screen_providers.go
   screen_resources.go  screen_history.go
 internal/stack/                 engine the console drives (no UI imports)
-  orchestrator.go               Component interface + state machine + health polling
+  servicelauncher.go            Component interface + state machine + health polling
   statedb.go  temporalserver.go managed containers via the docker SDK
   telemetryservice.go           metrics server component
   ports.go  config.go           free-port picker; .dbtest.local.json
@@ -129,8 +129,8 @@ runners through blank imports (`cmd/worker/main.go:13-19`), and both workflows p
 structs (`cmd/worker/main.go:59-65`). `temporal/worker` holds that list once for both, in its own
 package so `cmd/starter`, which imports `temporal` only for the task queue, doesn't link the providers.
 
-**Component orchestrator** — each of state db / temporal / telemetry implements one interface
-(`start`, `check`) with states `starting → up → error`. The orchestrator checks each every 2
+**Service launcher** — each of state db / temporal / telemetry implements one interface
+(`start`, `check`) with states `starting → up → error`. The service launcher checks each every 2
 seconds and sends a `stack.Event` on every change, so the STATUS panel is live rather than polled
 once at boot; `r` starts again any component in error. Containers are **adopted, not recreated**:
 names `dbtest-state`/`dbtest-temporal`, labels `dbtest.managed=true` + `dbtest.role=…`; running →
@@ -252,7 +252,7 @@ fit; `bubbles/viewport` arrives with scrollback in step 8.
 (registration list currently only in `cmd/worker/main.go:59-65`); telemetry auto-port + surfaced
 bind error; fix the `telemetry/logs.go` comment. The only step that changes existing behavior.
 
-**Step 3 — live status** (`tui-live-status`). `stack.Orchestrator` with the three real components
+**Step 3 — live status** (`tui-live-status`). `stack.ServiceLauncher` with the three real components
 (state db, temporal, telemetry), free-port picking, driving the STATUS panel and `r`-to-retry.
 
 **Step 4 — worker + logs** (`tui-worker-logs`). `logbus` slog handler; `workerhost.WorkerHost`

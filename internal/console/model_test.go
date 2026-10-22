@@ -2,6 +2,7 @@ package console
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/stack"
+	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
 // newTestModel returns a model with all components starting, no event or log
@@ -42,14 +45,22 @@ func keyPress(key string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
 		return tea.KeyPressMsg{Code: tea.KeyDown}
+	case "left":
+		return tea.KeyPressMsg{Code: tea.KeyLeft}
+	case "right":
+		return tea.KeyPressMsg{Code: tea.KeyRight}
 	case "enter":
 		return tea.KeyPressMsg{Code: tea.KeyEnter}
+	case "esc":
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
+	case "backspace":
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
 	}
 	return tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 }
 
 func TestCursorStopsAtTop(t *testing.T) {
-	current := send(newTestModel(), keyPress("up"))
+	current := send(newTestModel(), keyPress("right"), keyPress("left"), keyPress("left"))
 	if current.cursor != 0 {
 		t.Fatalf("cursor = %d, want 0", current.cursor)
 	}
@@ -58,7 +69,7 @@ func TestCursorStopsAtTop(t *testing.T) {
 func TestCursorStopsAtBottom(t *testing.T) {
 	current := newTestModel()
 	for range len(actions) + 3 {
-		current = send(current, keyPress("down"))
+		current = send(current, keyPress("right"))
 	}
 	if want := len(actions) - 1; current.cursor != want {
 		t.Fatalf("cursor = %d, want %d", current.cursor, want)
@@ -94,6 +105,161 @@ func TestEnterOnOtherActionDoesNotQuit(t *testing.T) {
 	_, command := send(newTestModel(), keyPress("1")).Update(keyPress("enter"))
 	if command != nil {
 		t.Fatal("enter on start pgbench returned a command")
+	}
+}
+
+// startRecoveryWithKeys opens the recovery form, presses keys, and returns
+// the configs started and the resulting model.
+func startRecoveryWithKeys(t *testing.T, keys ...string) ([]workflows.RecoveryWorkflowConfig, model) {
+	t.Helper()
+	var started []workflows.RecoveryWorkflowConfig
+	current := send(newTestModel(), keyPress("2"), keyPress("enter"))
+	current.startRecovery = func(cfg workflows.RecoveryWorkflowConfig) (string, error) {
+		started = append(started, cfg)
+		return "recovery-test", nil
+	}
+	for _, key := range keys {
+		next, command := current.Update(keyPress(key))
+		current = next.(model)
+		if command != nil {
+			command()
+		}
+	}
+	return started, current
+}
+
+func TestRecoveryFormDockerSkipsHighAvailability(t *testing.T) {
+	_, current := startRecoveryWithKeys(t, "enter")
+	if current.form.step != "disruption" {
+		t.Fatalf("step = %q, want disruption", current.form.step)
+	}
+	started, _ := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "enter")
+	want := defaultRecovery()
+	want.Disruption = provider.Crash
+	if len(started) != 1 || started[0] != want {
+		t.Fatalf("started %+v, want one docker crash recovery", started)
+	}
+}
+
+func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
+	for _, test := range []struct {
+		keys    []string
+		options []string
+		want    string
+	}{
+		{[]string{"down", "enter", "enter"}, []string{"restart"}, "restart"},
+		{[]string{"down", "enter", "down", "enter"}, []string{"restart", "failover"}, "restart"},
+		{[]string{"down", "down", "enter", "enter"}, []string{"restart", "crash"}, "crash"},
+		{[]string{"down", "down", "enter", "down", "enter"}, []string{"restart", "crash", "failover"}, "crash"},
+	} {
+		_, current := startRecoveryWithKeys(t, test.keys...)
+		options := current.form.options()
+		if !slices.Equal(options, test.options) || options[current.form.cursor] != test.want {
+			t.Errorf("%v: options %v at %d, want %v at %s", test.keys, options, current.form.cursor, test.options, test.want)
+		}
+	}
+}
+
+func TestRecoveryFormStartsAuroraFailover(t *testing.T) {
+	started, current := startRecoveryWithKeys(t, "down", "down", "enter", "down", "enter", "down", "enter", "enter", "enter", "enter")
+	if len(started) != 1 {
+		t.Fatalf("started %d recoveries, want 1", len(started))
+	}
+	cfg := started[0]
+	if cfg.Provider != provider.Aurora || !cfg.Request.HighAvailability || cfg.Disruption != provider.Failover {
+		t.Fatalf("started %+v, want aurora HA failover", cfg)
+	}
+	if cfg.ProbeImage != "dbtest-probe" || cfg.BenchImage != "dbtest-bench" {
+		t.Fatalf("images = %s, %s, want the Fargate task definitions", cfg.ProbeImage, cfg.BenchImage)
+	}
+	if current.form.step != "" {
+		t.Fatalf("form still open on %q", current.form.step)
+	}
+}
+
+func TestRecoveryFormEscapeGoesBackThenCloses(t *testing.T) {
+	_, current := startRecoveryWithKeys(t, "down", "enter", "enter", "esc")
+	if current.form.step != "high availability" {
+		t.Fatalf("step = %q, want high availability", current.form.step)
+	}
+	current = send(current, keyPress("esc"), keyPress("esc"))
+	if current.form.step != "" {
+		t.Fatalf("form still open on %q", current.form.step)
+	}
+}
+
+func TestRecoveryFormStartsCustomSize(t *testing.T) {
+	started, _ := startRecoveryWithKeys(t,
+		"enter", "enter", // docker, crash
+		"5", "enter", // repetitions
+		"down", "enter", // customize
+		"0", ".", "5", "enter", // vCPU
+		"1", "0", "2", "4", "enter", // memory MiB
+		"2", "0", "enter", // disk GiB
+		"enter", // scale
+		"enter", // confirm
+	)
+	want := defaultRecovery()
+	want.Disruption = provider.Crash
+	want.Repetitions = 5
+	want.Request.VCPU = 0.5
+	want.Request.MemoryMiB = 1024
+	want.Request.DiskGiB = 20
+	if len(started) != 1 || started[0] != want {
+		t.Fatalf("started %+v, want %+v", started, want)
+	}
+}
+
+func TestRecoveryFormRejectsInvalidNumber(t *testing.T) {
+	started, current := startRecoveryWithKeys(t, "enter", "enter", "0", "enter")
+	if current.form.step != "repetitions" || current.form.err == nil {
+		t.Fatalf("step = %q, err = %v, want repetitions with an error", current.form.step, current.form.err)
+	}
+	current = send(current, keyPress("backspace"), keyPress("x"), keyPress("2"), keyPress("enter"))
+	if current.form.step != "size" || current.form.cfg.Repetitions != 2 {
+		t.Fatalf("step = %q, repetitions = %d, want size and 2", current.form.step, current.form.cfg.Repetitions)
+	}
+	if len(started) != 0 {
+		t.Fatal("started a recovery")
+	}
+}
+
+func TestRecoveryFormIgnoresQuitKey(t *testing.T) {
+	_, command := send(newTestModel(), keyPress("2"), keyPress("enter")).Update(keyPress("q"))
+	if command != nil {
+		t.Fatal("q in the form returned a command")
+	}
+}
+
+func TestRecoveryFormConfirmShowsChoices(t *testing.T) {
+	for _, test := range []struct {
+		keys        []string
+		want        []string
+		wantWarning bool
+	}{
+		{[]string{"enter", "enter", "enter", "enter"}, []string{"docker", "crash", "memory             2048 MiB", "disk               provider default"}, false},
+		{[]string{"down", "down", "enter", "down", "enter", "down", "enter", "enter", "enter"}, []string{"aws-aurora", "high availability  yes", "failover"}, true},
+	} {
+		started, current := startRecoveryWithKeys(t, test.keys...)
+		if current.form.step != "confirm" || len(started) != 0 {
+			t.Fatalf("%v: step = %q, started %d, want confirm and none started", test.keys, current.form.step, len(started))
+		}
+		summary := strings.Join(current.form.lines(), "\n")
+		for _, want := range test.want {
+			if !strings.Contains(summary, want) {
+				t.Errorf("%v: summary has no %q:\n%s", test.keys, want, summary)
+			}
+		}
+		if hasWarning := strings.Contains(summary, "AWS resources"); hasWarning != test.wantWarning {
+			t.Errorf("%v: AWS warning shown = %v, want %v", test.keys, hasWarning, test.wantWarning)
+		}
+	}
+}
+
+func TestRecoveryFormEscapeFromConfirmGoesBack(t *testing.T) {
+	_, current := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "esc")
+	if current.form.step != "size" {
+		t.Fatalf("step = %q, want size", current.form.step)
 	}
 }
 

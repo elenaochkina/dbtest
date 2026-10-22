@@ -27,13 +27,13 @@ func run() error {
 	logs := logbus.New()
 	slog.SetDefault(slog.New(logs.Handler()))
 
-	orchestrator, err := stack.New(logs.Handler())
+	serviceLauncher, err := stack.New(logs.Handler())
 	if err != nil {
 		return err
 	}
-	orchestrator.Start(context.Background())
-	defer orchestrator.Close()
+	serviceLauncher.Start(context.Background())
+	defer serviceLauncher.Close()
 
-	_, err = tea.NewProgram(console.New(orchestrator, logs)).Run()
+	_, err = tea.NewProgram(console.New(serviceLauncher, logs)).Run()
 	return err
 }

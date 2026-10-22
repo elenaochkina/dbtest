@@ -5,22 +5,25 @@ import (
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/stack"
+	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
 type model struct {
-	width       int
-	height      int
-	components  []component
-	events      <-chan stack.Event
-	retry       func()
-	cursor      int
-	log         []logbus.Line
-	collectLogs func() []logbus.Line
+	width         int
+	height        int
+	components    []component
+	events        <-chan stack.Event
+	retry         func()
+	startRecovery func(workflows.RecoveryWorkflowConfig) (string, error)
+	cursor        int
+	form          recoveryForm
+	log           []logbus.Line
+	collectLogs   func() []logbus.Line
 }
 
-// New returns the console model, showing the orchestrator's components and
+// New returns the console model, showing the service launcher's components and
 // the lines logged to logs.
-func New(orchestrator *stack.Orchestrator, logs *logbus.Bus) tea.Model {
+func New(serviceLauncher *stack.ServiceLauncher, logs *logbus.Bus) tea.Model {
 	return model{
 		components: []component{
 			{name: "state db", state: stack.StateStarting},
@@ -28,9 +31,10 @@ func New(orchestrator *stack.Orchestrator, logs *logbus.Bus) tea.Model {
 			{name: "telemetry", state: stack.StateStarting},
 			{name: "worker", state: stack.StateStarting},
 		},
-		events:      orchestrator.Events(),
-		retry:       orchestrator.Retry,
-		collectLogs: logs.Collect,
+		events:        serviceLauncher.Events(),
+		retry:         serviceLauncher.Retry,
+		startRecovery: serviceLauncher.StartRecovery,
+		collectLogs:   logs.Collect,
 	}
 }
 

@@ -13,15 +13,18 @@ func (m model) View() tea.View {
 	return view
 }
 
-// render draws the STATUS, ACTIONS and LOG panels to fill the window.
+// render draws the STATUS, ACTIONS (or the open form) and LOG panels to fill the window.
 func (m model) render() string {
 	if m.width == 0 {
 		return ""
 	}
 	inner := m.width - 4
 	status := m.statusLines()
-	actions := m.actionLines(inner)
-	logHeight := m.height - 4 - len(status) - len(actions)
+	middleTitle, middle := "ACTIONS", m.actionLines(inner)
+	if m.form.step != "" {
+		middleTitle, middle = "RECOVERY › "+m.form.step, m.form.lines()
+	}
+	logHeight := m.height - 4 - len(status) - len(middle)
 	if inner < 20 || logHeight < 1 {
 		return "terminal too small"
 	}
@@ -30,8 +33,8 @@ func (m model) render() string {
 	for _, line := range status {
 		lines = append(lines, row(line, inner))
 	}
-	lines = append(lines, rule("├", "┤", "ACTIONS", "", m.width))
-	for _, line := range actions {
+	lines = append(lines, rule("├", "┤", middleTitle, "", m.width))
+	for _, line := range middle {
 		lines = append(lines, row(line, inner))
 	}
 	lines = append(lines, rule("├", "┤", "LOG", "", m.width))

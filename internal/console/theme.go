@@ -14,6 +14,7 @@ var (
 	titleStyle  = lipgloss.NewStyle().Bold(true)
 	cursorStyle = lipgloss.NewStyle().Bold(true)
 	timeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 
 	stateStyles = map[stack.State]lipgloss.Style{
 		stack.StateStarting: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
