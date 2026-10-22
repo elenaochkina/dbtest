@@ -11,10 +11,12 @@ import (
 
 var (
 	borderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	titleStyle  = lipgloss.NewStyle().Bold(true)
+	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	cursorStyle = lipgloss.NewStyle().Bold(true)
 	timeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	keyStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+	actionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("183"))
 
 	stateStyles = map[stack.State]lipgloss.Style{
 		stack.StateStarting: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
@@ -56,4 +58,14 @@ func row(content string, width int) string {
 // padRight adds spaces until the text is width cells wide.
 func padRight(text string, width int) string {
 	return text + strings.Repeat(" ", max(0, width-lipgloss.Width(text)))
+}
+
+// keyHelp shows action and key pairs, each action in lilac and its key in
+// white, separated by grey dots.
+func keyHelp(actionsAndKeys ...string) string {
+	var pairs []string
+	for index := 0; index+1 < len(actionsAndKeys); index += 2 {
+		pairs = append(pairs, actionStyle.Render(actionsAndKeys[index])+" "+keyStyle.Render(actionsAndKeys[index+1]))
+	}
+	return strings.Join(pairs, helpStyle.Render(" · "))
 }

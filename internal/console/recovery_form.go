@@ -117,9 +117,9 @@ func (form recoveryForm) erase() recoveryForm {
 	return form
 }
 
-// next stores the option under the cursor or the input, or the default when the
-// input is empty, then shows the following step. It reports true after the last
-// step. An invalid input stays on the step with an error.
+// next saves the current choice, or the default if nothing was typed, and
+// moves to the next step. It returns true after the last step. Invalid input
+// keeps the step and shows an error.
 func (form recoveryForm) next() (recoveryForm, bool) {
 	if options := form.options(); options != nil {
 		form = form.choose(options[form.cursor])
@@ -151,8 +151,7 @@ func (form recoveryForm) back() recoveryForm {
 	return recoveryForm{}
 }
 
-// choose stores choice for the current choice step. On AWS the probe and bench
-// images are the Fargate task definition names.
+// choose stores choice for the current choice step.
 func (form recoveryForm) choose(choice string) recoveryForm {
 	switch form.step {
 	case "provider":
@@ -247,9 +246,9 @@ func (form recoveryForm) lines() []string {
 		}
 	}
 	if form.step == "confirm" {
-		return append(append(lines, form.summary()...), helpStyle.Render("enter start · esc back"))
+		return append(append(lines, form.summary()...), keyHelp("start", "enter", "back", "esc", "menu", "m", "exit", "q"))
 	}
-	return append(lines, helpStyle.Render("enter next · esc back"))
+	return append(lines, keyHelp("next", "enter", "back", "esc", "menu", "m", "exit", "q"))
 }
 
 // summary returns one line per choice, and a warning for AWS providers.

@@ -1,9 +1,12 @@
 package console
 
 import (
+	"context"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
+	"github.com/elenaochkina/dbtest/internal/providercfg"
 	"github.com/elenaochkina/dbtest/internal/stack"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
@@ -19,6 +22,8 @@ type model struct {
 	form          recoveryForm
 	log           []logbus.Line
 	collectLogs   func() []logbus.Line
+	aws           providercfg.Status
+	checkAWS      func(context.Context) providercfg.Status
 }
 
 // New returns the console model, showing the service launcher's components and
@@ -35,11 +40,12 @@ func New(serviceLauncher *stack.ServiceLauncher, logs *logbus.Bus) tea.Model {
 		retry:         serviceLauncher.Retry,
 		startRecovery: serviceLauncher.StartRecovery,
 		collectLogs:   logs.Collect,
+		checkAWS:      providercfg.CheckAWS,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(waitForEvent(m.events), collectLogs(m.collectLogs))
+	return tea.Batch(waitForEvent(m.events), collectLogs(m.collectLogs), checkAWS(m.checkAWS))
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -53,6 +59,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case logBatchMsg:
 		m.appendLog(message)
 		return m, collectLogs(m.collectLogs)
+	case awsStatusMsg:
+		m.setAWSStatus(message)
 	case tea.KeyPressMsg:
 		return m.handleKey(message)
 	}

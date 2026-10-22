@@ -33,12 +33,11 @@ func (m *model) setComponentState(event stack.Event) {
 	}
 }
 
-// statusLines returns one line per line of each component's detail. A label
-// before a tab in the detail line is shown after the component name.
+// statusLines returns one line per line of each component's detail, then the AWS row.
 func (m model) statusLines() []string {
 	lines := make([]string, 0, len(m.components))
 	for _, component := range m.components {
-		state := stateStyles[component.state].Render("● " + padRight(string(component.state), 9))
+		state := stateStyles[component.state].Render("● " + padRight(string(component.state), 13))
 		for _, line := range strings.Split(component.detail, "\n") {
 			name := component.name
 			if label, address, found := strings.Cut(line, "\t"); found {
@@ -48,5 +47,5 @@ func (m model) statusLines() []string {
 			lines = append(lines, fmt.Sprintf("%s %s %s", padRight(name, 12), state, line))
 		}
 	}
-	return lines
+	return append(lines, m.awsLine())
 }

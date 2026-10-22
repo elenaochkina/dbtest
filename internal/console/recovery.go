@@ -10,8 +10,7 @@ import (
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
-// defaultRecovery returns the recovery workflow input with cmd/starter's
-// defaults.
+// defaultRecovery returns the recovery workflow input with cmd/starter's defaults.
 func defaultRecovery() workflows.RecoveryWorkflowConfig {
 	return workflows.RecoveryWorkflowConfig{
 		Provider:    provider.Docker,

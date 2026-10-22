@@ -8,8 +8,6 @@ import (
 var actions = []string{
 	"start pgbench",
 	"start recovery",
-	"configure providers",
-	"list resources",
 	"past workflows",
 	"exit",
 }

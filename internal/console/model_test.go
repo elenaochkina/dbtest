@@ -1,6 +1,7 @@
 package console
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -11,13 +12,14 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
+	"github.com/elenaochkina/dbtest/internal/providercfg"
 	"github.com/elenaochkina/dbtest/internal/stack"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
 // newTestModel returns a model with all components starting, no event or log
-// feed, and a retry that does nothing.
+// feed, a retry that does nothing and an AWS check that reports ready.
 func newTestModel() model {
 	return model{
 		components: []component{
@@ -27,6 +29,9 @@ func newTestModel() model {
 			{name: "worker", state: stack.StateStarting},
 		},
 		retry: func() {},
+		checkAWS: func(context.Context) providercfg.Status {
+			return providercfg.Status{State: providercfg.StateReady, Detail: "role dbtest"}
+		},
 	}
 }
 
@@ -84,7 +89,7 @@ func TestDigitSelectsAction(t *testing.T) {
 }
 
 func TestQuitKeys(t *testing.T) {
-	for _, keys := range [][]string{{"q"}, {"6", "enter"}} {
+	for _, keys := range [][]string{{"q"}, {"4", "enter"}} {
 		current := newTestModel()
 		var command tea.Cmd
 		for _, key := range keys {
@@ -188,6 +193,20 @@ func TestRecoveryFormEscapeGoesBackThenCloses(t *testing.T) {
 	}
 }
 
+func TestRecoveryFormMenuKeyCloses(t *testing.T) {
+	_, current := startRecoveryWithKeys(t, "down", "enter", "enter", "m")
+	if current.form.step != "" {
+		t.Fatalf("form still open on %q", current.form.step)
+	}
+}
+
+func TestRecoveryFormStartsTwice(t *testing.T) {
+	started, _ := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter")
+	if len(started) != 2 {
+		t.Fatalf("started %d recoveries, want 2", len(started))
+	}
+}
+
 func TestRecoveryFormStartsCustomSize(t *testing.T) {
 	started, _ := startRecoveryWithKeys(t,
 		"enter", "enter", // docker, crash
@@ -224,10 +243,13 @@ func TestRecoveryFormRejectsInvalidNumber(t *testing.T) {
 	}
 }
 
-func TestRecoveryFormIgnoresQuitKey(t *testing.T) {
+func TestRecoveryFormQuitKeyQuits(t *testing.T) {
 	_, command := send(newTestModel(), keyPress("2"), keyPress("enter")).Update(keyPress("q"))
-	if command != nil {
-		t.Fatal("q in the form returned a command")
+	if command == nil {
+		t.Fatal("q in the form returned no command")
+	}
+	if _, isQuit := command().(tea.QuitMsg); !isQuit {
+		t.Fatal("q in the form did not quit")
 	}
 }
 
@@ -277,8 +299,8 @@ func TestComponentStateIsStored(t *testing.T) {
 func TestStatusShowsOneLinePerDetailLine(t *testing.T) {
 	current := send(newTestModel(), stack.Event{Name: "temporal", State: stack.StateUp, Detail: "API\tlocalhost:7233\nUI\thttp://localhost:8233"})
 	lines := current.statusLines()
-	if len(lines) != 5 {
-		t.Fatalf("got %d status lines, want 5", len(lines))
+	if len(lines) != 6 {
+		t.Fatalf("got %d status lines, want 6", len(lines))
 	}
 	for index, want := range [][2]string{{"temporal API", "localhost:7233"}, {"temporal UI", "http://localhost:8233"}} {
 		if line := lines[1+index]; !strings.HasPrefix(line, want[0]+" ") || !strings.HasSuffix(line, " "+want[1]) {
@@ -329,5 +351,34 @@ func TestRenderTooSmall(t *testing.T) {
 	current := send(newTestModel(), tea.WindowSizeMsg{Width: 30, Height: 8})
 	if got := current.render(); got != "terminal too small" {
 		t.Fatalf("render = %q, want terminal too small", got)
+	}
+}
+
+func TestAWSRowShowsCheckingThenResult(t *testing.T) {
+	current := newTestModel()
+	if line := current.statusLines()[4]; !strings.HasPrefix(line, "aws ") || !strings.Contains(line, "checking") {
+		t.Fatalf("aws line = %q, want checking", line)
+	}
+	current = send(current, awsStatusMsg{State: providercfg.StateNeedsLogin, Detail: "token expired"})
+	if line := current.statusLines()[4]; !strings.Contains(line, "needs login") || !strings.HasSuffix(line, " token expired") {
+		t.Fatalf("aws line = %q, want needs login and the detail", line)
+	}
+}
+
+func TestRetryKeyChecksAWSAgain(t *testing.T) {
+	checks := 0
+	current := send(newTestModel(), awsStatusMsg{State: providercfg.StateReady, Detail: "role dbtest"})
+	current.checkAWS = func(context.Context) providercfg.Status {
+		checks++
+		return providercfg.Status{State: providercfg.StateMisconfigured, Detail: "missing AWS_REGION"}
+	}
+	next, command := current.Update(keyPress("r"))
+	current = next.(model)
+	if current.aws.State != "" || command == nil {
+		t.Fatalf("aws = %+v, command = %v, want checking and a command", current.aws, command)
+	}
+	current = send(current, command())
+	if checks != 1 || current.aws.State != providercfg.StateMisconfigured {
+		t.Fatalf("checks = %d, aws = %+v, want 1 check and misconfigured", checks, current.aws)
 	}
 }
