@@ -133,16 +133,20 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 	if err != nil {
 		return fmt.Errorf("start seed: %w", err)
 	}
-	// Cleanup for the paths that never reach the stop below. Stopping a container
-	// that is already gone fails; the error is discarded.
-
-	defer func() { _, _ = r.Stop(context.WithoutCancel(ctx), h) }()
+	// Stops the container again when the stop below fails.
+	stopped := false
+	defer func() {
+		if !stopped {
+			_, _ = r.Stop(context.WithoutCancel(ctx), h)
+		}
+	}()
 
 	// SelfExits, so this waits for the seed rather than cutting it off.
 	out, err := r.Stop(ctx, h)
 	if err != nil {
 		return fmt.Errorf("seed: %w", err)
 	}
+	stopped = true
 
 	if a.tel != nil {
 		a.tel.Logger.Info("database seeded",
