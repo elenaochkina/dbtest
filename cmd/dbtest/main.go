@@ -13,6 +13,7 @@ import (
 
 	"github.com/elenaochkina/dbtest/internal/console"
 	"github.com/elenaochkina/dbtest/internal/logbus"
+	"github.com/elenaochkina/dbtest/internal/pricing"
 	"github.com/elenaochkina/dbtest/internal/stack"
 )
 
@@ -42,7 +43,11 @@ func run() error {
 	serviceLauncher.Start(context.Background())
 	defer serviceLauncher.Close()
 
-	_, err = tea.NewProgram(console.New(serviceLauncher, logs)).Run()
+	prices, err := pricing.New(context.Background())
+	if err != nil {
+		slog.Warn("price estimates unavailable", "error", err)
+	}
+	_, err = tea.NewProgram(console.New(serviceLauncher, logs, prices)).Run()
 	return err
 }
 
