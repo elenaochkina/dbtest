@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/stack"
 )
 
@@ -20,6 +21,7 @@ func newTestModel() model {
 			{name: "state db", state: stack.StateStarting},
 			{name: "temporal", state: stack.StateStarting},
 			{name: "telemetry", state: stack.StateStarting},
+			{name: "worker", state: stack.StateStarting},
 		},
 		retry: func() {},
 	}
@@ -109,8 +111,8 @@ func TestComponentStateIsStored(t *testing.T) {
 func TestStatusShowsOneLinePerDetailLine(t *testing.T) {
 	current := send(newTestModel(), stack.Event{Name: "temporal", State: stack.StateUp, Detail: "API\tlocalhost:7233\nUI\thttp://localhost:8233"})
 	lines := current.statusLines()
-	if len(lines) != 4 {
-		t.Fatalf("got %d status lines, want 4", len(lines))
+	if len(lines) != 5 {
+		t.Fatalf("got %d status lines, want 5", len(lines))
 	}
 	for index, want := range [][2]string{{"temporal API", "localhost:7233"}, {"temporal UI", "http://localhost:8233"}} {
 		if line := lines[1+index]; !strings.HasPrefix(line, want[0]+" ") || !strings.HasSuffix(line, " "+want[1]) {
@@ -132,14 +134,14 @@ func TestRetryKeyCallsRetry(t *testing.T) {
 func TestLogKeepsNewestLines(t *testing.T) {
 	batch := make(logBatchMsg, logCapacity+5)
 	for index := range batch {
-		batch[index] = logLine{time: time.Now(), text: fmt.Sprint(index)}
+		batch[index] = logbus.Line{Time: time.Now(), Message: fmt.Sprint(index)}
 	}
 	current := send(newTestModel(), batch)
 	if len(current.log) != logCapacity {
 		t.Fatalf("log has %d lines, want %d", len(current.log), logCapacity)
 	}
-	if current.log[0].text != "5" {
-		t.Fatalf("oldest line = %q, want 5", current.log[0].text)
+	if current.log[0].Message != "5" {
+		t.Fatalf("oldest line = %q, want 5", current.log[0].Message)
 	}
 }
 

@@ -1,14 +1,21 @@
 package console
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"time"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/elenaochkina/dbtest/internal/logbus"
+)
 
 const logCapacity = 2000
 
-// waitForLogs waits for the next batch of log lines and delivers it as a message.
-func waitForLogs(logs <-chan logBatchMsg) tea.Cmd {
-	return func() tea.Msg {
-		return <-logs
-	}
+// collectLogs waits 75 ms, then delivers the lines logged since the previous
+// collection as a message.
+func collectLogs(collect func() []logbus.Line) tea.Cmd {
+	return tea.Tick(75*time.Millisecond, func(time.Time) tea.Msg {
+		return logBatchMsg(collect())
+	})
 }
 
 // appendLog adds the lines and drops the oldest beyond logCapacity.
@@ -19,11 +26,16 @@ func (m *model) appendLog(lines logBatchMsg) {
 	}
 }
 
-// logLines returns the newest log lines that fit the height.
+// logLines returns the newest log lines that fit the height, as time, level,
+// message and attributes.
 func (m model) logLines(height int) []string {
 	lines := make([]string, 0, height)
 	for _, line := range m.log[max(0, len(m.log)-height):] {
-		lines = append(lines, timeStyle.Render(line.time.Format("15:04:05"))+" "+line.text)
+		text := timeStyle.Render(line.Time.Format("15:04:05")) + " " + levelStyle(line.Level).Render(padRight(line.Level.String(), 5)) + " " + line.Message
+		if line.Attrs != "" {
+			text += " " + timeStyle.Render(line.Attrs)
+		}
+		lines = append(lines, text)
 	}
 	return lines
 }

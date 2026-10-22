@@ -2,12 +2,13 @@ package stack
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 )
 
 func TestTelemetryServiceLifecycle(t *testing.T) {
 	ctx := context.Background()
-	service := newTelemetryService()
+	service := newTelemetryService(slog.DiscardHandler)
 
 	url, err := service.start(ctx)
 	if err != nil {

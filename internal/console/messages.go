@@ -1,11 +1,6 @@
 package console
 
-import "time"
-
-type logLine struct {
-	time time.Time
-	text string
-}
+import "github.com/elenaochkina/dbtest/internal/logbus"
 
 // logBatchMsg carries log lines that arrived since the previous batch.
-type logBatchMsg []logLine
+type logBatchMsg []logbus.Line

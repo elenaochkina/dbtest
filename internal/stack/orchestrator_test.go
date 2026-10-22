@@ -70,6 +70,26 @@ func TestOrchestratorReportsHealthChanges(t *testing.T) {
 	expectEvent(t, orchestrator, Event{Name: "fake", State: StateUp, Detail: "fake-address"})
 }
 
+func TestOrchestratorStartsAfterDependencies(t *testing.T) {
+	dependency := &fakeComponent{startError: errors.New("docker is not running")}
+	dependent := &fakeComponent{}
+	orchestrator := &Orchestrator{interval: 10 * time.Millisecond, events: make(chan Event, 16)}
+	dependencyUp := orchestrator.add("dependency", dependency)
+	orchestrator.add("dependent", dependent, dependencyUp)
+	orchestrator.Start(context.Background())
+	defer orchestrator.Close()
+
+	expectEvent(t, orchestrator, Event{Name: "dependency", State: StateStarting})
+	expectEvent(t, orchestrator, Event{Name: "dependency", State: StateError, Detail: "docker is not running"})
+
+	dependency.set(nil, nil)
+	orchestrator.Retry()
+	expectEvent(t, orchestrator, Event{Name: "dependency", State: StateStarting})
+	expectEvent(t, orchestrator, Event{Name: "dependency", State: StateUp, Detail: "fake-address"})
+	expectEvent(t, orchestrator, Event{Name: "dependent", State: StateStarting})
+	expectEvent(t, orchestrator, Event{Name: "dependent", State: StateUp, Detail: "fake-address"})
+}
+
 func TestOrchestratorRetriesFailedStart(t *testing.T) {
 	fake := &fakeComponent{startError: errors.New("docker is not running")}
 	orchestrator := newTestOrchestrator(fake)

@@ -3,7 +3,7 @@ package stack
 import (
 	"context"
 	"fmt"
-	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -12,12 +12,14 @@ import (
 
 // telemetryService runs the Prometheus metrics server in this process.
 type telemetryService struct {
-	tel *telemetry.Telemetry
-	url string
+	logs slog.Handler
+	tel  *telemetry.Telemetry
+	url  string
 }
 
-func newTelemetryService() *telemetryService {
-	return &telemetryService{}
+// newTelemetryService returns a telemetry service whose logger writes to logs.
+func newTelemetryService(logs slog.Handler) *telemetryService {
+	return &telemetryService{logs: logs}
 }
 
 // start starts telemetry on a free port unless it is already running,
@@ -25,7 +27,7 @@ func newTelemetryService() *telemetryService {
 // It returns the metrics URL.
 func (s *telemetryService) start(ctx context.Context) (string, error) {
 	if s.tel == nil {
-		tel, err := telemetry.Init(telemetry.Config{Log: telemetry.LogConfig{Output: io.Discard}})
+		tel, err := telemetry.Init(telemetry.Config{Log: telemetry.LogConfig{Handler: s.logs}})
 		if err != nil {
 			return "", err
 		}

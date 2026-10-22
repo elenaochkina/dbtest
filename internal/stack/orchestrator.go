@@ -3,6 +3,7 @@ package stack
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -32,17 +33,24 @@ type component interface {
 	check(ctx context.Context) error
 }
 
+// watchedComponent is a component with its name, its retry signal, the up
+// signals it waits for before its first start, and its own up signal, closed
+// the first time it is up.
 type watchedComponent struct {
 	name      string
 	component component
 	retry     chan struct{}
+	after     []chan struct{}
+	up        chan struct{}
+	markUp    func()
 }
 
-// Orchestrator starts the state db, the Temporal server and the telemetry
-// service, then checks each one every 2 seconds.
+// Orchestrator starts the state db, the Temporal server, the telemetry
+// service and, once those are up, the worker, then checks each one every 2 seconds.
 type Orchestrator struct {
 	docker     *dockerclient.Client
 	telemetry  *telemetryService
+	worker     *workerService
 	components []watchedComponent
 	interval   time.Duration
 	events     chan Event
@@ -50,28 +58,41 @@ type Orchestrator struct {
 	wait       sync.WaitGroup
 }
 
-// New returns an Orchestrator for the containers dbtest-state and
-// dbtest-temporal and an in-process telemetry service.
-func New() (*Orchestrator, error) {
+func New(logs slog.Handler) (*Orchestrator, error) {
 	docker, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
 	orchestrator := &Orchestrator{
 		docker:    docker,
-		telemetry: newTelemetryService(),
+		telemetry: newTelemetryService(logs),
 		interval:  2 * time.Second,
 		events:    make(chan Event, 16),
 	}
-	orchestrator.add("state db", newStateDB(docker, "dbtest-state"))
-	orchestrator.add("temporal", newTemporalServer(docker, "dbtest-temporal"))
-	orchestrator.add("telemetry", orchestrator.telemetry)
+	stateDB := newStateDB(docker, "dbtest-state")
+	temporal := newTemporalServer(docker, "dbtest-temporal")
+	orchestrator.worker = newWorkerService(stateDB, temporal, orchestrator.telemetry, logs)
+
+	stateUp := orchestrator.add("state db", stateDB)
+	temporalUp := orchestrator.add("temporal", temporal)
+	telemetryUp := orchestrator.add("telemetry", orchestrator.telemetry)
+	orchestrator.add("worker", orchestrator.worker, stateUp, temporalUp, telemetryUp)
 	return orchestrator, nil
 }
 
-// add adds a component to orchestrate.
-func (o *Orchestrator) add(name string, component component) {
-	o.components = append(o.components, watchedComponent{name: name, component: component, retry: make(chan struct{}, 1)})
+// add adds a component that starts once every after signal is closed. It
+// returns the component's up signal.
+func (o *Orchestrator) add(name string, component component, after ...chan struct{}) chan struct{} {
+	up := make(chan struct{})
+	o.components = append(o.components, watchedComponent{
+		name:      name,
+		component: component,
+		retry:     make(chan struct{}, 1),
+		after:     after,
+		up:        up,
+		markUp:    sync.OnceFunc(func() { close(up) }),
+	})
+	return up
 }
 
 // Events returns the channel that receives every state change.
@@ -97,12 +118,16 @@ func (o *Orchestrator) Retry() {
 	}
 }
 
-// Close stops the checks and the telemetry service. Containers keep running.
+// Close stops the checks, the worker and the telemetry service. Containers
+// keep running.
 func (o *Orchestrator) Close() {
 	if o.cancel != nil {
 		o.cancel()
 	}
 	o.wait.Wait()
+	if o.worker != nil {
+		o.worker.stop()
+	}
 	if o.telemetry != nil {
 		o.telemetry.stop()
 	}
@@ -115,6 +140,13 @@ func (o *Orchestrator) Close() {
 // whether down or back.
 // retry starts it again if it is down.
 func (o *Orchestrator) watch(ctx context.Context, watched watchedComponent) {
+	for _, dependency := range watched.after {
+		select {
+		case <-dependency:
+		case <-ctx.Done():
+			return
+		}
+	}
 	detail, up := o.startComponent(ctx, watched)
 	ticker := time.NewTicker(o.interval)
 	defer ticker.Stop()
@@ -153,6 +185,7 @@ func (o *Orchestrator) startComponent(ctx context.Context, watched watchedCompon
 		return "", false
 	}
 	// component works, tells a console the address
+	watched.markUp()
 	o.send(ctx, Event{Name: watched.name, State: StateUp, Detail: detail})
 	return detail, true
 }

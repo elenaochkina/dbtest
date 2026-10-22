@@ -1,6 +1,7 @@
 package console
 
 import (
+	"log/slog"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -20,6 +21,17 @@ var (
 		stack.StateError:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 	}
 )
+
+// levelStyle returns yellow for warnings, red for errors and plain otherwise.
+func levelStyle(level slog.Level) lipgloss.Style {
+	switch {
+	case level >= slog.LevelError:
+		return stateStyles[stack.StateError]
+	case level >= slog.LevelWarn:
+		return stateStyles[stack.StateStarting]
+	}
+	return lipgloss.NewStyle()
+}
 
 // rule draws a horizontal border line with a title on the left and an
 // optional label on the right.
