@@ -8,12 +8,17 @@ import (
 
 // LogConfig holds configuration for structured logging.
 type LogConfig struct {
-	LogLevel string    // "info", "debug", "warn"
-	Output   io.Writer // where to write logs; defaults to os.Stdout if nil
+	LogLevel string       // "info", "debug", "warn"
+	Output   io.Writer    // where to write logs; defaults to os.Stdout if nil
+	Handler  slog.Handler // if set, used instead of JSON to Output
 }
 
-// InitLogging sets up a JSON structured logger and installs it as the global default.
+// InitLogging returns a logger using cfg.Handler, or a JSON structured logger
+// when it is nil.
 func InitLogging(cfg LogConfig) *slog.Logger {
+	if cfg.Handler != nil {
+		return slog.New(cfg.Handler)
+	}
 	var level slog.Level
 	switch cfg.LogLevel {
 	case "debug":

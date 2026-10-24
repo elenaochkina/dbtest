@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -12,7 +13,7 @@ import (
 
 // MetricsConfig holds configuration for the Prometheus metrics server.
 type MetricsConfig struct {
-	MetricsPort int // port to serve /metrics on, e.g. 9090
+	MetricsPort int // port to serve /metrics on, e.g. 9090; 0 picks a free port
 }
 
 // Metrics holds all Prometheus metric collectors and the HTTP server.
@@ -42,12 +43,13 @@ type Metrics struct {
 	ProviderDeprovisionTotal *prometheus.CounterVec
 
 	server *http.Server
+	port   int
 }
 
 // InitMetrics creates and registers all Prometheus metrics, then starts an
-// HTTP server at /metrics in the background.
-// Use Telemetry.Shutdown() to stop it cleanly.
-func InitMetrics(cfg MetricsConfig) *Metrics {
+// HTTP server at /metrics in the background. It returns an error if the port
+// cannot be bound. Use Telemetry.Shutdown() to stop it cleanly.
+func InitMetrics(cfg MetricsConfig) (*Metrics, error) {
 	registry := prometheus.NewRegistry()
 
 	connectionDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -93,14 +95,15 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
-	server := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.MetricsPort),
-		Handler: mux,
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.MetricsPort))
+	if err != nil {
+		return nil, fmt.Errorf("metrics server: %w", err)
 	}
+	server := &http.Server{Handler: mux}
 
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Warn("metrics server failed to start", "error", err)
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			slog.Warn("metrics server stopped", "error", err)
 		}
 	}()
 
@@ -114,7 +117,13 @@ func InitMetrics(cfg MetricsConfig) *Metrics {
 		ProviderProvisionDuration: providerProvisionDuration,
 		ProviderDeprovisionTotal:  providerDeprovisionTotal,
 		server:                    server,
-	}
+		port:                      listener.Addr().(*net.TCPAddr).Port,
+	}, nil
+}
+
+// Port returns the port the metrics server listens on.
+func (m *Metrics) Port() int {
+	return m.port
 }
 
 // shutdown stops the HTTP metrics server cleanly.
