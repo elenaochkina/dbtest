@@ -14,7 +14,7 @@ import (
 type model struct {
 	width         int
 	height        int
-	components    []component
+	services      []serviceStatus
 	events        <-chan service.Event
 	retry         func()
 	startRecovery func(workflows.RecoveryWorkflowConfig) (string, error)
@@ -26,11 +26,11 @@ type model struct {
 	checkAWS      func(context.Context) providercfg.Status
 }
 
-// New returns the console model, showing the service launcher's components and
+// New returns the console model, showing the service launcher's services and
 // the lines logged to logs.
 func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
 	return model{
-		components: []component{
+		services: []serviceStatus{
 			{name: "state db", state: service.StateStarting},
 			{name: "temporal", state: service.StateStarting},
 			{name: "telemetry", state: service.StateStarting},
@@ -54,7 +54,7 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = message.Width
 		m.height = message.Height
 	case service.Event:
-		m.setComponentState(message)
+		m.setServiceState(message)
 		return m, waitForEvent(m.events)
 	case logBatchMsg:
 		m.appendLog(message)

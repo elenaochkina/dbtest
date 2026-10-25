@@ -18,11 +18,11 @@ import (
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
-// newTestModel returns a model with all components starting, no event or log
+// newTestModel returns a model with all services starting, no event or log
 // feed, a retry that does nothing and an AWS check that reports ready.
 func newTestModel() model {
 	return model{
-		components: []component{
+		services: []serviceStatus{
 			{name: "state db", state: service.StateStarting},
 			{name: "temporal", state: service.StateStarting},
 			{name: "telemetry", state: service.StateStarting},
@@ -285,13 +285,13 @@ func TestRecoveryFormEscapeFromConfirmGoesBack(t *testing.T) {
 	}
 }
 
-func TestComponentStateIsStored(t *testing.T) {
+func TestServiceStateIsStored(t *testing.T) {
 	current := send(newTestModel(), service.Event{Name: "temporal", State: service.StateUp, Detail: "localhost:7233"})
-	temporal := current.components[1]
+	temporal := current.services[1]
 	if temporal.state != service.StateUp || temporal.detail != "localhost:7233" {
 		t.Fatalf("temporal = %+v, want up at localhost:7233", temporal)
 	}
-	if current.components[0].state != service.StateStarting {
+	if current.services[0].state != service.StateStarting {
 		t.Fatal("state db changed too")
 	}
 }

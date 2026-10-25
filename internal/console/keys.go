@@ -7,7 +7,7 @@ import (
 )
 
 // handleKey moves the cursor, runs the selected action, retries failed
-// components and checks AWS again, or quits.
+// services and checks AWS again, or quits.
 func (m model) handleKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.form.step != "" {
 		return m.handleFormKey(message)
