@@ -45,7 +45,7 @@ cmd/dbtest/main.go
 │      c. slog.Info("workflow started")                              │
 │      d. background: run.Get → "workflow completed" / "failed"      │
 │                                                                    │
-│  servicelauncher.go                                                │
+│  launcher.go                                                       │
 │    owns: workerUp signal, worker (with temporalClient), ctx, wait  │
 └──────────────────────────────┼─────────────────────────────────────┘
                                ▼
@@ -59,7 +59,7 @@ cmd/dbtest/main.go
 | File | Package | Job |
 |---|---|---|
 | `main.go` | main | Creates and starts the service launcher, then gives it to the console. |
-| `servicelauncher.go` | service | Runs the services. It holds the `worker` (and its Temporal client) and the `workerUp` signal. |
+| `launcher.go` | service | Runs the services. It holds the `worker` (and its Temporal client) and the `workerUp` signal. |
 | `workflows.go` | service | `StartRecovery`: uses the worker's Temporal client to start a workflow and logs the result. |
 | `model.go` | console | The screen's state. It stores `StartRecovery` as a plain function in `m.startRecovery`. |
 | `keys.go` | console | Decides what each key does: open the form, move between steps, start on confirm. |

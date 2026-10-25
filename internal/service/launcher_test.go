@@ -8,13 +8,13 @@ import (
 	"time"
 )
 
-type fakeComponent struct {
+type fakeService struct {
 	mutex      sync.Mutex
 	startError error
 	checkError error
 }
 
-func (f *fakeComponent) start(context.Context) (string, error) {
+func (f *fakeService) start(context.Context) (string, error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	if f.startError != nil {
@@ -23,26 +23,26 @@ func (f *fakeComponent) start(context.Context) (string, error) {
 	return "fake-address", nil
 }
 
-func (f *fakeComponent) check(context.Context) error {
+func (f *fakeService) check(context.Context) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	return f.checkError
 }
 
-func (f *fakeComponent) set(startError, checkError error) {
+func (f *fakeService) set(startError, checkError error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	f.startError = startError
 	f.checkError = checkError
 }
 
-func newTestServiceLauncher(fake *fakeComponent) *ServiceLauncher {
-	serviceLauncher := &ServiceLauncher{interval: 10 * time.Millisecond, events: make(chan Event, 16)}
+func newTestLauncher(fake *fakeService) *Launcher {
+	serviceLauncher := &Launcher{interval: 10 * time.Millisecond, events: make(chan Event, 16)}
 	serviceLauncher.add("fake", fake)
 	return serviceLauncher
 }
 
-func expectEvent(t *testing.T, serviceLauncher *ServiceLauncher, want Event) {
+func expectEvent(t *testing.T, serviceLauncher *Launcher, want Event) {
 	t.Helper()
 	select {
 	case got := <-serviceLauncher.Events():
@@ -54,9 +54,9 @@ func expectEvent(t *testing.T, serviceLauncher *ServiceLauncher, want Event) {
 	}
 }
 
-func TestServiceLauncherReportsHealthChanges(t *testing.T) {
-	fake := &fakeComponent{}
-	serviceLauncher := newTestServiceLauncher(fake)
+func TestLauncherReportsHealthChanges(t *testing.T) {
+	fake := &fakeService{}
+	serviceLauncher := newTestLauncher(fake)
 	serviceLauncher.Start(context.Background())
 	defer serviceLauncher.Close()
 
@@ -70,10 +70,10 @@ func TestServiceLauncherReportsHealthChanges(t *testing.T) {
 	expectEvent(t, serviceLauncher, Event{Name: "fake", State: StateUp, Detail: "fake-address"})
 }
 
-func TestServiceLauncherStartsAfterDependencies(t *testing.T) {
-	dependency := &fakeComponent{startError: errors.New("docker is not running")}
-	dependent := &fakeComponent{}
-	serviceLauncher := &ServiceLauncher{interval: 10 * time.Millisecond, events: make(chan Event, 16)}
+func TestLauncherStartsAfterDependencies(t *testing.T) {
+	dependency := &fakeService{startError: errors.New("docker is not running")}
+	dependent := &fakeService{}
+	serviceLauncher := &Launcher{interval: 10 * time.Millisecond, events: make(chan Event, 16)}
 	dependencyUp := serviceLauncher.add("dependency", dependency)
 	serviceLauncher.add("dependent", dependent, dependencyUp)
 	serviceLauncher.Start(context.Background())
@@ -90,9 +90,9 @@ func TestServiceLauncherStartsAfterDependencies(t *testing.T) {
 	expectEvent(t, serviceLauncher, Event{Name: "dependent", State: StateUp, Detail: "fake-address"})
 }
 
-func TestServiceLauncherRetriesFailedStart(t *testing.T) {
-	fake := &fakeComponent{startError: errors.New("docker is not running")}
-	serviceLauncher := newTestServiceLauncher(fake)
+func TestLauncherRetriesFailedStart(t *testing.T) {
+	fake := &fakeService{startError: errors.New("docker is not running")}
+	serviceLauncher := newTestLauncher(fake)
 	serviceLauncher.Start(context.Background())
 	defer serviceLauncher.Close()
 

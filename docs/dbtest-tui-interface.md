@@ -93,7 +93,7 @@ internal/console/               Bubble Tea (UI only)
   screen_root.go  screen_pgbench.go  screen_recovery.go  screen_providers.go
   screen_resources.go  screen_history.go
 internal/service/               engine the console drives (no UI imports)
-  servicelauncher.go            Component interface + state machine + health polling
+  launcher.go                   Component interface + state machine + health polling
   statedb.go  temporalserver.go managed containers via the docker SDK
   telemetryservice.go           metrics server component
   ports.go  config.go           free-port picker; .dbtest.local.json
@@ -252,7 +252,7 @@ fit; `bubbles/viewport` arrives with scrollback in step 8.
 (registration list currently only in `cmd/worker/main.go:59-65`); telemetry auto-port + surfaced
 bind error; fix the `telemetry/logs.go` comment. The only step that changes existing behavior.
 
-**Step 3 — live status** (`tui-live-status`). `service.ServiceLauncher` with the three real components
+**Step 3 — live status** (`tui-live-status`). `service.Launcher` with the three real components
 (state db, temporal, telemetry), free-port picking, driving the STATUS panel and `r`-to-retry.
 
 **Step 4 — worker + logs** (`tui-worker-logs`). `logbus` slog handler; `workerhost.WorkerHost`

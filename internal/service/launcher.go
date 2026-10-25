@@ -10,7 +10,7 @@ import (
 	dockerclient "github.com/docker/docker/client"
 )
 
-// State is a component's state.
+// State is a service's state.
 type State string
 
 const (
@@ -19,7 +19,7 @@ const (
 	StateError    State = "error"
 )
 
-// Event reports that a component changed state. Detail may hold several
+// Event reports that a service changed state. Detail may hold several
 // lines, and a line may start with a label and a tab.
 type Event struct {
 	Name   string
@@ -27,45 +27,45 @@ type Event struct {
 	Detail string
 }
 
-// component is a part of the local stack the service launcher starts and checks.
-type component interface {
+// service is a part of the local stack the service launcher starts and checks.
+type service interface {
 	start(ctx context.Context) (string, error)
 	check(ctx context.Context) error
 }
 
-// watchedComponent is a component with its name, its retry signal, the up
+// watchedService is a service with its name, its retry signal, the up
 // signals it waits for before its first start, and its own up signal, closed
 // the first time it is up.
-type watchedComponent struct {
-	name      string
-	component component
-	retry     chan struct{}
-	after     []chan struct{}
-	up        chan struct{}
-	markUp    func()
+type watchedService struct {
+	name    string
+	service service
+	retry   chan struct{}
+	after   []chan struct{}
+	up      chan struct{}
+	markUp  func()
 }
 
-// ServiceLauncher starts the state db, the Temporal server, the telemetry
+// Launcher starts the state db, the Temporal server, the telemetry
 // service and, once those are up, the worker, then checks each one every 2 seconds.
-type ServiceLauncher struct {
-	docker     *dockerclient.Client
-	telemetry  *telemetryService
-	worker     *workerService
-	workerUp   chan struct{}
-	components []watchedComponent
-	interval   time.Duration
-	events     chan Event
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wait       sync.WaitGroup
+type Launcher struct {
+	docker    *dockerclient.Client
+	telemetry *telemetryService
+	worker    *workerService
+	workerUp  chan struct{}
+	services  []watchedService
+	interval  time.Duration
+	events    chan Event
+	ctx       context.Context
+	cancel    context.CancelFunc
+	wait      sync.WaitGroup
 }
 
-func New(logs slog.Handler) (*ServiceLauncher, error) {
+func New(logs slog.Handler) (*Launcher, error) {
 	docker, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
-	serviceLauncher := &ServiceLauncher{
+	serviceLauncher := &Launcher{
 		docker:    docker,
 		telemetry: newTelemetryService(logs),
 		interval:  2 * time.Second,
@@ -82,37 +82,37 @@ func New(logs slog.Handler) (*ServiceLauncher, error) {
 	return serviceLauncher, nil
 }
 
-// add adds a component that starts once every after signal is closed. It
-// returns the component's up signal.
-func (l *ServiceLauncher) add(name string, component component, after ...chan struct{}) chan struct{} {
+// add adds a service that starts once every after signal is closed. It
+// returns the service's up signal.
+func (l *Launcher) add(name string, service service, after ...chan struct{}) chan struct{} {
 	up := make(chan struct{})
-	l.components = append(l.components, watchedComponent{
-		name:      name,
-		component: component,
-		retry:     make(chan struct{}, 1),
-		after:     after,
-		up:        up,
-		markUp:    sync.OnceFunc(func() { close(up) }),
+	l.services = append(l.services, watchedService{
+		name:    name,
+		service: service,
+		retry:   make(chan struct{}, 1),
+		after:   after,
+		up:      up,
+		markUp:  sync.OnceFunc(func() { close(up) }),
 	})
 	return up
 }
 
 // Events returns the channel that receives every state change.
-func (l *ServiceLauncher) Events() <-chan Event {
+func (l *Launcher) Events() <-chan Event {
 	return l.events
 }
 
-// Starts every component and its checks in the background.
-func (l *ServiceLauncher) Start(ctx context.Context) {
+// Starts every service and its checks in the background.
+func (l *Launcher) Start(ctx context.Context) {
 	l.ctx, l.cancel = context.WithCancel(ctx)
-	for _, watched := range l.components {
+	for _, watched := range l.services {
 		l.wait.Go(func() { l.watch(l.ctx, watched) })
 	}
 }
 
-// Starts again every component that is in the error state.
-func (l *ServiceLauncher) Retry() {
-	for _, watched := range l.components {
+// Starts again every service that is in the error state.
+func (l *Launcher) Retry() {
+	for _, watched := range l.services {
 		select {
 		case watched.retry <- struct{}{}:
 		default:
@@ -122,7 +122,7 @@ func (l *ServiceLauncher) Retry() {
 
 // Close stops the checks, the worker and the telemetry service. Containers
 // keep running.
-func (l *ServiceLauncher) Close() {
+func (l *Launcher) Close() {
 	if l.cancel != nil {
 		l.cancel()
 	}
@@ -138,10 +138,10 @@ func (l *ServiceLauncher) Close() {
 	}
 }
 
-// watch starts the component, then checks it on every tick and reports it
+// watch starts the service, then checks it on every tick and reports it
 // whether down or back.
 // retry starts it again if it is down.
-func (l *ServiceLauncher) watch(ctx context.Context, watched watchedComponent) {
+func (l *Launcher) watch(ctx context.Context, watched watchedService) {
 	for _, dependency := range watched.after {
 		select {
 		case <-dependency:
@@ -149,7 +149,7 @@ func (l *ServiceLauncher) watch(ctx context.Context, watched watchedComponent) {
 			return
 		}
 	}
-	detail, up := l.startComponent(ctx, watched)
+	detail, up := l.startService(ctx, watched)
 	ticker := time.NewTicker(l.interval)
 	defer ticker.Stop()
 	for {
@@ -158,13 +158,13 @@ func (l *ServiceLauncher) watch(ctx context.Context, watched watchedComponent) {
 			return
 		case <-watched.retry:
 			if !up {
-				detail, up = l.startComponent(ctx, watched)
+				detail, up = l.startService(ctx, watched)
 			}
 		case <-ticker.C:
 			if detail == "" {
 				continue
 			}
-			err := watched.component.check(ctx)
+			err := watched.service.check(ctx)
 			if up && err != nil {
 				up = false
 				l.send(ctx, Event{Name: watched.name, State: StateError, Detail: err.Error()})
@@ -176,24 +176,24 @@ func (l *ServiceLauncher) watch(ctx context.Context, watched watchedComponent) {
 	}
 }
 
-// startComponent reports starting, starts the component, then reports up or
-// error. It returns the component's address and whether it is up.
-func (l *ServiceLauncher) startComponent(ctx context.Context, watched watchedComponent) (string, bool) {
+// startService reports starting, starts the service, then reports up or
+// error. It returns the service's address and whether it is up.
+func (l *Launcher) startService(ctx context.Context, watched watchedService) (string, bool) {
 	// tell a console that event has been started
 	l.send(ctx, Event{Name: watched.name, State: StateStarting})
-	detail, err := watched.component.start(ctx)
+	detail, err := watched.service.start(ctx)
 	if err != nil {
 		l.send(ctx, Event{Name: watched.name, State: StateError, Detail: err.Error()})
 		return "", false
 	}
-	// component works, tells a console the address
+	// service works, tells a console the address
 	watched.markUp()
 	l.send(ctx, Event{Name: watched.name, State: StateUp, Detail: detail})
 	return detail, true
 }
 
 // put an event into event channel
-func (l *ServiceLauncher) send(ctx context.Context, event Event) {
+func (l *Launcher) send(ctx context.Context, event Event) {
 	select {
 	case l.events <- event:
 	case <-ctx.Done():

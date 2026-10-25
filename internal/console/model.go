@@ -28,7 +28,7 @@ type model struct {
 
 // New returns the console model, showing the service launcher's components and
 // the lines logged to logs.
-func New(serviceLauncher *service.ServiceLauncher, logs *logbus.Bus) tea.Model {
+func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
 	return model{
 		components: []component{
 			{name: "state db", state: service.StateStarting},

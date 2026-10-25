@@ -14,7 +14,7 @@ import (
 
 // StartRecovery starts a recovery workflow with cfg and returns its ID. It
 // logs when the workflow starts, completes or fails.
-func (l *ServiceLauncher) StartRecovery(cfg workflows.RecoveryWorkflowConfig) (string, error) {
+func (l *Launcher) StartRecovery(cfg workflows.RecoveryWorkflowConfig) (string, error) {
 	select {
 	case <-l.workerUp:
 	default:
