@@ -5,29 +5,39 @@ import (
 	"strings"
 )
 
-var actions = []string{
-	"start pgbench",
-	"start recovery",
-	"past workflows",
-	"exit",
+// action is an entry in the ACTIONS menu; its value is its position.
+type action int
+
+const (
+	actionStartPgbench action = iota
+	actionStartRecovery
+	actionPastWorkflows
+	actionExit
+)
+
+var actions = [...]string{
+	actionStartPgbench:  "start pgbench",
+	actionStartRecovery: "start recovery",
+	actionPastWorkflows: "past workflows",
+	actionExit:          "exit",
 }
 
 // actionLines lays the actions out in as many columns as fit the width.
 func (m model) actionLines(width int) []string {
 	cellWidth := 0
-	for number, action := range actions {
-		cellWidth = max(cellWidth, len(fmt.Sprintf("> %d %s", number+1, action))+2)
+	for number, label := range actions {
+		cellWidth = max(cellWidth, len(fmt.Sprintf("> %d %s", number+1, label))+2)
 	}
 	columns := max(1, width/cellWidth)
 
 	var lines []string
 	var line strings.Builder
-	for number, action := range actions {
+	for number, label := range actions {
 		marker := "  "
 		if number == m.cursor {
 			marker = "> "
 		}
-		cell := padRight(fmt.Sprintf("%s%d %s", marker, number+1, action), cellWidth)
+		cell := padRight(fmt.Sprintf("%s%d %s", marker, number+1, label), cellWidth)
 		if number == m.cursor {
 			cell = cursorStyle.Render(cell)
 		}

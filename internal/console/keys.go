@@ -20,10 +20,10 @@ func (m model) handleKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "1", "2", "3", "4":
 		m.cursor = int(key[0] - '1')
 	case "enter":
-		switch actions[m.cursor] {
-		case "start recovery":
+		switch action(m.cursor) {
+		case actionStartRecovery:
 			m.form = openRecoveryForm()
-		case "exit":
+		case actionExit:
 			return m, tea.Quit
 		}
 	case "r":
