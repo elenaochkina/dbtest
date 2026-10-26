@@ -27,18 +27,16 @@ type Event struct {
 	Detail string
 }
 
-// service is a part of the local stack the service launcher starts and checks.
+// service is something the launcher starts and checks
 type service interface {
 	start(ctx context.Context) (string, error)
 	check(ctx context.Context) error
 }
 
-// watchedService is a service with its name, its retry signal, the up
-// signals it waits for before its first start, and its own up signal, closed
-// the first time it is up.
+// watchedService is the launcher's record of one service.
 type watchedService struct {
 	name    string
-	service service
+	service service // starts and checks it
 	retry   chan struct{}
 	after   []chan struct{}
 	up      chan struct{}
@@ -65,21 +63,23 @@ func New(logs slog.Handler) (*Launcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
-	serviceLauncher := &Launcher{
+	stateDB := newStateDB(docker, "dbtest-state")
+	temporal := newTemporalServer(docker, "dbtest-temporal")
+	telemetry := newTelemetryService(logs)
+	worker := newWorkerService(stateDB, temporal, telemetry, logs)
+
+	launcher := &Launcher{
 		docker:    docker,
-		telemetry: newTelemetryService(logs),
+		telemetry: telemetry,
+		worker:    worker,
 		interval:  2 * time.Second,
 		events:    make(chan Event, 16),
 	}
-	stateDB := newStateDB(docker, "dbtest-state")
-	temporal := newTemporalServer(docker, "dbtest-temporal")
-	serviceLauncher.worker = newWorkerService(stateDB, temporal, serviceLauncher.telemetry, logs)
-
-	stateUp := serviceLauncher.add("state db", stateDB)
-	temporalUp := serviceLauncher.add("temporal", temporal)
-	telemetryUp := serviceLauncher.add("telemetry", serviceLauncher.telemetry)
-	serviceLauncher.workerUp = serviceLauncher.add("worker", serviceLauncher.worker, stateUp, temporalUp, telemetryUp)
-	return serviceLauncher, nil
+	stateUp := launcher.add("state db", stateDB)
+	temporalUp := launcher.add("temporal", temporal)
+	telemetryUp := launcher.add("telemetry", telemetry)
+	launcher.workerUp = launcher.add("worker", worker, stateUp, temporalUp, telemetryUp)
+	return launcher, nil
 }
 
 // add adds a service that starts once every after signal is closed. It
@@ -120,8 +120,8 @@ func (l *Launcher) Retry() {
 	}
 }
 
-// Close stops the checks, the worker and the telemetry service. Containers
-// keep running.
+// Close stops the checks, the worker and the telemetry service.
+// Containers keep running.
 func (l *Launcher) Close() {
 	if l.cancel != nil {
 		l.cancel()
@@ -186,8 +186,9 @@ func (l *Launcher) startService(ctx context.Context, watched watchedService) (st
 		l.send(ctx, Event{Name: watched.name, State: StateError, Detail: err.Error()})
 		return "", false
 	}
-	// service works, tells a console the address
+
 	watched.markUp()
+	// service works, tells a console the address
 	l.send(ctx, Event{Name: watched.name, State: StateUp, Detail: detail})
 	return detail, true
 }
