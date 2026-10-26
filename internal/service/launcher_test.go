@@ -38,7 +38,7 @@ func (f *fakeService) set(startError, checkError error) {
 
 func newTestLauncher(fake *fakeService) *Launcher {
 	serviceLauncher := &Launcher{interval: 10 * time.Millisecond, events: make(chan Event, 16)}
-	serviceLauncher.add("fake", fake)
+	serviceLauncher.addService("fake", fake)
 	return serviceLauncher
 }
 
@@ -74,8 +74,8 @@ func TestLauncherStartsAfterDependencies(t *testing.T) {
 	dependency := &fakeService{startError: errors.New("docker is not running")}
 	dependent := &fakeService{}
 	serviceLauncher := &Launcher{interval: 10 * time.Millisecond, events: make(chan Event, 16)}
-	dependencyUp := serviceLauncher.add("dependency", dependency)
-	serviceLauncher.add("dependent", dependent, dependencyUp)
+	dependencyUp := serviceLauncher.addService("dependency", dependency)
+	serviceLauncher.addService("dependent", dependent, dependencyUp)
 	serviceLauncher.Start(context.Background())
 	defer serviceLauncher.Close()
 
@@ -83,7 +83,7 @@ func TestLauncherStartsAfterDependencies(t *testing.T) {
 	expectEvent(t, serviceLauncher, Event{Name: "dependency", State: StateError, Detail: "docker is not running"})
 
 	dependency.set(nil, nil)
-	serviceLauncher.Retry()
+	serviceLauncher.RetryFailed()
 	expectEvent(t, serviceLauncher, Event{Name: "dependency", State: StateStarting})
 	expectEvent(t, serviceLauncher, Event{Name: "dependency", State: StateUp, Detail: "fake-address"})
 	expectEvent(t, serviceLauncher, Event{Name: "dependent", State: StateStarting})
@@ -100,7 +100,7 @@ func TestLauncherRetriesFailedStart(t *testing.T) {
 	expectEvent(t, serviceLauncher, Event{Name: "fake", State: StateError, Detail: "docker is not running"})
 
 	fake.set(nil, nil)
-	serviceLauncher.Retry()
+	serviceLauncher.RetryFailed()
 	expectEvent(t, serviceLauncher, Event{Name: "fake", State: StateStarting})
 	expectEvent(t, serviceLauncher, Event{Name: "fake", State: StateUp, Detail: "fake-address"})
 }

@@ -75,16 +75,16 @@ func New(logs slog.Handler) (*Launcher, error) {
 		interval:  2 * time.Second,
 		events:    make(chan Event, 16),
 	}
-	stateUp := launcher.add("state db", stateDB)
-	temporalUp := launcher.add("temporal", temporal)
-	telemetryUp := launcher.add("telemetry", telemetry)
-	launcher.workerUp = launcher.add("worker", worker, stateUp, temporalUp, telemetryUp)
+	stateUp := launcher.addService("state db", stateDB)
+	temporalUp := launcher.addService("temporal", temporal)
+	telemetryUp := launcher.addService("telemetry", telemetry)
+	launcher.workerUp = launcher.addService("worker", worker, stateUp, temporalUp, telemetryUp)
 	return launcher, nil
 }
 
-// add adds a service that starts once every after signal is closed. It
+// addService adds a service that starts once every after signal is closed. It
 // returns the service's up signal.
-func (l *Launcher) add(name string, service service, after ...chan struct{}) chan struct{} {
+func (l *Launcher) addService(name string, service service, after ...chan struct{}) chan struct{} {
 	up := make(chan struct{})
 	l.services = append(l.services, watchedService{
 		name:    name,
@@ -111,7 +111,7 @@ func (l *Launcher) Start(ctx context.Context) {
 }
 
 // Starts again every service that is in the error state.
-func (l *Launcher) Retry() {
+func (l *Launcher) RetryFailed() {
 	for _, watched := range l.services {
 		select {
 		case watched.retry <- struct{}{}:

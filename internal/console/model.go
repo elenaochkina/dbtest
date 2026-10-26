@@ -37,7 +37,7 @@ func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
 			{name: "worker", state: service.StateStarting},
 		},
 		events:        serviceLauncher.Events(),
-		retry:         serviceLauncher.Retry,
+		retry:         serviceLauncher.RetryFailed,
 		startRecovery: serviceLauncher.StartRecovery,
 		collectLogs:   logs.Collect,
 		checkAWS:      providercfg.CheckAWS,

@@ -16,7 +16,7 @@ cmd/dbtest/main.go
 │  model.go                                                          │
 │    New() copies three functions out of serviceLauncher:            │
 │      events        = serviceLauncher.Events()                      │
-│      retry         = serviceLauncher.Retry                         │
+│      retry         = serviceLauncher.RetryFailed                   │
 │      startRecovery = serviceLauncher.StartRecovery  ◄──────┐       │
 │    model.form  (recoveryForm)                              │       │
 │        │                                                   │       │
