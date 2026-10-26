@@ -27,13 +27,17 @@ func main() {
 	duration := flag.Duration("duration", 15*time.Second, "pgbench run duration")
 	flag.Parse()
 
-	tel := telemetry.Init(telemetry.Config{
+	tel, err := telemetry.Init(telemetry.Config{
 		Log:     telemetry.LogConfig{LogLevel: "info", Output: nil},
 		Metrics: telemetry.MetricsConfig{MetricsPort: 9090},
 	})
+	if err != nil {
+		slog.Error("telemetry init failed", "error", err)
+		os.Exit(1)
+	}
 	defer tel.Shutdown()
 
-	fmt.Println("metrics server running → http://localhost:9090/metrics")
+	fmt.Printf("metrics server running → http://localhost:%d/metrics\n", tel.Metrics.Port())
 
 	ctx := context.Background()
 
