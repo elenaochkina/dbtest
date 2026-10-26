@@ -13,20 +13,20 @@ import (
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/providercfg"
-	"github.com/elenaochkina/dbtest/internal/stack"
+	"github.com/elenaochkina/dbtest/internal/service"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
-// newTestModel returns a model with all components starting, no event or log
+// newTestModel returns a model with all services starting, no event or log
 // feed, a retry that does nothing and an AWS check that reports ready.
 func newTestModel() model {
 	return model{
-		components: []component{
-			{name: "state db", state: stack.StateStarting},
-			{name: "temporal", state: stack.StateStarting},
-			{name: "telemetry", state: stack.StateStarting},
-			{name: "worker", state: stack.StateStarting},
+		services: []serviceStatus{
+			{name: "state db", state: service.StateStarting},
+			{name: "temporal", state: service.StateStarting},
+			{name: "telemetry", state: service.StateStarting},
+			{name: "worker", state: service.StateStarting},
 		},
 		retry: func() {},
 		checkAWS: func(context.Context) providercfg.Status {
@@ -285,19 +285,19 @@ func TestRecoveryFormEscapeFromConfirmGoesBack(t *testing.T) {
 	}
 }
 
-func TestComponentStateIsStored(t *testing.T) {
-	current := send(newTestModel(), stack.Event{Name: "temporal", State: stack.StateUp, Detail: "localhost:7233"})
-	temporal := current.components[1]
-	if temporal.state != stack.StateUp || temporal.detail != "localhost:7233" {
+func TestServiceStateIsStored(t *testing.T) {
+	current := send(newTestModel(), service.Event{Name: "temporal", State: service.StateUp, Detail: "localhost:7233"})
+	temporal := current.services[1]
+	if temporal.state != service.StateUp || temporal.detail != "localhost:7233" {
 		t.Fatalf("temporal = %+v, want up at localhost:7233", temporal)
 	}
-	if current.components[0].state != stack.StateStarting {
+	if current.services[0].state != service.StateStarting {
 		t.Fatal("state db changed too")
 	}
 }
 
 func TestStatusShowsOneLinePerDetailLine(t *testing.T) {
-	current := send(newTestModel(), stack.Event{Name: "temporal", State: stack.StateUp, Detail: "API\tlocalhost:7233\nUI\thttp://localhost:8233"})
+	current := send(newTestModel(), service.Event{Name: "temporal", State: service.StateUp, Detail: "API\tlocalhost:7233\nUI\thttp://localhost:8233"})
 	lines := current.statusLines()
 	if len(lines) != 6 {
 		t.Fatalf("got %d status lines, want 6", len(lines))

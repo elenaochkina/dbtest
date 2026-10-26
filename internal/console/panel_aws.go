@@ -8,7 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/elenaochkina/dbtest/internal/providercfg"
-	"github.com/elenaochkina/dbtest/internal/stack"
+	"github.com/elenaochkina/dbtest/internal/service"
 )
 
 // checkAWS checks AWS in the background and delivers the result as a message.
@@ -39,9 +39,9 @@ func (m model) awsLine() string {
 func awsStyle(state providercfg.State) lipgloss.Style {
 	switch state {
 	case providercfg.StateReady:
-		return stateStyles[stack.StateUp]
+		return stateStyles[service.StateUp]
 	case providercfg.StateMisconfigured:
-		return stateStyles[stack.StateError]
+		return stateStyles[service.StateError]
 	}
-	return stateStyles[stack.StateStarting]
+	return stateStyles[service.StateStarting]
 }

@@ -1,4 +1,4 @@
-package stack
+package service
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 	dockerclient "github.com/docker/docker/client"
 )
 
-// TestTemporalServerLifecycle creates, stops and restarts a throwaway Temporal
+// TestStateDBLifecycle creates, stops and restarts a throwaway state
 // container. It needs Docker and is skipped with -short.
-func TestTemporalServerLifecycle(t *testing.T) {
+func TestStateDBLifecycle(t *testing.T) {
 	if testing.Short() {
 		t.Skip("needs Docker")
 	}
@@ -21,28 +21,28 @@ func TestTemporalServerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := fmt.Sprintf("dbtest-temporal-test-%d", time.Now().UnixNano())
+	name := fmt.Sprintf("dbtest-state-test-%d", time.Now().UnixNano())
 	t.Cleanup(func() {
 		docker.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
 		docker.VolumeRemove(ctx, name, true)
 	})
-	server := newTemporalServer(docker, name)
+	database := newStateDB(docker, name)
 
-	if _, err := server.start(ctx); err != nil {
+	if _, err := database.start(ctx); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if err := docker.ContainerStop(ctx, name, container.StopOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := server.check(ctx); err == nil {
+	if err := database.check(ctx); err == nil {
 		t.Fatal("check passed on a stopped container")
 	}
-	if _, err := server.start(ctx); err != nil {
+	if _, err := database.start(ctx); err != nil {
 		t.Fatalf("restart: %v", err)
 	}
-	detail, err := server.start(ctx)
+	dsn, err := database.start(ctx)
 	if err != nil {
 		t.Fatalf("adopt running: %v", err)
 	}
-	t.Log(detail)
+	t.Log("dsn:", dsn)
 }

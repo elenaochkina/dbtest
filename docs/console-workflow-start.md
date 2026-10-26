@@ -7,7 +7,7 @@ start to a running recovery workflow.
 
 ```
 cmd/dbtest/main.go
-│  1. serviceLauncher := stack.New(...)           ── creates
+│  1. serviceLauncher := service.New(...)         ── creates
 │  2. serviceLauncher.Start(...)                  ── starts services
 │  3. console.New(serviceLauncher, logs)          ── hands it to the console
 ▼
@@ -16,7 +16,7 @@ cmd/dbtest/main.go
 │  model.go                                                          │
 │    New() copies three functions out of serviceLauncher:            │
 │      events        = serviceLauncher.Events()                      │
-│      retry         = serviceLauncher.Retry                         │
+│      retry         = serviceLauncher.RetryFailed                   │
 │      startRecovery = serviceLauncher.StartRecovery  ◄──────┐       │
 │    model.form  (recoveryForm)                              │       │
 │        │                                                   │       │
@@ -37,7 +37,7 @@ cmd/dbtest/main.go
 └──────────────────────────────┼─────────────────────────────────────┘
                                │ start(cfg) = serviceLauncher.StartRecovery(cfg)
                                ▼
-┌──────────────────────── internal/stack ───────────────────────────┐
+┌──────────────────────── internal/service ─────────────────────────┐
 │  workflows.go                                                      │
 │    StartRecovery(cfg):                                             │
 │      a. worker up?  (waits on workerUp signal, else error)         │
@@ -45,7 +45,7 @@ cmd/dbtest/main.go
 │      c. slog.Info("workflow started")                              │
 │      d. background: run.Get → "workflow completed" / "failed"      │
 │                                                                    │
-│  servicelauncher.go                                                │
+│  launcher.go                                                       │
 │    owns: workerUp signal, worker (with temporalClient), ctx, wait  │
 └──────────────────────────────┼─────────────────────────────────────┘
                                ▼
@@ -59,8 +59,8 @@ cmd/dbtest/main.go
 | File | Package | Job |
 |---|---|---|
 | `main.go` | main | Creates and starts the service launcher, then gives it to the console. |
-| `servicelauncher.go` | stack | Runs the services. It holds the `worker` (and its Temporal client) and the `workerUp` signal. |
-| `workflows.go` | stack | `StartRecovery`: uses the worker's Temporal client to start a workflow and logs the result. |
+| `launcher.go` | service | Runs the services. It holds the `worker` (and its Temporal client) and the `workerUp` signal. |
+| `workflows.go` | service | `StartRecovery`: uses the worker's Temporal client to start a workflow and logs the result. |
 | `model.go` | console | The screen's state. It stores `StartRecovery` as a plain function in `m.startRecovery`. |
 | `keys.go` | console | Decides what each key does: open the form, move between steps, start on confirm. |
 | `recovery_form.go` | console | The steps. It builds `form.cfg` from your choices. |
@@ -74,5 +74,5 @@ cmd/dbtest/main.go
 2. **`cfg` travels unchanged.** It starts in `defaultRecovery()`, the form edits it, and
    `startRecovery` → `StartRecovery` → `ExecuteWorkflow` deliver it to `RecoveryWorkflow`.
 3. **`workflows.go` needs the service launcher's internals.** That's why `StartRecovery` lives
-   in `stack`, not in the console. It needs the worker's `temporalClient` and the `workerUp`
-   signal, and both are private to `stack`.
+   in `service`, not in the console. It needs the worker's `temporalClient` and the `workerUp`
+   signal, and both are private to `service`.

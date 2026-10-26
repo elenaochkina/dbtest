@@ -6,7 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/elenaochkina/dbtest/internal/stack"
+	"github.com/elenaochkina/dbtest/internal/service"
 )
 
 var (
@@ -18,10 +18,10 @@ var (
 	keyStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
 	actionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("183"))
 
-	stateStyles = map[stack.State]lipgloss.Style{
-		stack.StateStarting: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		stack.StateUp:       lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
-		stack.StateError:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
+	stateStyles = map[service.State]lipgloss.Style{
+		service.StateStarting: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		service.StateUp:       lipgloss.NewStyle().Foreground(lipgloss.Color("2")),
+		service.StateError:    lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 	}
 )
 
@@ -29,9 +29,9 @@ var (
 func levelStyle(level slog.Level) lipgloss.Style {
 	switch {
 	case level >= slog.LevelError:
-		return stateStyles[stack.StateError]
+		return stateStyles[service.StateError]
 	case level >= slog.LevelWarn:
-		return stateStyles[stack.StateStarting]
+		return stateStyles[service.StateStarting]
 	}
 	return lipgloss.NewStyle()
 }

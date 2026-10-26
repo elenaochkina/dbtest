@@ -1,4 +1,4 @@
-package stack
+package service
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func TestWorkerServiceLifecycle(t *testing.T) {
 	stateDB := newStateDB(docker, stateName)
 	temporal := newTemporalServer(docker, temporalName)
 	telemetry := newTelemetryService(slog.DiscardHandler)
-	for _, dependency := range []component{stateDB, temporal, telemetry} {
+	for _, dependency := range []service{stateDB, temporal, telemetry} {
 		if _, err := dependency.start(ctx); err != nil {
 			t.Fatal(err)
 		}

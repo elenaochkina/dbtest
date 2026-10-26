@@ -8,7 +8,7 @@ import (
 	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/pricing"
 	"github.com/elenaochkina/dbtest/internal/providercfg"
-	"github.com/elenaochkina/dbtest/internal/stack"
+	"github.com/elenaochkina/dbtest/internal/service"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
@@ -16,8 +16,8 @@ import (
 type model struct {
 	width         int
 	height        int
-	components    []component
-	events        <-chan stack.Event
+	services      []serviceStatus
+	events        <-chan service.Event
 	retry         func()
 	startRecovery func(workflows.RecoveryWorkflowConfig) (string, error)
 	cursor        int
@@ -30,18 +30,18 @@ type model struct {
 	fetchPrices   func(context.Context, provider.ProviderName, string) (pricing.Prices, error)
 }
 
-// New returns the console model, showing the service launcher's components and
+// New returns the console model, showing the service launcher's services and
 // the lines logged to logs.
-func New(serviceLauncher *stack.ServiceLauncher, logs *logbus.Bus, prices *pricing.Client) tea.Model {
+func New(serviceLauncher *service.Launcher, logs *logbus.Bus, prices *pricing.Client) tea.Model {
 	current := model{
-		components: []component{
-			{name: "state db", state: stack.StateStarting},
-			{name: "temporal", state: stack.StateStarting},
-			{name: "telemetry", state: stack.StateStarting},
-			{name: "worker", state: stack.StateStarting},
+		services: []serviceStatus{
+			{name: "state db", state: service.StateStarting},
+			{name: "temporal", state: service.StateStarting},
+			{name: "telemetry", state: service.StateStarting},
+			{name: "worker", state: service.StateStarting},
 		},
 		events:        serviceLauncher.Events(),
-		retry:         serviceLauncher.Retry,
+		retry:         serviceLauncher.RetryFailed,
 		startRecovery: serviceLauncher.StartRecovery,
 		collectLogs:   logs.Collect,
 		checkAWS:      providercfg.CheckAWS,
@@ -62,8 +62,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 		m.height = message.Height
-	case stack.Event:
-		m.setComponentState(message)
+	case service.Event:
+		m.setServiceState(message)
 		return m, waitForEvent(m.events)
 	case logBatchMsg:
 		m.appendLog(message)

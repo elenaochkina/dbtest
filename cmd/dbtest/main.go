@@ -14,7 +14,7 @@ import (
 	"github.com/elenaochkina/dbtest/internal/console"
 	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/pricing"
-	"github.com/elenaochkina/dbtest/internal/stack"
+	"github.com/elenaochkina/dbtest/internal/service"
 )
 
 // dbtest runs the interactive console.
@@ -36,7 +36,7 @@ func run() error {
 		slog.Info("loaded .env", "variables", count)
 	}
 
-	serviceLauncher, err := stack.New(logs.Handler())
+	serviceLauncher, err := service.New(logs.Handler())
 	if err != nil {
 		return err
 	}
