@@ -44,8 +44,11 @@ type SaveResultInput struct {
 
 // EndRunInput closes a runs row, recording whether the run passed.
 type EndRunInput struct {
-	RunID  uuid.UUID
-	Passed bool
+	RunID         uuid.UUID
+	Passed        bool
+	InstanceClass string
+	Region        string
+	Timeline      state.RunTimeline
 }
 
 // StateDBActivities cover every write to the state DB.
@@ -80,6 +83,9 @@ func (a *StateDBActivities) SaveResult(ctx context.Context, input SaveResultInpu
 
 func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error {
 	run := &state.Run{Pool: a.statePool, ID: input.RunID, Logger: a.tel.Logger}
+	if err := run.SaveTimeline(ctx, input.InstanceClass, input.Region, input.Timeline); err != nil {
+		return err
+	}
 	return run.End(ctx, input.Passed)
 }
 

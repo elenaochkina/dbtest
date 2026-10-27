@@ -126,8 +126,10 @@ func (p *rdsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 		Target: target,
 		// The RDS endpoint resolves the same from the worker and from a task in
 		// the VPC, so there is no second address to hand out.
-		Internal: target,
-		Password: password,
+		Internal:      target,
+		Password:      password,
+		InstanceClass: instanceClass,
+		Region:        p.cfg.Region,
 	}, nil
 }
 

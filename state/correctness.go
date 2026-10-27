@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/telemetry"
@@ -110,6 +111,42 @@ func (r *Run) Checkpoint(ctx context.Context, name string, cs validator.Checksum
 	}
 	r.Logger.Info("checkpoint saved", "run_id", r.ID, "name", name, "row_count", cs.RowCount, "stock_sum", cs.StockSum)
 	return nil
+}
+
+// RunTimeline holds when each phase of a run started and ended. A zero time
+// is stored as NULL.
+type RunTimeline struct {
+	ProvisionStartedAt   time.Time
+	ProvisionedAt        time.Time
+	ReadyAt              time.Time
+	DeprovisionStartedAt time.Time
+	DeprovisionedAt      time.Time
+}
+
+// SaveTimeline stores the instance class, region and phase times of the run.
+func (r *Run) SaveTimeline(ctx context.Context, instanceClass, region string, timeline RunTimeline) error {
+	_, err := r.Pool.Exec(ctx,
+		`UPDATE runs SET instance_class = NULLIF($1, ''), region = NULLIF($2, ''),
+		        provision_started_at = $3, provisioned_at = $4, ready_at = $5,
+		        deprovision_started_at = $6, deprovisioned_at = $7
+		 WHERE id = $8`,
+		instanceClass, region,
+		nullTime(timeline.ProvisionStartedAt), nullTime(timeline.ProvisionedAt), nullTime(timeline.ReadyAt),
+		nullTime(timeline.DeprovisionStartedAt), nullTime(timeline.DeprovisionedAt),
+		r.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("SaveTimeline %s: %w", r.ID, err)
+	}
+	return nil
+}
+
+// nullTime returns nil for a zero time, so it is stored as NULL.
+func nullTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }
 
 // Call with passed = !t.Failed() so the result reflects whether any assertion fired.
