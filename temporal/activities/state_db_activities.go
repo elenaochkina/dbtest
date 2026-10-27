@@ -13,13 +13,17 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.temporal.io/sdk/activity"
 )
 
 // StartRunInput opens a runs row recording this benchmark execution.
 type StartRunInput struct {
-	Scenario string
-	Seed     int64
-	Provider provider.ProviderName
+	Scenario    string
+	Seed        int64
+	Provider    provider.ProviderName
+	Disruption  provider.Disruption
+	Repetitions int
+	Request     *provider.ProvisionRequest
 }
 
 // SaveDowntimeInput persists what the prober measured, one row per disruption.
@@ -56,9 +60,13 @@ func NewStateDBActivities(statePool *pgxpool.Pool, tel *telemetry.Telemetry) *St
 
 func (a *StateDBActivities) StartRun(ctx context.Context, input StartRunInput) (uuid.UUID, error) {
 	run, err := state.StartRun(ctx, a.statePool, state.RunConfig{
-		Seed:     input.Seed,
-		Scenario: input.Scenario,
-		Provider: string(input.Provider),
+		Seed:        input.Seed,
+		Scenario:    input.Scenario,
+		Provider:    string(input.Provider),
+		WorkflowID:  activity.GetInfo(ctx).WorkflowExecution.ID,
+		Disruption:  string(input.Disruption),
+		Repetitions: input.Repetitions,
+		Request:     input.Request,
 	}, a.tel)
 	if err != nil {
 		return uuid.UUID{}, err

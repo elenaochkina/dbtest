@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
 	"github.com/google/uuid"
@@ -19,6 +20,12 @@ type RunConfig struct {
 	Seed     int64
 	Scenario string
 	Provider string
+	// WorkflowID, Disruption, Repetitions and Request are empty for runs that
+	// don't have them, and stored as NULL.
+	WorkflowID  string
+	Disruption  string
+	Repetitions int
+	Request     *provider.ProvisionRequest
 }
 
 // Never use Pool to query the database under test.
@@ -34,12 +41,23 @@ type Run struct {
 // ended_at and passed are left NULL until End is called.
 // Call defer run.End(ctx, !t.Failed()) immediately after so the run is always closed.
 func StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig, tel *telemetry.Telemetry) (*Run, error) {
+	var highAvailability, vcpu, memoryMiB, diskGiB, postgresVersion any
+	if cfg.Request != nil {
+		highAvailability = cfg.Request.HighAvailability
+		vcpu = cfg.Request.VCPU
+		memoryMiB = cfg.Request.MemoryMiB
+		diskGiB = cfg.Request.DiskGiB
+		postgresVersion = cfg.Request.PostgresVersion
+	}
 	var id uuid.UUID
 	err := pool.QueryRow(ctx,
-		`INSERT INTO runs (scenario, seed, provider, started_at)
-		 VALUES ($1, $2, $3, now())
+		`INSERT INTO runs (scenario, seed, provider, workflow_id, disruption, repetitions,
+		                   high_availability, vcpu, memory_mib, disk_gib, postgres_version, started_at)
+		 VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, 0),
+		         $7, $8, $9, $10, $11, now())
 		 RETURNING id`,
-		cfg.Scenario, cfg.Seed, cfg.Provider,
+		cfg.Scenario, cfg.Seed, cfg.Provider, cfg.WorkflowID, cfg.Disruption, cfg.Repetitions,
+		highAvailability, vcpu, memoryMiB, diskGiB, postgresVersion,
 	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("StartRun: %w", err)
