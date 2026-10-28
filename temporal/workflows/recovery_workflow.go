@@ -113,8 +113,9 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		}
 	}()
 
+	heartbeatCtx := workflow.WithActivityOptions(ctx, heartbeatActivityOptions)
 	timeline.ProvisionStartedAt = workflow.Now(ctx)
-	if err = workflow.ExecuteActivity(ctx, prov.Provision, activities.ProvisionInput{
+	if err = workflow.ExecuteActivity(heartbeatCtx, prov.Provision, activities.ProvisionInput{
 		Provider: cfg.Provider,
 		Request:  cfg.Request,
 		Token:    clusterID,
@@ -124,7 +125,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	}
 	timeline.ProvisionedAt = workflow.Now(ctx)
 
-	if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
+	if err = workflow.ExecuteActivity(heartbeatCtx, prov.WaitForReady, activities.WaitForReadyInput{
 		Provider: cfg.Provider,
 		Cluster:  cluster,
 	}).Get(ctx, nil); err != nil {
@@ -203,7 +204,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		}).Get(ctx, &cluster); err != nil {
 			return err
 		}
-		if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
+		if err = workflow.ExecuteActivity(heartbeatCtx, prov.WaitForReady, activities.WaitForReadyInput{
 			Provider: cfg.Provider,
 			Cluster:  cluster,
 		}).Get(ctx, nil); err != nil {
