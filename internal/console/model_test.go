@@ -153,9 +153,9 @@ func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
 		want    string
 	}{
 		{[]string{"down", "enter", "enter"}, []string{"restart"}, "restart"},
-		{[]string{"down", "enter", "down", "enter"}, []string{"restart", "failover"}, "restart"},
+		{[]string{"down", "enter", "down", "enter"}, []string{"failover"}, "failover"},
 		{[]string{"down", "down", "enter", "enter"}, []string{"restart", "crash"}, "crash"},
-		{[]string{"down", "down", "enter", "down", "enter"}, []string{"restart", "crash", "failover"}, "crash"},
+		{[]string{"down", "down", "enter", "down", "enter"}, []string{"failover"}, "failover"},
 	} {
 		_, current := startRecoveryWithKeys(t, test.keys...)
 		options := current.form.options()
@@ -166,7 +166,7 @@ func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
 }
 
 func TestRecoveryFormStartsAuroraFailover(t *testing.T) {
-	started, current := startRecoveryWithKeys(t, "down", "down", "enter", "down", "enter", "down", "enter", "enter", "enter", "enter")
+	started, current := startRecoveryWithKeys(t, "down", "down", "enter", "down", "enter", "enter", "enter", "enter", "enter")
 	if len(started) != 1 {
 		t.Fatalf("started %d recoveries, want 1", len(started))
 	}
@@ -260,7 +260,7 @@ func TestRecoveryFormConfirmShowsChoices(t *testing.T) {
 		wantWarning bool
 	}{
 		{[]string{"enter", "enter", "enter", "enter"}, []string{"docker", "crash", "memory             2048 MiB", "disk               provider default"}, false},
-		{[]string{"down", "down", "enter", "down", "enter", "down", "enter", "enter", "enter"}, []string{"aws-aurora", "high availability  yes", "failover"}, true},
+		{[]string{"down", "down", "enter", "down", "enter", "enter", "enter", "enter"}, []string{"aws-aurora", "high availability  yes", "failover"}, true},
 	} {
 		started, current := startRecoveryWithKeys(t, test.keys...)
 		if current.form.step != "confirm" || len(started) != 0 {
