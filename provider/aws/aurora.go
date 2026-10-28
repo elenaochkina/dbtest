@@ -207,6 +207,11 @@ func (p *auroraProvider) waitForEndpoint(ctx context.Context, clusterID string, 
 	return host, port, nil
 }
 
+// AuroraInstanceClass returns the Aurora instance class Provision creates for req.
+func AuroraInstanceClass(req provider.ProvisionRequest) string {
+	return resolveAuroraClass(req, loadConfig().AuroraInstanceClass)
+}
+
 // resolveAuroraClass maps the ProvisionRequest onto an Aurora instance class.
 // The table starts at db.r6g.large because Aurora's smaller classes are burstable.
 func resolveAuroraClass(req provider.ProvisionRequest, override string) string {

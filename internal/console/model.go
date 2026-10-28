@@ -6,8 +6,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
+	"github.com/elenaochkina/dbtest/internal/pricing"
 	"github.com/elenaochkina/dbtest/internal/providercfg"
 	"github.com/elenaochkina/dbtest/internal/service"
+	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
@@ -24,12 +26,14 @@ type model struct {
 	collectLogs   func() []logbus.Line
 	aws           providercfg.Status
 	checkAWS      func(context.Context) providercfg.Status
+	prices        map[string]priceFetch
+	fetchPrices   func(context.Context, provider.ProviderName, string) (pricing.Prices, error)
 }
 
 // New returns the console model, showing the service launcher's services and
 // the lines logged to logs.
-func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
-	return model{
+func New(serviceLauncher *service.Launcher, logs *logbus.Bus, prices *pricing.Client) tea.Model {
+	current := model{
 		services: []serviceStatus{
 			{name: "state db", state: service.StateStarting},
 			{name: "temporal", state: service.StateStarting},
@@ -41,7 +45,12 @@ func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
 		startRecovery: serviceLauncher.StartRecovery,
 		collectLogs:   logs.Collect,
 		checkAWS:      providercfg.CheckAWS,
+		prices:        map[string]priceFetch{},
 	}
+	if prices != nil {
+		current.fetchPrices = prices.Fetch
+	}
+	return current
 }
 
 func (m model) Init() tea.Cmd {
@@ -61,6 +70,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, collectLogs(m.collectLogs)
 	case awsStatusMsg:
 		m.setAWSStatus(message)
+	case pricesMsg:
+		m.setPrices(message)
 	case tea.KeyPressMsg:
 		return m.handleKey(message)
 	}

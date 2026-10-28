@@ -266,7 +266,7 @@ func TestRecoveryFormConfirmShowsChoices(t *testing.T) {
 		if current.form.step != "confirm" || len(started) != 0 {
 			t.Fatalf("%v: step = %q, started %d, want confirm and none started", test.keys, current.form.step, len(started))
 		}
-		summary := strings.Join(current.form.lines(), "\n")
+		summary := strings.Join(current.form.lines(""), "\n")
 		for _, want := range test.want {
 			if !strings.Contains(summary, want) {
 				t.Errorf("%v: summary has no %q:\n%s", test.keys, want, summary)

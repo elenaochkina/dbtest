@@ -85,6 +85,12 @@
       "Effect": "Allow",
       "Action": "logs:GetLogEvents",
       "Resource": "arn:aws:logs:*:*:log-group:/ecs/dbtest:log-stream:*"
+    },
+    {
+      "Sid": "ReadPrices",
+      "Effect": "Allow",
+      "Action": "pricing:GetProducts",
+      "Resource": "*"
     }
   ]
 }
