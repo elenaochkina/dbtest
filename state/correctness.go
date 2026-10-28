@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/validator"
 	"github.com/google/uuid"
@@ -19,6 +21,12 @@ type RunConfig struct {
 	Seed     int64
 	Scenario string
 	Provider string
+	// WorkflowID, Disruption, Repetitions and Request are empty for runs that
+	// don't have them, and stored as NULL.
+	WorkflowID  string
+	Disruption  string
+	Repetitions int
+	Request     *provider.ProvisionRequest
 }
 
 // Never use Pool to query the database under test.
@@ -34,12 +42,23 @@ type Run struct {
 // ended_at and passed are left NULL until End is called.
 // Call defer run.End(ctx, !t.Failed()) immediately after so the run is always closed.
 func StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig, tel *telemetry.Telemetry) (*Run, error) {
+	var highAvailability, vcpu, memoryMiB, diskGiB, postgresVersion any
+	if cfg.Request != nil {
+		highAvailability = cfg.Request.HighAvailability
+		vcpu = cfg.Request.VCPU
+		memoryMiB = cfg.Request.MemoryMiB
+		diskGiB = cfg.Request.DiskGiB
+		postgresVersion = cfg.Request.PostgresVersion
+	}
 	var id uuid.UUID
 	err := pool.QueryRow(ctx,
-		`INSERT INTO runs (scenario, seed, provider, started_at)
-		 VALUES ($1, $2, $3, now())
+		`INSERT INTO runs (scenario, seed, provider, workflow_id, disruption, repetitions,
+		                   high_availability, vcpu, memory_mib, disk_gib, postgres_version, started_at)
+		 VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, 0),
+		         $7, $8, $9, $10, $11, now())
 		 RETURNING id`,
-		cfg.Scenario, cfg.Seed, cfg.Provider,
+		cfg.Scenario, cfg.Seed, cfg.Provider, cfg.WorkflowID, cfg.Disruption, cfg.Repetitions,
+		highAvailability, vcpu, memoryMiB, diskGiB, postgresVersion,
 	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("StartRun: %w", err)
@@ -92,6 +111,42 @@ func (r *Run) Checkpoint(ctx context.Context, name string, cs validator.Checksum
 	}
 	r.Logger.Info("checkpoint saved", "run_id", r.ID, "name", name, "row_count", cs.RowCount, "stock_sum", cs.StockSum)
 	return nil
+}
+
+// RunTimeline holds when each phase of a run started and ended. A zero time
+// is stored as NULL.
+type RunTimeline struct {
+	ProvisionStartedAt   time.Time
+	ProvisionedAt        time.Time
+	ReadyAt              time.Time
+	DeprovisionStartedAt time.Time
+	DeprovisionedAt      time.Time
+}
+
+// SaveTimeline stores the instance class, region and phase times of the run.
+func (r *Run) SaveTimeline(ctx context.Context, instanceClass, region string, timeline RunTimeline) error {
+	_, err := r.Pool.Exec(ctx,
+		`UPDATE runs SET instance_class = NULLIF($1, ''), region = NULLIF($2, ''),
+		        provision_started_at = $3, provisioned_at = $4, ready_at = $5,
+		        deprovision_started_at = $6, deprovisioned_at = $7
+		 WHERE id = $8`,
+		instanceClass, region,
+		nullTime(timeline.ProvisionStartedAt), nullTime(timeline.ProvisionedAt), nullTime(timeline.ReadyAt),
+		nullTime(timeline.DeprovisionStartedAt), nullTime(timeline.DeprovisionedAt),
+		r.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("SaveTimeline %s: %w", r.ID, err)
+	}
+	return nil
+}
+
+// nullTime returns nil for a zero time, so it is stored as NULL.
+func nullTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t
 }
 
 // Call with passed = !t.Failed() so the result reflects whether any assertion fired.

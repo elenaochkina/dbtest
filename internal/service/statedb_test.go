@@ -26,7 +26,7 @@ func TestStateDBLifecycle(t *testing.T) {
 		docker.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
 		docker.VolumeRemove(ctx, name, true)
 	})
-	database := newStateDB(docker, name)
+	database := newStateDB(docker, name, loadConfig().Network)
 
 	if _, err := database.start(ctx); err != nil {
 		t.Fatalf("create: %v", err)

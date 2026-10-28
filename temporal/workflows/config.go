@@ -15,3 +15,12 @@ var defaultActivityOptions = workflow.ActivityOptions{
 		MaximumAttempts: 3,
 	},
 }
+
+// heartbeatActivityOptions retry an activity that sends no heartbeat for a minute.
+var heartbeatActivityOptions = workflow.ActivityOptions{
+	StartToCloseTimeout: 20 * time.Minute,
+	HeartbeatTimeout:    time.Minute,
+	RetryPolicy: &temporal.RetryPolicy{
+		MaximumAttempts: 3,
+	},
+}

@@ -65,18 +65,18 @@ func (form recoveryForm) options() []string {
 }
 
 // disruptions returns the disruptions the provider supports.
+// HA returns only failover
 func disruptions(name provider.ProviderName, highAvailability bool) []string {
-	var supported []string
+	if highAvailability {
+		return []string{"failover"}
+	}
 	switch name {
 	case provider.Docker, provider.Aurora:
-		supported = []string{"restart", "crash"}
+		return []string{"restart", "crash"}
 	case provider.RDS:
-		supported = []string{"restart"}
+		return []string{"restart"}
 	}
-	if highAvailability {
-		supported = append(supported, "failover")
-	}
-	return supported
+	return nil
 }
 
 // show moves to step with an empty input. On a choice step the cursor is on

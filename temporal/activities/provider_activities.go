@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/telemetry"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -55,6 +57,7 @@ func (a *ProviderActivities) Provision(ctx context.Context, input ProvisionInput
 	if err != nil {
 		return provider.ClusterInfo{}, fmt.Errorf("provider %q: %w", input.Provider, err)
 	}
+	defer keepAlive(ctx)()
 	cluster, err := p.Provision(ctx, input.Request, input.Token, input.Password)
 	if err != nil {
 		return provider.ClusterInfo{}, fmt.Errorf("provision: %w", err)
@@ -67,7 +70,28 @@ func (a *ProviderActivities) WaitForReady(ctx context.Context, input WaitForRead
 	if err != nil {
 		return fmt.Errorf("provider %q: %w", input.Provider, err)
 	}
+	defer keepAlive(ctx)()
 	return p.WaitForReady(ctx, input.Cluster)
+}
+
+// keepAlive records a heartbeat every 10 seconds until stop is called or context ends.
+func keepAlive(ctx context.Context) (stop func()) {
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				activity.RecordHeartbeat(ctx)
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return func() { close(done) }
 }
 
 // TODO: expired AWS credentials exhaust the default retries within seconds and

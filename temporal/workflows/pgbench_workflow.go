@@ -44,8 +44,9 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
 		_ = workflow.ExecuteActivity(dctx, runs.EndRun, activities.EndRunInput{
-			RunID:  runID,
-			Passed: err == nil,
+			RunID:    runID,
+			Passed:   err == nil,
+			Provider: cfg.Provider,
 		}).Get(dctx, nil)
 	}()
 

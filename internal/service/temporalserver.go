@@ -22,12 +22,13 @@ import (
 type temporalServer struct {
 	docker  *dockerclient.Client
 	name    string
+	network string
 	address string
 	uiURL   string
 }
 
-func newTemporalServer(docker *dockerclient.Client, name string) *temporalServer {
-	return &temporalServer{docker: docker, name: name}
+func newTemporalServer(docker *dockerclient.Client, name, network string) *temporalServer {
+	return &temporalServer{docker: docker, name: name, network: network}
 }
 
 // start uses the container if it is running, starts it if it is stopped, or
@@ -52,6 +53,10 @@ func (s *temporalServer) start(ctx context.Context) (string, error) {
 		if info, err = s.docker.ContainerInspect(ctx, s.name); err != nil {
 			return "", fmt.Errorf("inspect %s: %w", s.name, err)
 		}
+	}
+
+	if err := joinNetwork(ctx, s.docker, s.network, s.name, info.NetworkSettings.Networks); err != nil {
+		return "", err
 	}
 
 	apiBindings := info.NetworkSettings.Ports[nat.Port("7233/tcp")]
@@ -87,6 +92,9 @@ func (s *temporalServer) create(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureNetwork(ctx, s.docker, s.network); err != nil {
+		return err
+	}
 	_, err = s.docker.ContainerCreate(ctx,
 		&container.Config{
 			Image: "temporalio/temporal:1.8.2",
@@ -96,6 +104,7 @@ func (s *temporalServer) create(ctx context.Context) error {
 			Labels:       map[string]string{"dbtest.managed": "true", "dbtest.role": "temporal"},
 		},
 		&container.HostConfig{
+			NetworkMode: container.NetworkMode(s.network),
 			PortBindings: nat.PortMap{
 				"7233/tcp": {{HostIP: "127.0.0.1", HostPort: strconv.Itoa(apiPort)}},
 				"8233/tcp": {{HostIP: "127.0.0.1", HostPort: strconv.Itoa(uiPort)}},

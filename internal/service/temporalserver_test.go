@@ -26,7 +26,7 @@ func TestTemporalServerLifecycle(t *testing.T) {
 		docker.ContainerRemove(ctx, name, container.RemoveOptions{Force: true})
 		docker.VolumeRemove(ctx, name, true)
 	})
-	server := newTemporalServer(docker, name)
+	server := newTemporalServer(docker, name, loadConfig().Network)
 
 	if _, err := server.start(ctx); err != nil {
 		t.Fatalf("create: %v", err)

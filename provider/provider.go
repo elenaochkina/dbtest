@@ -29,10 +29,12 @@ func (t PGTarget) URL(password string) string {
 
 // ClusterInfo is returned by Provision and used to connect and deprovision.
 type ClusterInfo struct {
-	ID       string   // provider-specific identifier (e.g. Docker container ID, RDS instance ID)
-	Target   PGTarget // how the worker reaches the database
-	Internal PGTarget // a sibling container reaches the same database.
-	Password string   // master password; rendered into a DSN at connect time, never persisted
+	ID            string   // provider-specific identifier (e.g. Docker container ID, RDS instance ID)
+	Target        PGTarget // how the worker reaches the database
+	Internal      PGTarget // a sibling container reaches the same database.
+	Password      string   // master password; rendered into a DSN at connect time, never persisted
+	InstanceClass string   // e.g. db.r6g.large; empty for Docker
+	Region        string   // e.g. us-west-2; empty for Docker
 }
 
 type ProvisionRequest struct {

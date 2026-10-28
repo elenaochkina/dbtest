@@ -45,7 +45,7 @@ func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(waitForEvent(m.events), collectLogs(m.collectLogs), checkAWS(m.checkAWS))
+	return tea.Batch(waitForEvent(m.events), collectLogs(m.collectLogs), checkAWS(m.checkAWS), awsTick())
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -61,6 +61,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, collectLogs(m.collectLogs)
 	case awsStatusMsg:
 		m.setAWSStatus(message)
+	case awsTickMsg:
+		return m, tea.Batch(checkAWS(m.checkAWS), awsTick())
 	case tea.KeyPressMsg:
 		return m.handleKey(message)
 	}

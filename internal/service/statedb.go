@@ -18,13 +18,14 @@ import (
 
 // stateDB runs the state Postgres in a Docker container.
 type stateDB struct {
-	docker *dockerclient.Client
-	name   string
-	dsn    string
+	docker  *dockerclient.Client
+	name    string
+	network string
+	dsn     string
 }
 
-func newStateDB(docker *dockerclient.Client, name string) *stateDB {
-	return &stateDB{docker: docker, name: name}
+func newStateDB(docker *dockerclient.Client, name, network string) *stateDB {
+	return &stateDB{docker: docker, name: name, network: network}
 }
 
 // start uses the container if it is running, starts it if it is stopped, or
@@ -49,6 +50,10 @@ func (s *stateDB) start(ctx context.Context) (string, error) {
 		if info, err = s.docker.ContainerInspect(ctx, s.name); err != nil {
 			return "", fmt.Errorf("inspect %s: %w", s.name, err)
 		}
+	}
+
+	if err := joinNetwork(ctx, s.docker, s.network, s.name, info.NetworkSettings.Networks); err != nil {
+		return "", err
 	}
 
 	bindings := info.NetworkSettings.Ports[nat.Port("5432/tcp")]
@@ -78,6 +83,9 @@ func (s *stateDB) create(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureNetwork(ctx, s.docker, s.network); err != nil {
+		return err
+	}
 	_, err = s.docker.ContainerCreate(ctx,
 		&container.Config{
 			Image:        "postgres:18",
@@ -86,6 +94,7 @@ func (s *stateDB) create(ctx context.Context) error {
 			Labels:       map[string]string{"dbtest.managed": "true", "dbtest.role": "state"},
 		},
 		&container.HostConfig{
+			NetworkMode:  container.NetworkMode(s.network),
 			PortBindings: nat.PortMap{"5432/tcp": {{HostIP: "127.0.0.1", HostPort: strconv.Itoa(port)}}},
 			Mounts:       []mount.Mount{{Type: mount.TypeVolume, Source: s.name, Target: "/var/lib/postgresql"}},
 		},
