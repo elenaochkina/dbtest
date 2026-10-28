@@ -81,6 +81,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		_ = workflow.ExecuteActivity(dctx, runs.EndRun, activities.EndRunInput{
 			RunID:         runID,
 			Passed:        err == nil,
+			Provider:      cfg.Provider,
 			InstanceClass: cluster.InstanceClass,
 			Region:        cluster.Region,
 			Timeline:      timeline,

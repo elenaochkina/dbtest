@@ -46,6 +46,7 @@ type SaveResultInput struct {
 type EndRunInput struct {
 	RunID         uuid.UUID
 	Passed        bool
+	Provider      provider.ProviderName
 	InstanceClass string
 	Region        string
 	Timeline      state.RunTimeline
@@ -86,7 +87,31 @@ func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error
 	if err := run.SaveTimeline(ctx, input.InstanceClass, input.Region, input.Timeline); err != nil {
 		return err
 	}
-	return run.End(ctx, input.Passed)
+	if err := run.End(ctx, input.Passed); err != nil {
+		return err
+	}
+	recordRunMetrics(a.tel, activity.GetInfo(ctx).WorkflowType.Name, input)
+	return nil
+}
+
+// recordRunMetrics records the run's ready and deprovision durations and counts it by outcome.
+func recordRunMetrics(tel *telemetry.Telemetry, workflowType string, input EndRunInput) {
+	if tel == nil || tel.Metrics == nil {
+		return
+	}
+	name := string(input.Provider)
+	timeline := input.Timeline
+	if !timeline.ProvisionedAt.IsZero() && !timeline.ReadyAt.IsZero() {
+		tel.Metrics.ProviderReadyDuration.WithLabelValues(name).Observe(timeline.ReadyAt.Sub(timeline.ProvisionedAt).Seconds())
+	}
+	if !timeline.DeprovisionStartedAt.IsZero() && !timeline.DeprovisionedAt.IsZero() {
+		tel.Metrics.ProviderDeprovisionDuration.WithLabelValues(name).Observe(timeline.DeprovisionedAt.Sub(timeline.DeprovisionStartedAt).Seconds())
+	}
+	outcome := "failed"
+	if input.Passed {
+		outcome = "completed"
+	}
+	tel.Metrics.WorkflowsTotal.WithLabelValues(workflowType, name, outcome).Inc()
 }
 
 // SaveDowntimeResults writes one row per disruption.
@@ -106,7 +131,17 @@ func (a *StateDBActivities) SaveDowntimeResults(ctx context.Context, input SaveD
 			)
 		}
 	}
-	return state.SaveDowntimeResults(ctx, a.statePool, input.RunID, rows, a.tel)
+	if err := state.SaveDowntimeResults(ctx, a.statePool, input.RunID, rows, a.tel); err != nil {
+		return err
+	}
+	if a.tel != nil && a.tel.Metrics != nil {
+		for _, row := range rows {
+			a.tel.Metrics.RecoveryDowntime.WithLabelValues(row.Provider, row.Disruption, "writable").Observe(row.WritableDowntimeMs / 1000)
+			a.tel.Metrics.RecoveryDowntime.WithLabelValues(row.Provider, row.Disruption, "readable").Observe(row.ReadableDowntimeMs / 1000)
+			a.tel.Metrics.RecoveryLostCommitsTotal.WithLabelValues(row.Provider, row.Disruption).Add(float64(row.LostCommits))
+		}
+	}
+	return nil
 }
 
 // downtimeRows makes one row per disruption from the first long outage after it.
