@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: dbtest
+    folder: dbtest
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards

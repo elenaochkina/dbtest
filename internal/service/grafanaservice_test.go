@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -30,6 +31,14 @@ func TestGrafanaServiceLifecycle(t *testing.T) {
 
 	if _, err := server.start(ctx); err != nil {
 		t.Fatalf("create: %v", err)
+	}
+	response, err := http.Get(server.url + "/api/datasources/uid/state-db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("state db data source: %s, want 200", response.Status)
 	}
 	if err := docker.ContainerStop(ctx, name, container.StopOptions{}); err != nil {
 		t.Fatal(err)

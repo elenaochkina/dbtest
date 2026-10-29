@@ -1,11 +1,16 @@
 package service
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -15,6 +20,9 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 )
+
+//go:embed grafana
+var grafanaFiles embed.FS
 
 // grafanaService runs Grafana in a Docker container on the shared network.
 type grafanaService struct {
@@ -103,7 +111,43 @@ func (s *grafanaService) create(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", s.name, err)
 	}
+	archive, err := provisioningArchive()
+	if err != nil {
+		return err
+	}
+	if err := s.docker.CopyToContainer(ctx, s.name, "/etc/grafana/provisioning", archive, container.CopyToContainerOptions{}); err != nil {
+		return fmt.Errorf("copy provisioning to %s: %w", s.name, err)
+	}
 	return nil
+}
+
+// provisioningArchive packs the embedded grafana folder into a tar archive,
+// with paths relative to that folder.
+func provisioningArchive() (io.Reader, error) {
+	var buffer bytes.Buffer
+	writer := tar.NewWriter(&buffer)
+	err := fs.WalkDir(grafanaFiles, "grafana", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		content, err := grafanaFiles.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		header := &tar.Header{Name: strings.TrimPrefix(path, "grafana/"), Mode: 0o644, Size: int64(len(content))}
+		if err := writer.WriteHeader(header); err != nil {
+			return err
+		}
+		_, err = writer.Write(content)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pack grafana provisioning: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return &buffer, nil
 }
 
 // waitReady checks every second, for up to 60 seconds, until Grafana answers
