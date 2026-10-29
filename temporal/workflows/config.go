@@ -17,6 +17,8 @@ var defaultActivityOptions = workflow.ActivityOptions{
 }
 
 // heartbeatActivityOptions retry an activity that sends no heartbeat for a minute.
+// Temporal marks a current attempt as failed and schedules the next one.
+// The next attempt runs whenever a worker is available.
 var heartbeatActivityOptions = workflow.ActivityOptions{
 	StartToCloseTimeout: 20 * time.Minute,
 	HeartbeatTimeout:    time.Minute,
