@@ -120,7 +120,7 @@ func (s *grafanaService) create(ctx context.Context) error {
 // copyProvisioning copies the embedded provisioning files into the container,
 // replacing the ones there.
 func (s *grafanaService) copyProvisioning(ctx context.Context) error {
-	archive, err := provisioningArchive()
+	archive, err := folderArchive(grafanaFiles, "grafana")
 	if err != nil {
 		return err
 	}
@@ -130,20 +130,20 @@ func (s *grafanaService) copyProvisioning(ctx context.Context) error {
 	return nil
 }
 
-// provisioningArchive packs the embedded grafana folder into a tar archive,
-// with paths relative to that folder.
-func provisioningArchive() (io.Reader, error) {
+// folderArchive packs an embedded folder into a tar archive, with paths
+// relative to that folder.
+func folderArchive(files embed.FS, folder string) (io.Reader, error) {
 	var buffer bytes.Buffer
 	writer := tar.NewWriter(&buffer)
-	err := fs.WalkDir(grafanaFiles, "grafana", func(path string, entry fs.DirEntry, err error) error {
+	err := fs.WalkDir(files, folder, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
 		}
-		content, err := grafanaFiles.ReadFile(path)
+		content, err := files.ReadFile(path)
 		if err != nil {
 			return err
 		}
-		header := &tar.Header{Name: strings.TrimPrefix(path, "grafana/"), Mode: 0o644, Size: int64(len(content))}
+		header := &tar.Header{Name: strings.TrimPrefix(path, folder+"/"), Mode: 0o644, Size: int64(len(content))}
 		if err := writer.WriteHeader(header); err != nil {
 			return err
 		}
@@ -151,7 +151,7 @@ func provisioningArchive() (io.Reader, error) {
 		return err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("pack grafana provisioning: %w", err)
+		return nil, fmt.Errorf("pack %s: %w", folder, err)
 	}
 	if err := writer.Close(); err != nil {
 		return nil, err

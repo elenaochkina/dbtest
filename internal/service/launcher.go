@@ -69,6 +69,7 @@ func New(logs slog.Handler) (*Launcher, error) {
 	telemetry := newTelemetryService(logs)
 	worker := newWorkerService(stateDB, temporal, telemetry, logs)
 	grafana := newGrafanaService(docker, "dbtest-grafana", cfg.Network)
+	prometheus := newPrometheusService(docker, "dbtest-prometheus", cfg.Network)
 
 	launcher := &Launcher{
 		docker:    docker,
@@ -82,6 +83,7 @@ func New(logs slog.Handler) (*Launcher, error) {
 	telemetryUp := launcher.addService("telemetry", telemetry)
 	launcher.workerUp = launcher.addService("worker", worker, stateUp, temporalUp, telemetryUp)
 	launcher.addService("grafana", grafana, stateUp)
+	launcher.addService("prometheus", prometheus)
 	return launcher, nil
 }
 
