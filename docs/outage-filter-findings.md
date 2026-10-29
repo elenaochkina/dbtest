@@ -67,6 +67,103 @@ disruption 1 ──────────── disruption 2 ─────�
 
 An outage that never ended is still an error.
 
+## Proposed code change
+
+In `temporal/activities/state_db_activities.go`, `downtimeRows` is rewritten and
+`longOutages` and `matchReadable` are removed:
+
+```go
+// downtimeRows makes one row per disruption from the first writable and
+// readable outages that start before the next disruption. A disruption with
+// no outage gets a row with no downtime. It also returns the long outages
+// that no row uses.
+func downtimeRows(input SaveDowntimeInput) ([]state.DowntimeRow, []probe.Outage, error) {
+	if len(input.DisruptedAt) == 0 {
+		return nil, nil, fmt.Errorf("no disruption timestamps recorded")
+	}
+	var rows []state.DowntimeRow
+	used := map[time.Time]bool{}
+	for index, disruptedAt := range input.DisruptedAt {
+		var end time.Time
+		if index+1 < len(input.DisruptedAt) {
+			end = input.DisruptedAt[index+1]
+		}
+		row := state.DowntimeRow{
+			Provider:        string(input.Provider),
+			Disruption:      string(input.Disruption),
+			Repetition:      index + 1,
+			DisruptedAt:     disruptedAt,
+			UsableAgainAt:   disruptedAt,
+			ProbeIntervalMs: input.Result.IntervalMs,
+		}
+		if outage, found := firstOutage(input.Result.Writable.Outages, disruptedAt, end); found {
+			if outage.FirstOKAfter.IsZero() {
+				return nil, nil, fmt.Errorf("disruption %d never recovered before the probe stopped", index+1)
+			}
+			used[outage.FirstFailure] = true
+			row.UsableAgainAt = outage.FirstOKAfter
+			row.WritableDowntimeMs = outage.DownMs
+			row.LostCommits = outage.LostCommits
+			row.ProbeFailures = outage.Failures
+			row.ProbeErrors = outage.Errors
+		}
+		if outage, found := firstOutage(input.Result.Readable.Outages, disruptedAt, end); found {
+			row.ReadableDowntimeMs = outage.DownMs
+		}
+		rows = append(rows, row)
+	}
+	var unused []probe.Outage
+	for _, outage := range input.Result.Writable.Outages {
+		if !used[outage.FirstFailure] && (outage.DownMs >= 1000 || outage.LostCommits > 0) {
+			unused = append(unused, outage)
+		}
+	}
+	return rows, unused, nil
+}
+
+// firstOutage returns the first outage that starts at or after start and,
+// when end is set, before end.
+func firstOutage(outages []probe.Outage, start, end time.Time) (probe.Outage, bool) {
+	for _, outage := range outages {
+		if outage.FirstFailure.Before(start) {
+			continue
+		}
+		if !end.IsZero() && !outage.FirstFailure.Before(end) {
+			break
+		}
+		return outage, true
+	}
+	return probe.Outage{}, false
+}
+```
+
+How it works:
+
+1. Each disruption's window runs from its own timestamp to the next disruption's (`end`);
+   the last window has no end.
+2. `firstOutage` returns the first outage that starts inside the window, of any length.
+3. Every disruption gets a row. Without a writable outage, the row keeps downtime 0, no
+   failures and `usable_again_at` equal to the disruption time.
+4. Readable downtime comes from the first readable outage in the same window, so 0 means no
+   read failed.
+5. Outages no row used are returned only if they are long (≥ 1 s or lost commits), for the
+   "outage matched no disruption" warning.
+
+`SaveDowntimeResults` changes one log line: "disruptions with no outage" counted missing rows,
+which no longer happen. It becomes an info line, "disruptions with no failed probe", counting
+rows with 0 probe failures.
+
+With `outage_delay_ms` (open question 2), the schema gets one column in `downtime_results`,
+`DowntimeRow` one field, and the row sets it from the writable outage:
+
+```go
+row.OutageDelayMs = float64(outage.FirstFailure.Sub(disruptedAt).Microseconds()) / 1000
+```
+
+Proposed tests, in a new `state_db_activities_test.go`: a 750 ms outage gets a row; a
+disruption with no outage gets a row with 0 downtime; readable is 0 when reads never failed;
+a blip before the first disruption is returned as unused.
+
 ## Identifying blips
 
 A blip is a short failure not caused by the disruption. With "first outage in the window", a
