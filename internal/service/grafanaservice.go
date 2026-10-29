@@ -50,6 +50,9 @@ func (s *grafanaService) start(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("inspect %s: %w", s.name, err)
 	}
+	if err := s.copyProvisioning(ctx); err != nil {
+		return "", err
+	}
 	if !info.State.Running {
 		if err := s.docker.ContainerStart(ctx, info.ID, container.StartOptions{}); err != nil {
 			return "", fmt.Errorf("start %s: %w", s.name, err)
@@ -111,6 +114,12 @@ func (s *grafanaService) create(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", s.name, err)
 	}
+	return nil
+}
+
+// copyProvisioning copies the embedded provisioning files into the container,
+// replacing the ones there.
+func (s *grafanaService) copyProvisioning(ctx context.Context) error {
 	archive, err := provisioningArchive()
 	if err != nil {
 		return err
