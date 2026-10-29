@@ -114,13 +114,94 @@
   },
   "panels": [
     {
+      "id": 6,
+      "title": "Recovery runs",
+      "description": "Recovery runs that match the filters and time range.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM runs WHERE disruption IS NOT NULL) THEN -1\n       ELSE (SELECT count(*) FROM runs\n             WHERE disruption IS NOT NULL\n               AND provider = ANY(string_to_array('${provider:csv}', ','))\n               AND disruption = ANY(string_to_array('${disruption:csv}', ','))\n               AND (CASE WHEN high_availability THEN 'yes' ELSE 'no' END) = ANY(string_to_array('${ha:csv}', ','))\n               AND $__timeFilter(started_at))\n       END AS runs"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: recovery runs",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "dark-green"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "No recovery runs yet",
+                  "color": "yellow",
+                  "index": 0
+                },
+                "0": {
+                  "text": "No recovery runs match the filters",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 1,
       "title": "Provision time (minutes)",
       "description": "Time from asking AWS to create the database until AWS reports it available. Grouped by provider, disruption, high availability and instance class.",
       "type": "barchart",
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 3,
         "w": 24,
         "h": 9
       },
@@ -160,7 +241,7 @@
       "type": "barchart",
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 12,
         "w": 24,
         "h": 9
       },
@@ -191,7 +272,7 @@
       "type": "timeseries",
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 21,
         "w": 24,
         "h": 8
       },
@@ -228,7 +309,7 @@
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 29,
         "w": 24,
         "h": 10
       },
