@@ -2,62 +2,111 @@
   "uid": "dbtest-recovery",
   "title": "Recovery",
   "schemaVersion": 39,
-  "time": { "from": "now-30d", "to": "now" },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
   "templating": {
     "list": [
       {
         "name": "provider",
         "label": "Provider",
         "type": "query",
-        "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "state-db"
+        },
         "query": "SELECT DISTINCT provider FROM runs WHERE disruption IS NOT NULL ORDER BY 1",
         "refresh": 1,
         "multi": true,
         "includeAll": true,
-        "current": { "text": "All", "value": "$__all" }
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
       },
       {
         "name": "disruption",
         "label": "Disruption",
         "type": "query",
-        "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "state-db"
+        },
         "query": "SELECT DISTINCT disruption FROM runs WHERE disruption IS NOT NULL ORDER BY 1",
         "refresh": 1,
         "multi": true,
         "includeAll": true,
-        "current": { "text": "All", "value": "$__all" }
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
       }
     ]
   },
   "panels": [
     {
       "id": 1,
-      "title": "Phase times per run (seconds)",
+      "title": "Provision time (minutes)",
+      "description": "Time from asking AWS to create the database until AWS reports it available. Grouped by provider, disruption, high availability and instance class.",
       "type": "barchart",
-      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT workflow_id, provision_seconds AS provision, ready_seconds AS ready, deprovision_seconds AS deprovision\nFROM runs\nWHERE disruption IS NOT NULL\n  AND provider IN ($provider) AND disruption IN ($disruption)\n  AND $__timeFilter(started_at)\nORDER BY started_at"
+          "rawSql": "SELECT provider || '-' || disruption || CASE WHEN high_availability THEN '-ha' ELSE '' END || ' ' || coalesce(instance_class, '') AS setup,\n       min(provision_seconds) / 60 AS min,\n       avg(provision_seconds) / 60 AS average,\n       max(provision_seconds) / 60 AS max\nFROM runs\nWHERE provider <> 'docker'\n  AND provision_seconds IS NOT NULL\n  AND provider IN ($provider) AND disruption IN ($disruption)\n  AND $__timeFilter(started_at)\nGROUP BY 1\nORDER BY 1"
         }
       ],
-      "options": { "stacking": "normal", "xField": "workflow_id" }
+      "options": {
+        "xField": "setup",
+        "orientation": "horizontal",
+        "showValue": "always"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1
+        },
+        "overrides": []
+      }
     },
     {
       "id": 2,
       "title": "Downtime per repetition",
       "type": "table",
-      "gridPos": { "x": 0, "y": 9, "w": 24, "h": 10 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
@@ -69,52 +118,94 @@
       "id": 3,
       "title": "Writable downtime by provider and disruption (seconds)",
       "type": "barchart",
-      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 9 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
           "rawSql": "SELECT d.provider || ' ' || d.disruption || CASE WHEN r.high_availability THEN ' HA' ELSE '' END AS case_name,\n       avg(d.writable_downtime_ms) / 1000 AS average,\n       max(d.writable_downtime_ms) / 1000 AS max\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND $__timeFilter(d.disrupted_at)\nGROUP BY 1\nORDER BY 1"
         }
       ],
-      "options": { "xField": "case_name" }
+      "options": {
+        "xField": "case_name"
+      }
     },
     {
       "id": 4,
       "title": "Runs per day by outcome",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 9 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
           "format": "time_series",
           "rawQuery": true,
           "editorMode": "code",
           "rawSql": "SELECT date_trunc('day', started_at) AS time,\n       count(*) FILTER (WHERE passed) AS completed,\n       count(*) FILTER (WHERE passed IS NOT TRUE) AS failed\nFROM runs\nWHERE disruption IS NOT NULL\n  AND provider IN ($provider) AND disruption IN ($disruption)\n  AND $__timeFilter(started_at)\nGROUP BY 1\nORDER BY 1"
         }
       ],
-      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars" } }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars"
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "id": 5,
       "title": "AWS databases never deprovisioned",
       "type": "table",
-      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 6 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "state-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT workflow_id, provider, instance_class, region, provision_started_at\nFROM runs\nWHERE provider <> 'docker'\n  AND provision_started_at IS NOT NULL\n  AND deprovisioned_at IS NULL\nORDER BY provision_started_at"
+          "rawSql": "SELECT workflow_id, provider, instance_class, region, provision_started_at\nFROM runs\nWHERE provider <> 'docker'\n  AND provision_started_at IS NOT NULL\n  AND delete_requested_at IS NULL\nORDER BY provision_started_at"
         }
       ]
     }

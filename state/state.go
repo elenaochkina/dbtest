@@ -51,12 +51,11 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			provisioned_at         TIMESTAMPTZ,
 			ready_at               TIMESTAMPTZ,
 			deprovision_started_at TIMESTAMPTZ,
-			deprovisioned_at       TIMESTAMPTZ,
+			delete_requested_at    TIMESTAMPTZ,
 			ended_at               TIMESTAMPTZ,
 			passed                 BOOLEAN,
 			provision_seconds      FLOAT8 GENERATED ALWAYS AS (EXTRACT(EPOCH FROM provisioned_at - provision_started_at)) STORED,
-			ready_seconds          FLOAT8 GENERATED ALWAYS AS (EXTRACT(EPOCH FROM ready_at - provisioned_at)) STORED,
-			deprovision_seconds    FLOAT8 GENERATED ALWAYS AS (EXTRACT(EPOCH FROM deprovisioned_at - deprovision_started_at)) STORED
+			ready_seconds          FLOAT8 GENERATED ALWAYS AS (EXTRACT(EPOCH FROM ready_at - provisioned_at)) STORED
 		)`,
 		`CREATE TABLE IF NOT EXISTS checkpoints (
 			id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
