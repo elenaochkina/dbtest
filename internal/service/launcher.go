@@ -68,6 +68,7 @@ func New(logs slog.Handler) (*Launcher, error) {
 	temporal := newTemporalServer(docker, "dbtest-temporal", cfg.Network)
 	telemetry := newTelemetryService(logs)
 	worker := newWorkerService(stateDB, temporal, telemetry, logs)
+	grafana := newGrafanaService(docker, "dbtest-grafana", cfg.Network)
 
 	launcher := &Launcher{
 		docker:    docker,
@@ -80,6 +81,7 @@ func New(logs slog.Handler) (*Launcher, error) {
 	temporalUp := launcher.addService("temporal", temporal)
 	telemetryUp := launcher.addService("telemetry", telemetry)
 	launcher.workerUp = launcher.addService("worker", worker, stateUp, temporalUp, telemetryUp)
+	launcher.addService("grafana", grafana, stateUp)
 	return launcher, nil
 }
 

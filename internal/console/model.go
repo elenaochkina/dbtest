@@ -35,6 +35,7 @@ func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
 			{name: "temporal", state: service.StateStarting},
 			{name: "telemetry", state: service.StateStarting},
 			{name: "worker", state: service.StateStarting},
+			{name: "grafana", state: service.StateStarting},
 		},
 		events:        serviceLauncher.Events(),
 		retry:         serviceLauncher.RetryFailed,
