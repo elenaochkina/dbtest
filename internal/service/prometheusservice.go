@@ -32,10 +32,7 @@ func newPrometheusService(docker *dockerclient.Client, name, network string) *pr
 	return &prometheusService{docker: docker, name: name, network: network}
 }
 
-// start uses the container if it is running, starts it if it is stopped, or
-// creates it if it is missing. It copies the scrape config in each time and
-// reloads a running Prometheus, then waits until it is ready. It returns the
-// web URL.
+// start uses the container It returns the web URL.
 func (s *prometheusService) start(ctx context.Context) (string, error) {
 	info, err := s.docker.ContainerInspect(ctx, s.name)
 	if errdefs.IsNotFound(err) {
@@ -120,8 +117,7 @@ func (s *prometheusService) create(ctx context.Context) error {
 	return nil
 }
 
-// waitReady checks every second, for up to 60 seconds, until Prometheus is
-// ready.
+// waitReady checks every second, for up to 60 seconds, until Prometheus is ready.
 func (s *prometheusService) waitReady(ctx context.Context) error {
 	deadline := time.Now().Add(60 * time.Second)
 	for {
@@ -140,7 +136,7 @@ func (s *prometheusService) waitReady(ctx context.Context) error {
 	}
 }
 
-// check asks Prometheus whether it is ready.
+// check asks Prometheus whether it is ready.I
 func (s *prometheusService) check(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
