@@ -270,7 +270,7 @@
     },
     {
       "id": 3,
-      "title": "Writable downtime by provider and disruption (seconds)",
+      "title": "Downtime by provider and disruption",
       "type": "barchart",
       "gridPos": {
         "x": 0,
@@ -292,11 +292,51 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT d.provider || ' ' || d.disruption || CASE WHEN r.high_availability THEN ' HA' ELSE '' END AS case_name,\n       avg(d.writable_downtime_ms) / 1000 AS average,\n       max(d.writable_downtime_ms) / 1000 AS max\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(d.disrupted_at)\nGROUP BY 1\nORDER BY 1"
+          "rawSql": "SELECT d.provider || ' ' || d.disruption || CASE WHEN r.high_availability THEN ' HA' ELSE '' END\n         || ' (n=' || count(*) || ')' AS case_name,\n       avg(d.writable_downtime_ms) / 1000 AS writable,\n       avg(d.readable_downtime_ms) / 1000 AS readable\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(d.disrupted_at)\nGROUP BY d.provider, d.disruption, r.high_availability\nORDER BY 1"
         }
       ],
       "options": {
-        "xField": "case_name"
+        "xField": "case_name",
+        "showValue": "always"
+      },
+      "description": "Average time writes and reads failed after each disruption. n is the number of disruptions. A readable value of 0 means reads never failed, or (until the outage filter is fixed) that a short read outage was dropped.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "writable"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "readable"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {
