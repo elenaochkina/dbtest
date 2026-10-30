@@ -1,9 +1,13 @@
-# Outage filter findings
+# Dashboards follow-ups
+
+Findings from building the Recovery dashboard that need a decision or a code change.
+
+## Outage filter
 
 How recovery runs turn probe outages into `downtime_results` rows, what goes wrong with
 short outages, and a proposed fix. For discussion before changing the code.
 
-## How it works today
+### How it works today
 
 `downtimeRows` in `temporal/activities/state_db_activities.go`:
 
@@ -13,14 +17,14 @@ short outages, and a proposed fix. For discussion before changing the code.
 3. Readable downtime comes from a readable outage of at least 1 second that falls inside that
    writable outage; otherwise it is 0.
 
-## What goes wrong
+### What goes wrong
 
 - **A disruption whose outage is under 1 second gets no row.** The run still passes.
 - **`readable_downtime_ms = 0` is ambiguous.** It can mean reads never failed, or that the
   read outage was dropped by the filter.
 - **Docker runs save no rows at all.** Crash and restart recover in about 0.75 s.
 
-## Evidence
+### Evidence
 
 Aurora failover run `recovery-20261028-132852`, 2 repetitions, passed:
 
@@ -45,7 +49,7 @@ GROUP BY r.id;
 - Docker crash, from an earlier run's history: one writable outage of 751.7 ms, 2 failures,
   errors `{"57P03": 1, "refused": 1}`, dropped by the filter.
 
-## Proposed rule
+### Proposed rule
 
 Each disruption owns the time from it until the next disruption; the last one owns everything
 until the probe stops.
@@ -67,7 +71,7 @@ disruption 1 ──────────── disruption 2 ─────�
 
 An outage that never ended is still an error.
 
-## Proposed code change
+### Proposed code change
 
 In `temporal/activities/state_db_activities.go`, `downtimeRows` is rewritten and
 `longOutages` and `matchReadable` are removed:
@@ -164,7 +168,7 @@ Proposed tests, in a new `state_db_activities_test.go`: a 750 ms outage gets a r
 disruption with no outage gets a row with 0 downtime; readable is 0 when reads never failed;
 a blip before the first disruption is returned as unused.
 
-## Identifying blips
+### Identifying blips
 
 A blip is a short failure not caused by the disruption. With "first outage in the window", a
 disruption that caused no failure followed by a blip later in its window would pick up the
@@ -181,10 +185,44 @@ Proposal: record `outage_delay_ms` (first failure minus disruption time) on each
 it next to `probe_errors` on the dashboard. A rule that ignores outages starting more than N
 seconds after the disruption can come later, once real runs show normal delays per provider.
 
-## Open questions
+### Open questions
 
 1. Save a row with downtime 0 when the probe saw no failure, or save no row?
 2. Add `outage_delay_ms` now, with the filter fix?
 3. Keep the raw probe outages somewhere other than Temporal history, so findings like this one
    can be checked later?
 4. Should a run with fewer rows than repetitions still count as passed?
+
+## Probe errors
+
+Each failed probe check is put in one bucket by `classify` in `probe/recorder.go`, and
+`probe_errors` counts the failures per bucket, for example `{"refused": 2, "57P03": 1}`.
+
+| Bucket | What happened | Typical moment in a recovery |
+|---|---|---|
+| `refused` | the connection was refused: nothing listens on the port | the database process is down: right after a crash, or while restarting |
+| `reset` | an open connection was cut by the other side | the moment the database goes down, or a proxy drops connections during failover |
+| `timeout` | no answer within the probe's timeout | the address leads nowhere for a while: typical of a failover while the endpoint moves, or a stalled network |
+| `cancelled` | the probe cancelled the check itself | the probe is stopping; not expected during a disruption |
+| a Postgres error code | the database answered with an error | depends on the code, below |
+| `other` | anything not listed above | worth a look if it shows up |
+
+Postgres codes that typically show up:
+
+| Code | Meaning | Moment |
+|---|---|---|
+| `57P03` | the database system is starting up | Postgres runs but is still recovering (replaying WAL) and not accepting queries |
+| `57P01` | terminating connection due to administrator command | a graceful shutdown or restart drops connections |
+| `25006` | cannot execute … in a read-only transaction | writes reach a read-only node, for example during a failover before the new primary is promoted |
+| `08006`, `08001` | connection failure | network-level failure, like `reset` or `refused` |
+
+The mix of errors shows how a disruption failed, not only how long it took:
+
+- Docker crash: `{"refused": 1, "57P03": 1}`: the process was down, then recovering.
+- RDS restart: mostly `refused` and `57P03`, the same pattern for longer.
+- Failover: mostly `timeout`, sometimes `25006`: the endpoint moved, or writes reached a
+  read-only node for a moment.
+- A single `timeout` long after the disruption is the blip signal described above.
+
+Follow-up: add a `probe_errors` column to the Downtime per repetition table, and show lost
+commits above 0 in red.
