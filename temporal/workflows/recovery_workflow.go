@@ -107,7 +107,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 			ClusterID: clusterID,
 		}).Get(dctx, nil)
 		if derr == nil {
-			timeline.DeprovisionedAt = workflow.Now(dctx)
+			timeline.DeleteRequestedAt = workflow.Now(dctx)
 		} else if err == nil {
 			err = derr
 		}

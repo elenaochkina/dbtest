@@ -120,7 +120,7 @@ type RunTimeline struct {
 	ProvisionedAt        time.Time
 	ReadyAt              time.Time
 	DeprovisionStartedAt time.Time
-	DeprovisionedAt      time.Time
+	DeleteRequestedAt    time.Time
 }
 
 // SaveTimeline stores the instance class, region and phase times of the run.
@@ -128,11 +128,11 @@ func (r *Run) SaveTimeline(ctx context.Context, instanceClass, region string, ti
 	_, err := r.Pool.Exec(ctx,
 		`UPDATE runs SET instance_class = NULLIF($1, ''), region = NULLIF($2, ''),
 		        provision_started_at = $3, provisioned_at = $4, ready_at = $5,
-		        deprovision_started_at = $6, deprovisioned_at = $7
+		        deprovision_started_at = $6, delete_requested_at = $7
 		 WHERE id = $8`,
 		instanceClass, region,
 		nullTime(timeline.ProvisionStartedAt), nullTime(timeline.ProvisionedAt), nullTime(timeline.ReadyAt),
-		nullTime(timeline.DeprovisionStartedAt), nullTime(timeline.DeprovisionedAt),
+		nullTime(timeline.DeprovisionStartedAt), nullTime(timeline.DeleteRequestedAt),
 		r.ID,
 	)
 	if err != nil {

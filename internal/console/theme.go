@@ -55,6 +55,15 @@ func row(content string, width int) string {
 	return side + " " + padRight(content, width) + " " + side
 }
 
+// rowPair draws two content lines side by side between borders, each cut or
+// padded to its width.
+func rowPair(left, right string, leftWidth, rightWidth int) string {
+	left = lipgloss.NewStyle().MaxWidth(leftWidth).Render(left)
+	right = lipgloss.NewStyle().MaxWidth(rightWidth).Render(right)
+	side := borderStyle.Render("│")
+	return side + " " + padRight(left, leftWidth) + " " + side + " " + padRight(right, rightWidth) + " " + side
+}
+
 // padRight adds spaces until the text is width cells wide.
 func padRight(text string, width int) string {
 	return text + strings.Repeat(" ", max(0, width-lipgloss.Width(text)))

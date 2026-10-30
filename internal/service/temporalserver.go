@@ -99,7 +99,7 @@ func (s *temporalServer) create(ctx context.Context) error {
 		&container.Config{
 			Image: "temporalio/temporal:1.8.2",
 			Cmd: []string{"server", "start-dev", "--ip", "0.0.0.0", "--ui-ip", "0.0.0.0",
-				"--db-filename", "/home/temporal/temporal.db"},
+				"--db-filename", "/home/temporal/temporal.db", "--metrics-port", "7234"},
 			ExposedPorts: nat.PortSet{"7233/tcp": {}, "8233/tcp": {}},
 			Labels:       map[string]string{"dbtest.managed": "true", "dbtest.role": "temporal"},
 		},

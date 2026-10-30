@@ -1,0 +1,13 @@
+apiVersion: 1
+datasources:
+  - name: state db
+    uid: state-db
+    type: grafana-postgresql-datasource
+    url: dbtest-state:5432
+    user: postgres
+    isDefault: true
+    jsonData:
+      database: postgres
+      sslmode: disable
+    secureJsonData:
+      password: test

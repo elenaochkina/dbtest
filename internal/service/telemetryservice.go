@@ -22,12 +22,15 @@ func newTelemetryService(logs slog.Handler) *telemetryService {
 	return &telemetryService{logs: logs}
 }
 
-// start starts telemetry on a free port unless it is already running,
+// start starts telemetry on port 9464 unless it is already running,
 // then checks that metrics are available.
 // It returns the metrics URL.
 func (s *telemetryService) start(ctx context.Context) (string, error) {
 	if s.tel == nil {
-		tel, err := telemetry.Init(telemetry.Config{Log: telemetry.LogConfig{Handler: s.logs}})
+		tel, err := telemetry.Init(telemetry.Config{
+			Log:     telemetry.LogConfig{Handler: s.logs},
+			Metrics: telemetry.MetricsConfig{MetricsPort: 9464},
+		})
 		if err != nil {
 			return "", err
 		}

@@ -94,7 +94,7 @@ func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error
 	return nil
 }
 
-// recordRunMetrics records the run's ready and deprovision durations and counts it by outcome.
+// recordRunMetrics records the run's ready duration and counts it by outcome.
 func recordRunMetrics(tel *telemetry.Telemetry, workflowType string, input EndRunInput) {
 	if tel == nil || tel.Metrics == nil {
 		return
@@ -103,9 +103,6 @@ func recordRunMetrics(tel *telemetry.Telemetry, workflowType string, input EndRu
 	timeline := input.Timeline
 	if !timeline.ProvisionedAt.IsZero() && !timeline.ReadyAt.IsZero() {
 		tel.Metrics.ProviderReadyDuration.WithLabelValues(name).Observe(timeline.ReadyAt.Sub(timeline.ProvisionedAt).Seconds())
-	}
-	if !timeline.DeprovisionStartedAt.IsZero() && !timeline.DeprovisionedAt.IsZero() {
-		tel.Metrics.ProviderDeprovisionDuration.WithLabelValues(name).Observe(timeline.DeprovisionedAt.Sub(timeline.DeprovisionStartedAt).Seconds())
 	}
 	outcome := "failed"
 	if input.Passed {

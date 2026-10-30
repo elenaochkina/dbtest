@@ -27,6 +27,8 @@ func newTestModel() model {
 			{name: "temporal", state: service.StateStarting},
 			{name: "telemetry", state: service.StateStarting},
 			{name: "worker", state: service.StateStarting},
+			{name: "grafana", state: service.StateStarting},
+			{name: "prometheus", state: service.StateStarting},
 		},
 		retry: func() {},
 		checkAWS: func(context.Context) providercfg.Status {
@@ -299,8 +301,8 @@ func TestServiceStateIsStored(t *testing.T) {
 func TestStatusShowsOneLinePerDetailLine(t *testing.T) {
 	current := send(newTestModel(), service.Event{Name: "temporal", State: service.StateUp, Detail: "API\tlocalhost:7233\nUI\thttp://localhost:8233"})
 	lines := current.statusLines()
-	if len(lines) != 6 {
-		t.Fatalf("got %d status lines, want 6", len(lines))
+	if len(lines) != 8 {
+		t.Fatalf("got %d status lines, want 8", len(lines))
 	}
 	for index, want := range [][2]string{{"temporal API", "localhost:7233"}, {"temporal UI", "http://localhost:8233"}} {
 		if line := lines[1+index]; !strings.HasPrefix(line, want[0]+" ") || !strings.HasSuffix(line, " "+want[1]) {
@@ -356,11 +358,11 @@ func TestRenderTooSmall(t *testing.T) {
 
 func TestAWSRowShowsCheckingThenResult(t *testing.T) {
 	current := newTestModel()
-	if line := current.statusLines()[4]; !strings.HasPrefix(line, "aws ") || !strings.Contains(line, "checking") {
+	if line := current.statusLines()[6]; !strings.HasPrefix(line, "aws ") || !strings.Contains(line, "checking") {
 		t.Fatalf("aws line = %q, want checking", line)
 	}
 	current = send(current, awsStatusMsg{State: providercfg.StateNeedsLogin, Detail: "token expired"})
-	if line := current.statusLines()[4]; !strings.Contains(line, "needs login") || !strings.HasSuffix(line, " token expired") {
+	if line := current.statusLines()[6]; !strings.Contains(line, "needs login") || !strings.HasSuffix(line, " token expired") {
 		t.Fatalf("aws line = %q, want needs login and the detail", line)
 	}
 }

@@ -1,0 +1,673 @@
+{
+  "uid": "dbtest-recovery",
+  "title": "Recovery",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "provider",
+        "label": "Provider",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "state-db"
+        },
+        "query": "SELECT DISTINCT provider FROM runs WHERE disruption IS NOT NULL ORDER BY 1",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "disruption",
+        "label": "Disruption",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "state-db"
+        },
+        "query": "SELECT DISTINCT disruption FROM runs WHERE disruption IS NOT NULL ORDER BY 1",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "ha",
+        "label": "HA",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "state-db"
+        },
+        "query": "SELECT DISTINCT CASE WHEN high_availability THEN 'yes' ELSE 'no' END FROM runs WHERE disruption IS NOT NULL ORDER BY 1",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "repetition",
+        "label": "Repetition",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "state-db"
+        },
+        "query": "SELECT DISTINCT repetition FROM downtime_results ORDER BY 1",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "instance_class",
+        "label": "Instance class",
+        "description": "Instance classes of the selected providers.",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "state-db"
+        },
+        "query": "SELECT DISTINCT instance_class FROM runs WHERE instance_class IS NOT NULL AND provider IN ($provider) ORDER BY 1",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "outcome_range",
+        "label": "Run outcomes: range",
+        "type": "custom",
+        "query": "Last 3 days : 3d, Last 7 days : 7d, Last 10 days : 10d, Last 30 days : 30d",
+        "options": [
+          {
+            "text": "Last 3 days",
+            "value": "3d",
+            "selected": true
+          },
+          {
+            "text": "Last 7 days",
+            "value": "7d",
+            "selected": false
+          },
+          {
+            "text": "Last 10 days",
+            "value": "10d",
+            "selected": false
+          },
+          {
+            "text": "Last 30 days",
+            "value": "30d",
+            "selected": false
+          }
+        ],
+        "current": {
+          "text": "Last 3 days",
+          "value": "3d"
+        },
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 6,
+      "title": "Recovery runs",
+      "description": "Recovery runs that match the filters and time range.",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM runs WHERE disruption IS NOT NULL) THEN -1\n       ELSE (SELECT count(*) FROM runs\n             WHERE disruption IS NOT NULL\n               AND provider = ANY(string_to_array('${provider:csv}', ','))\n               AND disruption = ANY(string_to_array('${disruption:csv}', ','))\n               AND (CASE WHEN high_availability THEN 'yes' ELSE 'no' END) = ANY(string_to_array('${ha:csv}', ','))\n               AND $__timeFilter(started_at))\n       END AS runs"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "valueSize": 28
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: recovery runs",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "dark-green"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "No recovery runs yet",
+                  "color": "yellow",
+                  "index": 0
+                },
+                "0": {
+                  "text": "No recovery runs match the filters",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "dark-green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 1,
+      "title": "Provision time by provider (minutes, average)",
+      "type": "barchart",
+      "description": "Average time from asking the provider to create the database until it reports it available, for the selected providers. Select several providers to compare them side by side.",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT CASE WHEN high_availability THEN 'HA' ELSE 'single' END AS setup,\n       provider,\n       avg(provision_seconds) / 60 AS minutes\nFROM runs\nWHERE provider <> 'docker'\n  AND provision_seconds IS NOT NULL\n  AND provider IN ($provider)\n  AND instance_class IN ($instance_class)\n  AND (CASE WHEN high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(started_at)\nGROUP BY 1, 2\nORDER BY 1, 2"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "groupingToMatrix",
+          "options": {
+            "columnField": "provider",
+            "rowField": "setup",
+            "valueField": "minutes",
+            "emptyValue": "null"
+          }
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "aurora"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rds"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gcp"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "docker"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "title": "Downtime by provider and disruption",
+      "type": "barchart",
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT d.provider || ' ' || d.disruption || CASE WHEN r.high_availability THEN ' HA' ELSE '' END\n         || ' (n=' || count(*) || ')' AS case_name,\n       d.provider,\n       avg(d.writable_downtime_ms) / 1000 AS downtime\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(d.disrupted_at)\nGROUP BY d.provider, d.disruption, r.high_availability\nORDER BY 1"
+        }
+      ],
+      "options": {
+        "xField": "case_name",
+        "showValue": "always",
+        "colorByField": "provider",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "description": "Average time until the database accepted writes again after each disruption. n is the number of disruptions.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "provider"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "aurora": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "rds": {
+                        "color": "yellow",
+                        "index": 1
+                      },
+                      "gcp": {
+                        "color": "blue",
+                        "index": 2
+                      },
+                      "docker": {
+                        "color": "purple",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "title": "Runs with missing repetitions",
+      "description": "Runs that passed but saved fewer downtime rows than repetitions requested. Should be empty.",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.workflow_id, r.provider, r.disruption, r.repetitions AS requested,\n       count(d.id) AS saved, r.passed, r.started_at\nFROM runs r\nLEFT JOIN downtime_results d ON d.run_id = r.id\nWHERE r.disruption IS NOT NULL\n  AND r.passed\n  AND r.provider IN ($provider) AND r.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(r.started_at)\nGROUP BY r.id\nHAVING count(d.id) < r.repetitions\nORDER BY r.started_at DESC"
+        }
+      ],
+      "options": {
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No missing repetitions"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workflow_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open in Temporal",
+                    "url": "http://localhost:8233/namespaces/default/workflows/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "title": "Run outcomes",
+      "type": "stat",
+      "description": "Recovery runs by outcome. Running means the run has not ended yet.",
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 6
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) FILTER (WHERE passed) AS passed,\n       count(*) FILTER (WHERE passed = false) AS failed,\n       count(*) FILTER (WHERE passed IS NULL) AS running\nFROM runs\nWHERE disruption IS NOT NULL\n  AND provider IN ($provider) AND disruption IN ($disruption)\n  AND (CASE WHEN high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(started_at)"
+        }
+      ],
+      "timeFrom": "$outcome_range",
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "passed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "running"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "title": "Downtime per repetition",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 10
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "state-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "state-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT r.workflow_id, d.repetition, d.provider, d.disruption, r.instance_class,\n       CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END AS high_availability,\n       d.writable_downtime_ms / 1000 AS writable_seconds,\n       d.readable_downtime_ms / 1000 AS readable_seconds,\n       d.lost_commits\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND d.repetition IN ($repetition)\n  AND $__timeFilter(d.disrupted_at)\nORDER BY d.disrupted_at DESC"
+        }
+      ],
+      "description": "One row per disruption: the detail behind the averages above. Filter by Repetition to compare the same disruption across runs.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workflow_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open in Temporal",
+                    "url": "http://localhost:8233/namespaces/default/workflows/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "writable_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "readable_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

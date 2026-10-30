@@ -45,9 +45,6 @@ type Metrics struct {
 	// ProviderReadyDuration tracks how long a new database takes to accept connections, labelled by provider.
 	ProviderReadyDuration *prometheus.HistogramVec
 
-	// ProviderDeprovisionDuration tracks how long a deprovision call takes, labelled by provider.
-	ProviderDeprovisionDuration *prometheus.HistogramVec
-
 	// RecoveryDowntime tracks how long a database was down after each disruption,
 	// labelled by provider, disruption and kind (readable or writable).
 	RecoveryDowntime *prometheus.HistogramVec
@@ -111,11 +108,6 @@ func InitMetrics(cfg MetricsConfig) (*Metrics, error) {
 		Help:    "How long a new database takes to accept connections.",
 		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600},
 	}, []string{"provider"})
-	providerDeprovisionDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "dbtest_provider_deprovision_duration_seconds",
-		Help:    "How long a deprovision call takes.",
-		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1200},
-	}, []string{"provider"})
 	recoveryDowntime := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "dbtest_recovery_downtime_seconds",
 		Help:    "How long a database was down after a disruption.",
@@ -131,7 +123,7 @@ func InitMetrics(cfg MetricsConfig) (*Metrics, error) {
 	}, []string{"workflow", "provider", "outcome"})
 
 	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration, benchmarkTPS, benchmarkLatencyAvgMs, benchmarkLatencyStddevMs, providerProvisionDuration, providerDeprovisionTotal,
-		providerReadyDuration, providerDeprovisionDuration, recoveryDowntime, recoveryLostCommitsTotal, workflowsTotal)
+		providerReadyDuration, recoveryDowntime, recoveryLostCommitsTotal, workflowsTotal)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
@@ -149,21 +141,20 @@ func InitMetrics(cfg MetricsConfig) (*Metrics, error) {
 	}()
 
 	return &Metrics{
-		ConnectionDuration:          connectionDuration,
-		SeedRowsTotal:               seedRowsTotal,
-		ChecksumDuration:            checksumDuration,
-		BenchmarkTPS:                benchmarkTPS,
-		BenchmarkLatencyAvgMs:       benchmarkLatencyAvgMs,
-		BenchmarkLatencyStddevMs:    benchmarkLatencyStddevMs,
-		ProviderProvisionDuration:   providerProvisionDuration,
-		ProviderDeprovisionTotal:    providerDeprovisionTotal,
-		ProviderReadyDuration:       providerReadyDuration,
-		ProviderDeprovisionDuration: providerDeprovisionDuration,
-		RecoveryDowntime:            recoveryDowntime,
-		RecoveryLostCommitsTotal:    recoveryLostCommitsTotal,
-		WorkflowsTotal:              workflowsTotal,
-		server:                      server,
-		port:                        listener.Addr().(*net.TCPAddr).Port,
+		ConnectionDuration:        connectionDuration,
+		SeedRowsTotal:             seedRowsTotal,
+		ChecksumDuration:          checksumDuration,
+		BenchmarkTPS:              benchmarkTPS,
+		BenchmarkLatencyAvgMs:     benchmarkLatencyAvgMs,
+		BenchmarkLatencyStddevMs:  benchmarkLatencyStddevMs,
+		ProviderProvisionDuration: providerProvisionDuration,
+		ProviderDeprovisionTotal:  providerDeprovisionTotal,
+		ProviderReadyDuration:     providerReadyDuration,
+		RecoveryDowntime:          recoveryDowntime,
+		RecoveryLostCommitsTotal:  recoveryLostCommitsTotal,
+		WorkflowsTotal:            workflowsTotal,
+		server:                    server,
+		port:                      listener.Addr().(*net.TCPAddr).Port,
 	}, nil
 }
 
