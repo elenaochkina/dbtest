@@ -265,7 +265,68 @@
           "unit": "m",
           "decimals": 1
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "aurora"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rds"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gcp"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "docker"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -292,14 +353,20 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT d.provider || ' ' || d.disruption || CASE WHEN r.high_availability THEN ' HA' ELSE '' END\n         || ' (n=' || count(*) || ')' AS case_name,\n       avg(d.writable_downtime_ms) / 1000 AS writable,\n       avg(d.readable_downtime_ms) / 1000 AS readable\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(d.disrupted_at)\nGROUP BY d.provider, d.disruption, r.high_availability\nORDER BY 1"
+          "rawSql": "SELECT d.provider || ' ' || d.disruption || CASE WHEN r.high_availability THEN ' HA' ELSE '' END\n         || ' (n=' || count(*) || ')' AS case_name,\n       d.provider,\n       avg(d.writable_downtime_ms) / 1000 AS downtime\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(d.disrupted_at)\nGROUP BY d.provider, d.disruption, r.high_availability\nORDER BY 1"
         }
       ],
       "options": {
         "xField": "case_name",
-        "showValue": "always"
+        "showValue": "always",
+        "colorByField": "provider",
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
-      "description": "Average time writes and reads failed after each disruption. n is the number of disruptions. A readable value of 0 means reads never failed, or (until the outage filter is fixed) that a short read outage was dropped.",
+      "description": "Average time until the database accepted writes again after each disruption. n is the number of disruptions.",
       "fieldConfig": {
         "defaults": {
           "unit": "s",
@@ -309,29 +376,39 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "writable"
+              "options": "provider"
             },
             "properties": [
               {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "orange"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "readable"
-            },
-            "properties": [
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "aurora": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "rds": {
+                        "color": "yellow",
+                        "index": 1
+                      },
+                      "gcp": {
+                        "color": "blue",
+                        "index": 2
+                      },
+                      "docker": {
+                        "color": "purple",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              },
               {
                 "id": "color",
                 "value": {
-                  "mode": "fixed",
-                  "fixedColor": "blue"
+                  "mode": "thresholds"
                 }
               }
             ]
@@ -374,7 +451,30 @@
         "defaults": {
           "noValue": "No missing repetitions"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workflow_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open in Temporal",
+                    "url": "http://localhost:8233/namespaces/default/workflows/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       }
     },
     {
@@ -385,7 +485,7 @@
       "gridPos": {
         "x": 0,
         "y": 28,
-        "w": 16,
+        "w": 24,
         "h": 6
       },
       "datasource": {
@@ -478,111 +578,6 @@
       }
     },
     {
-      "id": 8,
-      "title": "Outcome share",
-      "type": "piechart",
-      "description": "Share of recovery runs by outcome.",
-      "gridPos": {
-        "x": 16,
-        "y": 28,
-        "w": 8,
-        "h": 6
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "state-db"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "state-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "editorMode": "code",
-          "rawSql": "SELECT count(*) FILTER (WHERE passed) AS passed,\n       count(*) FILTER (WHERE passed = false) AS failed,\n       count(*) FILTER (WHERE passed IS NULL) AS running\nFROM runs\nWHERE disruption IS NOT NULL\n  AND provider IN ($provider) AND disruption IN ($disruption)\n  AND (CASE WHEN high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND $__timeFilter(started_at)"
-        }
-      ],
-      "timeFrom": "$outcome_range",
-      "options": {
-        "pieType": "donut",
-        "displayLabels": [
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "list",
-          "placement": "right",
-          "values": [
-            "value"
-          ]
-        },
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "passed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "green"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "failed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "red"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "running"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "blue"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
       "id": 2,
       "title": "Downtime per repetition",
       "type": "table",
@@ -606,7 +601,7 @@
           "format": "table",
           "rawQuery": true,
           "editorMode": "code",
-          "rawSql": "SELECT r.workflow_id, d.repetition, d.provider, d.disruption, r.instance_class, r.high_availability,\n       d.writable_downtime_ms / 1000 AS writable_seconds,\n       d.readable_downtime_ms / 1000 AS readable_seconds,\n       d.lost_commits\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND d.repetition IN ($repetition)\n  AND $__timeFilter(d.disrupted_at)\nORDER BY d.disrupted_at DESC"
+          "rawSql": "SELECT r.workflow_id, d.repetition, d.provider, d.disruption, r.instance_class,\n       CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END AS high_availability,\n       d.writable_downtime_ms / 1000 AS writable_seconds,\n       d.readable_downtime_ms / 1000 AS readable_seconds,\n       d.lost_commits\nFROM downtime_results d\nJOIN runs r ON r.id = d.run_id\nWHERE d.provider IN ($provider) AND d.disruption IN ($disruption)\n  AND (CASE WHEN r.high_availability THEN 'yes' ELSE 'no' END) IN ($ha)\n  AND d.repetition IN ($repetition)\n  AND $__timeFilter(d.disrupted_at)\nORDER BY d.disrupted_at DESC"
         }
       ],
       "description": "One row per disruption: the detail behind the averages above. Filter by Repetition to compare the same disruption across runs.",
@@ -616,7 +611,62 @@
             "filterable": true
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "workflow_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open in Temporal",
+                    "url": "http://localhost:8233/namespaces/default/workflows/${__value.raw}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "writable_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "readable_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          }
+        ]
       }
     }
   ]
