@@ -23,10 +23,14 @@ type recoveryForm struct {
 	cfg        workflows.RecoveryWorkflowConfig
 }
 
-var providerNames = map[string]provider.ProviderName{
-	"docker":     provider.Docker,
-	"aws-rds":    provider.RDS,
-	"aws-aurora": provider.Aurora,
+// providerChoices lists the providers in the order the form shows them.
+var providerChoices = []struct {
+	label string
+	name  provider.ProviderName
+}{
+	{"docker", provider.Docker},
+	{"aws-rds", provider.RDS},
+	{"aws-aurora", provider.Aurora},
 }
 
 // openRecoveryForm returns the form on its first step, filled with the
@@ -53,7 +57,11 @@ func (form recoveryForm) steps() []string {
 func (form recoveryForm) options() []string {
 	switch form.step {
 	case "provider":
-		return []string{"docker", "aws-rds", "aws-aurora"}
+		var labels []string
+		for _, choice := range providerChoices {
+			labels = append(labels, choice.label)
+		}
+		return labels
 	case "high availability":
 		return []string{"no", "yes"}
 	case "disruption":
@@ -155,7 +163,7 @@ func (form recoveryForm) back() recoveryForm {
 func (form recoveryForm) choose(choice string) recoveryForm {
 	switch form.step {
 	case "provider":
-		form.cfg.Provider = providerNames[choice]
+		form.cfg.Provider = providerChoices[form.cursor].name
 		form.cfg.Request.HighAvailability = false
 		form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest/probe:dev", "dbtest/bench:dev"
 		if form.cfg.Provider != provider.Docker {
@@ -286,9 +294,9 @@ func (form recoveryForm) summary() []string {
 
 // providerLabel returns the form's label for name.
 func providerLabel(name provider.ProviderName) string {
-	for label, providerName := range providerNames {
-		if providerName == name {
-			return label
+	for _, choice := range providerChoices {
+		if choice.name == name {
+			return choice.label
 		}
 	}
 	return string(name)
