@@ -63,17 +63,21 @@ region         = us-west-2
 `aws sts get-caller-identity --profile dbtest` should print
 `assumed-role/dbtest/...`.
 
+Select the profile in every terminal by adding `export AWS_PROFILE=dbtest` to
+`~/.zshrc` (or your shell's equivalent). `.env` does not hold it: `make env`
+rewrites that file from the Terraform outputs and the GCP settings.
+
 ## 3. Infrastructure
 
 ```sh
 export AWS_PROFILE=dbtest
 make aws-cidr     # writes this machine's public IP to terraform/aws/terraform.tfvars and plans
 make aws-apply
-terraform -chdir=terraform/aws output -raw worker_env > .env
+make env          # writes .env from the terraform/aws outputs and the GCP settings
 make push         # needs config.mk; see the Makefile
 ```
 
-Regenerate `.env` after every apply that replaces a security group; the worker
+Run `make env` after every apply that replaces a security group; the worker
 reads their IDs from it.
 
 ## 4. Runs
