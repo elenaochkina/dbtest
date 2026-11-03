@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars. Each user finds their account with:
+#   gcloud config get-value account
+project = "my-dbtest-project"
+
+trusted_principals = [
+  "user:alex@example.com",
+]

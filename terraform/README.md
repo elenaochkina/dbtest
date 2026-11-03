@@ -1,6 +1,6 @@
 # Terraform
 
-Two modules. `aws-bootstrap` creates the IAM access; `aws` creates the static
+Three modules. `aws-bootstrap` and `gcp-bootstrap` create the access; `aws` creates the static
 infrastructure that test runs attach to. Databases and Fargate tasks are not
 here: the worker creates and deletes them on every run.
 
@@ -8,6 +8,7 @@ here: the worker creates and deletes them on every run.
 |---|---|---|---|
 | `aws-bootstrap/` | Policies `dbtest-infra`, `dbtest-run` and the role `dbtest` | An account admin (`AdministratorAccess` or `IAMFullAccess`) | Once, and when a policy or the user list changes |
 | `aws/` | ECR repos, ECS cluster and task definitions, log group, security groups, RDS subnet group, ECS execution role | `dbtest` | Once, and when the infrastructure changes |
+| `gcp-bootstrap/` | Cloud SQL, IAM and IAM Credentials APIs; service account `dbtest` with the custom role `dbtest` (`dbtest-role.yaml`); who may impersonate it | A project owner | Once, and when the role or the user list changes |
 
 Applying `aws/`, pushing images and running the worker all use the `dbtest`
 role. Its two policies split the permissions: `dbtest-infra` for the
@@ -114,3 +115,27 @@ Destroy `aws` before `aws-bootstrap`, which removes the `dbtest` role.
   not the AWS console. Use an admin login to browse.
 - `terraform.tfvars` and state files are git-ignored. Keep account IDs out of
   committed files.
+
+## GCP
+
+```sh
+cp terraform/gcp-bootstrap/terraform.tfvars.example terraform/gcp-bootstrap/terraform.tfvars
+# edit project and trusted_principals ("user:<email>")
+gcloud auth application-default login      # as a project owner
+terraform -chdir=terraform/gcp-bootstrap init
+terraform -chdir=terraform/gcp-bootstrap apply
+```
+
+Each user then logs in as the service account. The worker and Terraform pick
+it up through Application Default Credentials:
+
+```sh
+gcloud auth application-default login \
+  --impersonate-service-account=$(terraform -chdir=terraform/gcp-bootstrap output -raw service_account_email)
+```
+
+A permission is missing: the 403 names it. Add it to `dbtest-role.yaml` and
+re-apply `gcp-bootstrap` as a project owner.
+
+Teardown: `terraform -chdir=terraform/gcp-bootstrap destroy`. The APIs stay
+enabled, and the custom role ID stays reserved for 7 days.

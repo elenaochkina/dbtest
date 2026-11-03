@@ -1,0 +1,10 @@
+title: dbtest
+description: Create, disrupt and delete dbtest Cloud SQL instances
+stage: GA
+includedPermissions:
+  - cloudsql.instances.create
+  - cloudsql.instances.get
+  - cloudsql.instances.list
+  - cloudsql.instances.delete
+  - cloudsql.instances.restart
+  - cloudsql.instances.failover
