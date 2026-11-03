@@ -1,12 +1,12 @@
 # Terraform
 
-Two modules. `bootstrap` creates the IAM access; `aws` creates the static
+Two modules. `aws-bootstrap` creates the IAM access; `aws` creates the static
 infrastructure that test runs attach to. Databases and Fargate tasks are not
 here: the worker creates and deletes them on every run.
 
 | Module | Creates | Applied by | How often |
 |---|---|---|---|
-| `bootstrap/` | Policies `dbtest-infra`, `dbtest-run` and the role `dbtest` | An account admin (`AdministratorAccess` or `IAMFullAccess`) | Once, and when a policy or the user list changes |
+| `aws-bootstrap/` | Policies `dbtest-infra`, `dbtest-run` and the role `dbtest` | An account admin (`AdministratorAccess` or `IAMFullAccess`) | Once, and when a policy or the user list changes |
 | `aws/` | ECR repos, ECS cluster and task definitions, log group, security groups, RDS subnet group, ECS execution role | `dbtest` | Once, and when the infrastructure changes |
 
 Applying `aws/`, pushing images and running the worker all use the `dbtest`
@@ -29,7 +29,7 @@ aws sts get-caller-identity --query Arn --output text
 List who may assume the roles:
 
 ```sh
-cp terraform/bootstrap/terraform.tfvars.example terraform/bootstrap/terraform.tfvars
+cp terraform/aws-bootstrap/terraform.tfvars.example terraform/aws-bootstrap/terraform.tfvars
 # edit trusted_principals: one ARN per user or role
 ```
 
@@ -38,14 +38,14 @@ Identity Center user, list the role ARN with its path:
 `arn:aws:iam::<account>:role/aws-reserved/sso.amazonaws.com/<region>/AWSReservedSSO_<set>_<id>`.
 
 ```sh
-AWS_PROFILE=<admin> terraform -chdir=terraform/bootstrap init
-AWS_PROFILE=<admin> terraform -chdir=terraform/bootstrap apply
-AWS_PROFILE=<admin> terraform -chdir=terraform/bootstrap output
+AWS_PROFILE=<admin> terraform -chdir=terraform/aws-bootstrap init
+AWS_PROFILE=<admin> terraform -chdir=terraform/aws-bootstrap apply
+AWS_PROFILE=<admin> terraform -chdir=terraform/aws-bootstrap output
 ```
 
 Hand the role ARN to the users. An admin who does not use Terraform can
-create the same policies from `bootstrap/dbtest-infra.json` and
-`bootstrap/dbtest-run.json`, or attach them to an Identity Center
+create the same policies from `aws-bootstrap/dbtest-infra.json` and
+`aws-bootstrap/dbtest-run.json`, or attach them to an Identity Center
 permission set.
 
 ## 2. Profile (each user, once)
@@ -90,20 +90,20 @@ Fargate runs take task definition names as images:
 
 - **Public IP changed.** The worker's connections to the database time out.
   Run `make aws-cidr` and `make aws-apply`.
-- **A policy JSON changed.** Re-apply `bootstrap` as the admin. IAM takes a few
+- **A policy JSON changed.** Re-apply `aws-bootstrap` as the admin. IAM takes a few
   seconds to pick it up.
 - **AccessDenied.** The message names the missing action. Add it to the
-  matching JSON file and re-apply `bootstrap`.
+  matching JSON file and re-apply `aws-bootstrap`.
 
 ## Teardown
 
 ```sh
 AWS_PROFILE=dbtest terraform -chdir=terraform/aws destroy
-AWS_PROFILE=<admin> terraform -chdir=terraform/bootstrap destroy
+AWS_PROFILE=<admin> terraform -chdir=terraform/aws-bootstrap destroy
 ```
 
 ECR repositories that still hold images are not deleted; empty them first.
-Destroy `aws` before `bootstrap`, which removes the `dbtest` role.
+Destroy `aws` before `aws-bootstrap`, which removes the `dbtest` role.
 
 ## Notes
 
