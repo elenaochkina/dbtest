@@ -20,11 +20,15 @@ type Telemetry struct {
 
 // Init sets up structured logging and Prometheus metrics.
 // Call once at the start of your program. Use defer tel.Shutdown() to clean up.
-func Init(cfg Config) *Telemetry {
-	return &Telemetry{
-		Metrics: InitMetrics(cfg.Metrics),
-		Logger:  InitLogging(cfg.Log),
+func Init(cfg Config) (*Telemetry, error) {
+	metrics, err := InitMetrics(cfg.Metrics)
+	if err != nil {
+		return nil, err
 	}
+	return &Telemetry{
+		Metrics: metrics,
+		Logger:  InitLogging(cfg.Log),
+	}, nil
 }
 
 // Shutdown cleanly stops all telemetry components.

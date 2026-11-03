@@ -138,8 +138,12 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	}).Get(ctx, &probeHandle); err != nil {
 		return err
 	}
-	// On the happy path the container is already gone and stopping it again is a no-op.
+	// Stops the probe when the workflow returns before the stop below succeeds.
+	probeStopped := false
 	defer func() {
+		if probeStopped {
+			return
+		}
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, onceOnly)
 		_ = workflow.ExecuteActivity(dctx, harn.StopProbe, activities.ContainerInput{
@@ -202,6 +206,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	}).Get(ctx, &result); err != nil {
 		return err
 	}
+	probeStopped = true
 
 	return workflow.ExecuteActivity(ctx, runs.SaveDowntimeResults, activities.SaveDowntimeInput{
 		RunID:       runID,
