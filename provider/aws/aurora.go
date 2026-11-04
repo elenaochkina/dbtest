@@ -83,10 +83,12 @@ func (p *auroraProvider) Provision(ctx context.Context, req provider.ProvisionRe
 
 	target := provider.PGTarget{Host: host, Port: port, Database: p.cfg.Database, User: p.cfg.Username}
 	return provider.ClusterInfo{
-		ID:       clusterID,
-		Target:   target,
-		Internal: target,
-		Password: password,
+		ID:            clusterID,
+		Target:        target,
+		Internal:      target,
+		Password:      password,
+		InstanceClass: instanceClass,
+		Region:        p.cfg.Region,
 	}, nil
 }
 

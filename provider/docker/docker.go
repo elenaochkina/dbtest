@@ -21,9 +21,10 @@ import (
 )
 
 type dockerProvider struct {
-	client *dockerclient.Client
-	image  string
-	tel    *telemetry.Telemetry
+	client  *dockerclient.Client
+	image   string
+	network string
+	tel     *telemetry.Telemetry
 }
 
 // New creates a Docker provider.
@@ -32,13 +33,17 @@ func New(tel *telemetry.Telemetry) (*dockerProvider, error) {
 	if img == "" {
 		img = "postgres:16"
 	}
+	network := os.Getenv("DBTEST_DOCKER_NETWORK")
+	if network == "" {
+		network = "dbtest-net"
+	}
 
 	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
 
-	return &dockerProvider{client: client, image: img, tel: tel}, nil
+	return &dockerProvider{client: client, image: img, network: network, tel: tel}, nil
 }
 
 // The password parameter is ignored by Docker — it is fixed at "test". The
@@ -76,7 +81,7 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 			Resources:       dockerResources(req),
 		},
 		&network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{networkName: {}},
+			EndpointsConfig: map[string]*network.EndpointSettings{p.network: {}},
 		},
 		nil, name)
 
@@ -127,22 +132,19 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 	}, nil
 }
 
-// networkName is a single long-lived network shared by every run.
-const networkName = "dbtest-net"
-
 // ensureNetwork creates the shared network if it does not already exist.
 func (p *dockerProvider) ensureNetwork(ctx context.Context) error {
-	_, err := p.client.NetworkInspect(ctx, networkName, network.InspectOptions{})
+	_, err := p.client.NetworkInspect(ctx, p.network, network.InspectOptions{})
 	if err == nil {
 		return nil
 	}
 	if !errdefs.IsNotFound(err) {
-		return fmt.Errorf("inspect network %q: %w", networkName, err)
+		return fmt.Errorf("inspect network %q: %w", p.network, err)
 	}
-	if _, err := p.client.NetworkCreate(ctx, networkName, network.CreateOptions{}); err != nil {
+	if _, err := p.client.NetworkCreate(ctx, p.network, network.CreateOptions{}); err != nil {
 		// A concurrent run may have won the race; that is success, not failure.
 		if !errdefs.IsConflict(err) {
-			return fmt.Errorf("create network %q: %w", networkName, err)
+			return fmt.Errorf("create network %q: %w", p.network, err)
 		}
 	}
 	return nil

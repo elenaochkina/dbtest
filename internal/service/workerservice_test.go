@@ -32,8 +32,8 @@ func TestWorkerServiceLifecycle(t *testing.T) {
 		}
 	})
 
-	stateDB := newStateDB(docker, stateName)
-	temporal := newTemporalServer(docker, temporalName)
+	stateDB := newStateDB(docker, stateName, loadConfig().Network)
+	temporal := newTemporalServer(docker, temporalName, loadConfig().Network)
 	telemetry := newTelemetryService(slog.DiscardHandler)
 	for _, dependency := range []service{stateDB, temporal, telemetry} {
 		if _, err := dependency.start(ctx); err != nil {

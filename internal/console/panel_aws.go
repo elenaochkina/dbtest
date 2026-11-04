@@ -3,6 +3,7 @@ package console
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -18,10 +19,18 @@ func checkAWS(check func(context.Context) providercfg.Status) tea.Cmd {
 	}
 }
 
+// awsTick waits 15 seconds, then asks for the next AWS check.
+func awsTick() tea.Cmd {
+	return tea.Tick(15*time.Second, func(time.Time) tea.Msg {
+		return awsTickMsg{}
+	})
+}
+
 // setAWSStatus stores the AWS status and logs the detail when AWS is not ready.
 func (m *model) setAWSStatus(status awsStatusMsg) {
+	changed := providercfg.Status(status) != m.aws
 	m.aws = providercfg.Status(status)
-	if m.aws.State != providercfg.StateReady {
+	if changed && m.aws.State != providercfg.StateReady {
 		slog.Warn("aws not ready", "state", m.aws.State, "detail", m.aws.Detail)
 	}
 }

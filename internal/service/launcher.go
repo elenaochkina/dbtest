@@ -63,8 +63,9 @@ func New(logs slog.Handler) (*Launcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
-	stateDB := newStateDB(docker, "dbtest-state")
-	temporal := newTemporalServer(docker, "dbtest-temporal")
+	cfg := loadConfig()
+	stateDB := newStateDB(docker, "dbtest-state", cfg.Network)
+	temporal := newTemporalServer(docker, "dbtest-temporal", cfg.Network)
 	telemetry := newTelemetryService(logs)
 	worker := newWorkerService(stateDB, temporal, telemetry, logs)
 

@@ -6,6 +6,7 @@ import (
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/probe"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/temporal/activities"
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/temporal"
@@ -62,17 +63,28 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	var runID uuid.UUID
 	if err = workflow.ExecuteActivity(ctx, runs.StartRun, activities.StartRunInput{
-		Scenario: "recovery",
-		Provider: cfg.Provider,
+		Scenario:    "recovery",
+		Provider:    cfg.Provider,
+		Disruption:  cfg.Disruption,
+		Repetitions: cfg.Repetitions,
+		Request:     &cfg.Request,
 	}).Get(ctx, &runID); err != nil {
 		return err
 	}
+	var (
+		cluster  provider.ClusterInfo
+		timeline state.RunTimeline
+	)
 	defer func() {
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
 		_ = workflow.ExecuteActivity(dctx, runs.EndRun, activities.EndRunInput{
-			RunID:  runID,
-			Passed: err == nil,
+			RunID:         runID,
+			Passed:        err == nil,
+			Provider:      cfg.Provider,
+			InstanceClass: cluster.InstanceClass,
+			Region:        cluster.Region,
+			Timeline:      timeline,
 		}).Get(dctx, nil)
 	}()
 
@@ -89,16 +101,21 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	defer func() {
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
-		if derr := workflow.ExecuteActivity(dctx, prov.Deprovision, activities.DeprovisionInput{
+		timeline.DeprovisionStartedAt = workflow.Now(dctx)
+		derr := workflow.ExecuteActivity(dctx, prov.Deprovision, activities.DeprovisionInput{
 			Provider:  cfg.Provider,
 			ClusterID: clusterID,
-		}).Get(dctx, nil); derr != nil && err == nil {
+		}).Get(dctx, nil)
+		if derr == nil {
+			timeline.DeprovisionedAt = workflow.Now(dctx)
+		} else if err == nil {
 			err = derr
 		}
 	}()
 
-	var cluster provider.ClusterInfo
-	if err = workflow.ExecuteActivity(ctx, prov.Provision, activities.ProvisionInput{
+	heartbeatCtx := workflow.WithActivityOptions(ctx, heartbeatActivityOptions)
+	timeline.ProvisionStartedAt = workflow.Now(ctx)
+	if err = workflow.ExecuteActivity(heartbeatCtx, prov.Provision, activities.ProvisionInput{
 		Provider: cfg.Provider,
 		Request:  cfg.Request,
 		Token:    clusterID,
@@ -106,13 +123,15 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	}).Get(ctx, &cluster); err != nil {
 		return err
 	}
+	timeline.ProvisionedAt = workflow.Now(ctx)
 
-	if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
+	if err = workflow.ExecuteActivity(heartbeatCtx, prov.WaitForReady, activities.WaitForReadyInput{
 		Provider: cfg.Provider,
 		Cluster:  cluster,
 	}).Get(ctx, nil); err != nil {
 		return err
 	}
+	timeline.ReadyAt = workflow.Now(ctx)
 
 	// Seeding finishes before the prober starts
 	if err = workflow.ExecuteActivity(ctx, harn.InitializeBenchContainer, activities.BenchContainerInput{
@@ -185,7 +204,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		}).Get(ctx, &cluster); err != nil {
 			return err
 		}
-		if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
+		if err = workflow.ExecuteActivity(heartbeatCtx, prov.WaitForReady, activities.WaitForReadyInput{
 			Provider: cfg.Provider,
 			Cluster:  cluster,
 		}).Get(ctx, nil); err != nil {

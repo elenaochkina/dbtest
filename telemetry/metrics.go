@@ -42,6 +42,23 @@ type Metrics struct {
 	// ProviderDeprovisionTotal counts cluster deprovisions, labelled by provider.
 	ProviderDeprovisionTotal *prometheus.CounterVec
 
+	// ProviderReadyDuration tracks how long a new database takes to accept connections, labelled by provider.
+	ProviderReadyDuration *prometheus.HistogramVec
+
+	// ProviderDeprovisionDuration tracks how long a deprovision call takes, labelled by provider.
+	ProviderDeprovisionDuration *prometheus.HistogramVec
+
+	// RecoveryDowntime tracks how long a database was down after each disruption,
+	// labelled by provider, disruption and kind (readable or writable).
+	RecoveryDowntime *prometheus.HistogramVec
+
+	// RecoveryLostCommitsTotal counts commits acknowledged before a disruption and
+	// missing after it, labelled by provider and disruption.
+	RecoveryLostCommitsTotal *prometheus.CounterVec
+
+	// WorkflowsTotal counts finished workflows, labelled by workflow, provider and outcome.
+	WorkflowsTotal *prometheus.CounterVec
+
 	server *http.Server
 	port   int
 }
@@ -83,14 +100,38 @@ func InitMetrics(cfg MetricsConfig) (*Metrics, error) {
 	providerProvisionDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "dbtest_provider_provision_duration_seconds",
 		Help:    "How long it takes to provision a database cluster.",
-		Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60},
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1200, 1800},
 	}, []string{"provider"})
 	providerDeprovisionTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "dbtest_provider_deprovision_total",
 		Help: "Total number of cluster deprovisions.",
 	}, []string{"provider"})
+	providerReadyDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "dbtest_provider_ready_duration_seconds",
+		Help:    "How long a new database takes to accept connections.",
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600},
+	}, []string{"provider"})
+	providerDeprovisionDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "dbtest_provider_deprovision_duration_seconds",
+		Help:    "How long a deprovision call takes.",
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1200},
+	}, []string{"provider"})
+	recoveryDowntime := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "dbtest_recovery_downtime_seconds",
+		Help:    "How long a database was down after a disruption.",
+		Buckets: []float64{0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300},
+	}, []string{"provider", "disruption", "kind"})
+	recoveryLostCommitsTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "dbtest_recovery_lost_commits_total",
+		Help: "Commits acknowledged before a disruption and missing after it.",
+	}, []string{"provider", "disruption"})
+	workflowsTotal := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "dbtest_workflows_total",
+		Help: "Finished workflows, by outcome.",
+	}, []string{"workflow", "provider", "outcome"})
 
-	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration, benchmarkTPS, benchmarkLatencyAvgMs, benchmarkLatencyStddevMs, providerProvisionDuration, providerDeprovisionTotal)
+	registry.MustRegister(connectionDuration, seedRowsTotal, checksumDuration, benchmarkTPS, benchmarkLatencyAvgMs, benchmarkLatencyStddevMs, providerProvisionDuration, providerDeprovisionTotal,
+		providerReadyDuration, providerDeprovisionDuration, recoveryDowntime, recoveryLostCommitsTotal, workflowsTotal)
 
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
@@ -108,16 +149,21 @@ func InitMetrics(cfg MetricsConfig) (*Metrics, error) {
 	}()
 
 	return &Metrics{
-		ConnectionDuration:        connectionDuration,
-		SeedRowsTotal:             seedRowsTotal,
-		ChecksumDuration:          checksumDuration,
-		BenchmarkTPS:              benchmarkTPS,
-		BenchmarkLatencyAvgMs:     benchmarkLatencyAvgMs,
-		BenchmarkLatencyStddevMs:  benchmarkLatencyStddevMs,
-		ProviderProvisionDuration: providerProvisionDuration,
-		ProviderDeprovisionTotal:  providerDeprovisionTotal,
-		server:                    server,
-		port:                      listener.Addr().(*net.TCPAddr).Port,
+		ConnectionDuration:          connectionDuration,
+		SeedRowsTotal:               seedRowsTotal,
+		ChecksumDuration:            checksumDuration,
+		BenchmarkTPS:                benchmarkTPS,
+		BenchmarkLatencyAvgMs:       benchmarkLatencyAvgMs,
+		BenchmarkLatencyStddevMs:    benchmarkLatencyStddevMs,
+		ProviderProvisionDuration:   providerProvisionDuration,
+		ProviderDeprovisionTotal:    providerDeprovisionTotal,
+		ProviderReadyDuration:       providerReadyDuration,
+		ProviderDeprovisionDuration: providerDeprovisionDuration,
+		RecoveryDowntime:            recoveryDowntime,
+		RecoveryLostCommitsTotal:    recoveryLostCommitsTotal,
+		WorkflowsTotal:              workflowsTotal,
+		server:                      server,
+		port:                        listener.Addr().(*net.TCPAddr).Port,
 	}, nil
 }
 
