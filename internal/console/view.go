@@ -22,7 +22,7 @@ func (m model) render() string {
 	status := m.statusLines()
 	middleTitle, middle := "ACTIONS", m.actionLines(inner)
 	if m.form.step != "" {
-		middleTitle, middle = "RECOVERY › "+m.form.step, m.form.lines()
+		middleTitle, middle = "RECOVERY › "+m.form.step, m.form.lines(m.estimateLine())
 	}
 	logHeight := m.height - 4 - len(status) - len(middle)
 	if inner < 20 || logHeight < 1 {

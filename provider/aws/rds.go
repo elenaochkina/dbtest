@@ -155,6 +155,16 @@ func (p *rdsProvider) waitForEndpoint(ctx context.Context, instanceID string) (s
 	return "", 0, fmt.Errorf("instance %s did not become available within 15m", instanceID)
 }
 
+// RDSInstanceClass returns the RDS instance class Provision creates for req.
+func RDSInstanceClass(req provider.ProvisionRequest) string {
+	return resolveInstanceClass(req, loadConfig().InstanceClassOverride)
+}
+
+// RDSStorageGiB returns the storage Provision allocates for req.
+func RDSStorageGiB(req provider.ProvisionRequest) int {
+	return int(allocatedStorageGiB(req))
+}
+
 // resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instance class.
 // By default is the smallest class returns.
 func resolveInstanceClass(req provider.ProvisionRequest, override string) string {

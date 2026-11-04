@@ -51,6 +51,9 @@ func (m model) handleFormKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, startRecovery(m.startRecovery, form.cfg)
 		}
 		m.form = form
+		if form.step == "confirm" {
+			return m, m.fetchPricesFor(form.cfg)
+		}
 	case "esc":
 		m.form = m.form.back()
 	case "m":
