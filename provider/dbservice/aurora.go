@@ -1,10 +1,11 @@
-package aws
+package dbservice
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -12,31 +13,42 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// auroraProvider provisions Aurora PostgreSQL clusters.
-type auroraProvider struct {
+// auroraservice provisions Aurora PostgreSQL clusters.
+type auroraservice struct {
 	client *rds.Client
-	cfg    awsConfig
+	cfg    auroraConfig
 	tel    *telemetry.Telemetry
 }
 
-// NewAurora creates an Aurora-backed provider.
-func NewAurora(tel *telemetry.Telemetry) (*auroraProvider, error) {
-	cfg := loadConfig()
-	client, err := newClient(cfg)
-	if err != nil {
-		return nil, err
+// NewAuroraService builds Aurora in the AWS cloud.
+func NewAuroraService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+	awsCloud, ok := c.(*cloud.AWS)
+	if !ok {
+		return nil, fmt.Errorf("aurora needs the aws cloud, got %s", c.Name())
 	}
-	return &auroraProvider{client: client, cfg: cfg, tel: tel}, nil
+	return &auroraservice{client: rds.NewFromConfig(awsCloud.Config()), cfg: loadAuroraConfig(), tel: tel}, nil
+}
+
+// auroraConfig holds the RDS settings Aurora shares and its own instance class.
+type auroraConfig struct {
+	rdsConfig
+	InstanceClass string
+}
+
+// loadAuroraConfig reads the AWS_RDS_* and AWS_AURORA_* environment into an auroraConfig.
+func loadAuroraConfig() auroraConfig {
+	return auroraConfig{rdsConfig: loadRDSConfig(), InstanceClass: os.Getenv("AWS_AURORA_INSTANCE_CLASS")}
 }
 
 // Provision creates a cluster with a writer and, for high availability, one reader.
-func (p *auroraProvider) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
+func (p *auroraservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 {
@@ -50,7 +62,7 @@ func (p *auroraProvider) Provision(ctx context.Context, req provider.ProvisionRe
 	}
 
 	clusterID := token
-	instanceClass := resolveAuroraClass(req, p.cfg.AuroraInstanceClass)
+	instanceClass := resolveAuroraClass(req, p.cfg.InstanceClass)
 	instanceIDs := []string{clusterID + "-1"}
 	if req.HighAvailability {
 		instanceIDs = append(instanceIDs, clusterID+"-2")
@@ -92,7 +104,7 @@ func (p *auroraProvider) Provision(ctx context.Context, req provider.ProvisionRe
 
 // create creates the cluster and its instances, then waits for the writer endpoint.
 // A retried attempt finds what a prior attempt created.
-func (p *auroraProvider) create(ctx context.Context, req provider.ProvisionRequest, clusterID string, instanceIDs []string, instanceClass, password string) (string, int, error) {
+func (p *auroraservice) create(ctx context.Context, req provider.ProvisionRequest, clusterID string, instanceIDs []string, instanceClass, password string) (string, int, error) {
 	version, err := p.engineVersion(ctx, req.PostgresVersion)
 	if err != nil {
 		return "", 0, err
@@ -146,7 +158,7 @@ func (p *auroraProvider) create(ctx context.Context, req provider.ProvisionReque
 
 // engineVersion resolves a major version such as "16" to Aurora's default minor.
 // A full version is used as given, and an empty one leaves the choice to AWS.
-func (p *auroraProvider) engineVersion(ctx context.Context, version string) (*string, error) {
+func (p *auroraservice) engineVersion(ctx context.Context, version string) (*string, error) {
 	if version == "" {
 		return nil, nil
 	}
@@ -169,7 +181,7 @@ func (p *auroraProvider) engineVersion(ctx context.Context, version string) (*st
 
 // waitForEndpoint waits until the cluster and all of its instances are available,
 // then returns the writer endpoint.
-func (p *auroraProvider) waitForEndpoint(ctx context.Context, clusterID string, instances int) (string, int, error) {
+func (p *auroraservice) waitForEndpoint(ctx context.Context, clusterID string, instances int) (string, int, error) {
 	var host string
 	var port int
 	ready, err := poll(ctx, 20*time.Minute, 15*time.Second, func(ctx context.Context) (bool, error) {
@@ -232,7 +244,7 @@ func resolveAuroraClass(req provider.ProvisionRequest, override string) string {
 }
 
 // WaitForReady verifies the writer endpoint is accepting Postgres connections.
-func (p *auroraProvider) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
+func (p *auroraservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	deadline := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
@@ -255,7 +267,7 @@ func (p *auroraProvider) WaitForReady(ctx context.Context, cluster provider.Clus
 
 // Deprovision deletes the cluster's instances, then the cluster. A missing
 // cluster counts as success.
-func (p *auroraProvider) Deprovision(ctx context.Context, clusterID string) error {
+func (p *auroraservice) Deprovision(ctx context.Context, clusterID string) error {
 	cluster, err := p.describeCluster(ctx, clusterID)
 	var clusterGone *rdstypes.DBClusterNotFoundFault
 	if errors.As(err, &clusterGone) {
@@ -306,22 +318,19 @@ func (p *auroraProvider) Deprovision(ctx context.Context, clusterID string) erro
 	return nil
 }
 
-// Supports reports which disruptions Aurora can apply. A failover needs a
-// reader to promote.
-func (p *auroraProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
-	switch disruption {
-	case provider.Restart, provider.Crash:
-		return true
-	case provider.Failover:
-		return req.HighAvailability
+// auroraDisruptions lists what Aurora can apply. A failover needs a reader to
+// promote.
+func auroraDisruptions(req provider.ProvisionRequest) []provider.Disruption {
+	if req.HighAvailability {
+		return []provider.Disruption{provider.Restart, provider.Crash, provider.Failover}
 	}
-	return false
+	return []provider.Disruption{provider.Restart, provider.Crash}
 }
 
 // Disrupt reboots the writer, crashes it, or promotes the reader, and returns
 // once the cluster has settled. The writer endpoint follows the promotion, so
 // the returned ClusterInfo is unchanged.
-func (p *auroraProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
+func (p *auroraservice) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
 	before, err := p.describeCluster(ctx, cluster.ID)
 	if err != nil {
 		return provider.ClusterInfo{}, err
@@ -430,7 +439,7 @@ func injectCrash(ctx context.Context, cluster provider.ClusterInfo) error {
 }
 
 // waitForReboot waits for the instance to leave "available" and come back.
-func (p *auroraProvider) waitForReboot(ctx context.Context, instanceID string) error {
+func (p *auroraservice) waitForReboot(ctx context.Context, instanceID string) error {
 	status := func(want func(string) bool) func(context.Context) (bool, error) {
 		return func(ctx context.Context) (bool, error) {
 			out, err := p.client.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
@@ -461,7 +470,7 @@ func (p *auroraProvider) waitForReboot(ctx context.Context, instanceID string) e
 }
 
 // describeCluster returns the cluster's current state.
-func (p *auroraProvider) describeCluster(ctx context.Context, clusterID string) (rdstypes.DBCluster, error) {
+func (p *auroraservice) describeCluster(ctx context.Context, clusterID string) (rdstypes.DBCluster, error) {
 	out, err := p.client.DescribeDBClusters(ctx, &rds.DescribeDBClustersInput{
 		DBClusterIdentifier: aws.String(clusterID),
 	})
@@ -520,14 +529,14 @@ func poll(ctx context.Context, timeout, interval time.Duration, check func(conte
 	}
 }
 
-// newAuroraProvider adapts NewAurora to the registry constructor signature.
-func newAuroraProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
-	return NewAurora(tel)
-}
-
 func init() {
-	provider.Register(provider.Aurora, newAuroraProvider)
+	Register(Descriptor{
+		Name:                     provider.Aurora,
+		Clouds:                   []provider.CloudName{provider.AWS},
+		SupportsHighAvailability: true,
+		Disruptions:              auroraDisruptions,
+		BuildDBService:           NewAuroraService,
+	})
 }
 
-// Compile-time assertion that auroraProvider satisfies the Provider contract.
-var _ provider.Provider = (*auroraProvider)(nil)
+var _ DBService = (*auroraservice)(nil)
