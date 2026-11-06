@@ -7,7 +7,7 @@
 // Compared with provider/aws/rds.go:
 //   - LoadDefaultConfig moves to the cloud; RDS builds its client from Config().
 //   - Supports(req, disruption) becomes the static disruptions(req) in the descriptor.
-//   - newProvider is gone: buildDBService returns DBService.
+//   - newProvider is gone: NewRDSService returns DBService.
 //   - rdsConfig keeps only RDS settings; the region comes from the AWS config.
 package dbservice
 
@@ -22,20 +22,20 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
-// service provisions Postgres on Amazon RDS.
-type service struct {
+// rdsservice provisions Postgres on Amazon RDS.
+type rdsservice struct {
 	client *rdsapi.Client
 	cfg    rdsConfig
 	tel    *telemetry.Telemetry
 }
 
-// buildDBService builds RDS in the AWS cloud.
-func buildDBService(c cloud.Cloud, tel *telemetry.Telemetry) (dbservice.DBService, error) {
+// NewRDSService builds RDS in the AWS cloud.
+func NewRDSService(c cloud.Cloud, tel *telemetry.Telemetry) (dbservice.DBService, error) {
 	awsCloud, ok := c.(*cloud.AWS)
 	if !ok {
 		return nil, fmt.Errorf("rds needs the aws cloud, got %s", c.Name())
 	}
-	return &service{client: rdsapi.NewFromConfig(awsCloud.Config()), cfg: loadConfig(), tel: tel}, nil
+	return &rdsservice{client: rdsapi.NewFromConfig(awsCloud.Config()), cfg: loadConfig(), tel: tel}, nil
 }
 
 // Provision, WaitForReady, Deprovision and Disrupt are unchanged from
@@ -55,6 +55,6 @@ func init() {
 		Clouds:           []provider.CloudName{provider.AWS},
 		HighAvailability: true,
 		Disruptions:      disruptions,
-		BuildDBService:   buildDBService,
+		BuildDBService:   NewRDSService,
 	})
 }
