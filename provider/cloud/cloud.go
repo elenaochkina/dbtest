@@ -35,8 +35,8 @@ func Register(name provider.CloudName, fn func() (Cloud, error)) {
 	registry[name] = fn
 }
 
-// New builds the named cloud.
-func New(name provider.CloudName) (Cloud, error) {
+// NewCloudProvider builds the named cloud.
+func NewCloudProvider(name provider.CloudName) (Cloud, error) {
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown cloud %q; registered: %v", name, Names())

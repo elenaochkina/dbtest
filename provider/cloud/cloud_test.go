@@ -18,10 +18,10 @@ func (c testCloud) Check(context.Context) provider.Status {
 func (c testCloud) Runner() harness.RunnerName             { return harness.Docker }
 func (c testCloud) Supports(s provider.DBServiceName) bool { return Supports(c.name, s) }
 
-func TestNewBuildsRegisteredCloud(t *testing.T) {
+func TestNewCloudProviderBuildsRegisteredCloud(t *testing.T) {
 	Register("test-new", func() (Cloud, error) { return testCloud{name: "test-new"}, nil })
 
-	built, err := New("test-new")
+	built, err := NewCloudProvider("test-new")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,9 +30,9 @@ func TestNewBuildsRegisteredCloud(t *testing.T) {
 	}
 }
 
-func TestNewRejectsUnknownCloud(t *testing.T) {
-	if _, err := New("test-missing"); err == nil {
-		t.Fatal("New returned no error for an unknown cloud")
+func TestNewCloudProviderRejectsUnknownCloud(t *testing.T) {
+	if _, err := NewCloudProvider("test-missing"); err == nil {
+		t.Fatal("NewCloudProvider returned no error for an unknown cloud")
 	}
 }
 

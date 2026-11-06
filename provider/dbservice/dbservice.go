@@ -63,8 +63,8 @@ func Disruptions(name provider.DBServiceName, req provider.ProvisionRequest) []p
 	return descriptor.Disruptions(req)
 }
 
-// New builds the named service in cloud. It fails if the service does not run in cloud.
-func New(name provider.DBServiceName, c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+// NewDBService builds the named service in cloud. It fails if the service does not run in cloud.
+func NewDBService(name provider.DBServiceName, c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
 	descriptor, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown database service %q; registered: %v", name, Names())

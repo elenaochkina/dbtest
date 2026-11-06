@@ -61,29 +61,29 @@ func TestRegisterHostsServiceInItsClouds(t *testing.T) {
 	}
 }
 
-func TestNewBuildsServiceInItsCloud(t *testing.T) {
+func TestNewDBServiceBuildsServiceInItsCloud(t *testing.T) {
 	register("test-new", "test-cloud-new")
 
-	service, err := New("test-new", testCloud{name: "test-cloud-new"}, nil)
+	service, err := NewDBService("test-new", testCloud{name: "test-cloud-new"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := service.(testService); !ok {
-		t.Errorf("New returned %T, want testService", service)
+		t.Errorf("NewDBService returned %T, want testService", service)
 	}
 }
 
-func TestNewRejectsServiceInOtherCloud(t *testing.T) {
+func TestNewDBServiceRejectsServiceInOtherCloud(t *testing.T) {
 	register("test-placed", "test-cloud-home")
 
-	if _, err := New("test-placed", testCloud{name: "test-cloud-away"}, nil); err == nil {
-		t.Fatal("New returned no error for a cloud the service does not run in")
+	if _, err := NewDBService("test-placed", testCloud{name: "test-cloud-away"}, nil); err == nil {
+		t.Fatal("NewDBService returned no error for a cloud the service does not run in")
 	}
 }
 
-func TestNewRejectsUnknownService(t *testing.T) {
-	if _, err := New("test-missing", testCloud{name: "test-cloud-any"}, nil); err == nil {
-		t.Fatal("New returned no error for an unknown service")
+func TestNewDBServiceRejectsUnknownService(t *testing.T) {
+	if _, err := NewDBService("test-missing", testCloud{name: "test-cloud-any"}, nil); err == nil {
+		t.Fatal("NewDBService returned no error for an unknown service")
 	}
 }
 
