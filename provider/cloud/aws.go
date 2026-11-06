@@ -1,14 +1,3 @@
-//go:build ignore
-
-// This file is an example for review, not built. It shows AWS as a cloud after
-// the split, as provider/cloud/aws.go.
-//
-// Compared with today:
-//   - LoadDefaultConfig runs once here instead of in provider/aws and
-//     internal/providercfg; services build their clients from Config().
-//   - Check is providercfg.CheckAWS, moved.
-//   - Runner replaces the RDS and Aurora cases of runnerFor.
-//   - harness/aws still loads its own config; sharing this one is open.
 package cloud
 
 import (
@@ -26,6 +15,7 @@ import (
 	"github.com/elenaochkina/dbtest/provider"
 )
 
+// AWS is the AWS cloud, with the config its services share.
 type AWS struct {
 	config awssdk.Config
 }
@@ -43,8 +33,12 @@ func (c *AWS) Name() provider.CloudName { return provider.AWS }
 
 // Check reports whether the .env variables are set and the credentials are valid.
 func (c *AWS) Check(ctx context.Context) provider.Status {
-	if missing := missingVariables(); len(missing) > 0 {
-		return provider.Status{State: provider.StateMisconfigured, Detail: "missing: run source .env (" + strings.Join(missing, ", ") + ")"}
+	if missing := missingAWSVariables(); len(missing) > 0 {
+		count := fmt.Sprintf("%d variables", len(missing))
+		if len(missing) == 1 {
+			count = "1 variable"
+		}
+		return provider.Status{State: provider.StateMisconfigured, Detail: count + " missing: run source .env (" + strings.Join(missing, ", ") + ")"}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -64,9 +58,45 @@ func (c *AWS) Supports(service provider.DBServiceName) bool {
 // Config returns the AWS config the cloud's services build their clients from.
 func (c *AWS) Config() awssdk.Config { return c.config }
 
-// missingVariables, profileFlag and roleFromARN are unchanged from
-// internal/providercfg/aws.go.
+// missingAWSVariables returns the variables from .env that the AWS services and
+// the Fargate runner need and that are not set.
+func missingAWSVariables() []string {
+	var missing []string
+	for _, name := range []string{
+		"AWS_REGION",
+		"AWS_RDS_SECURITY_GROUP_IDS",
+		"AWS_ECS_CLUSTER",
+		"AWS_ECS_SUBNET_IDS",
+		"AWS_ECS_SECURITY_GROUP_IDS",
+		"AWS_ECS_LOG_GROUP",
+	} {
+		if os.Getenv(name) == "" {
+			missing = append(missing, name)
+		}
+	}
+	return missing
+}
+
+// profileFlag returns " --profile <name>" when AWS_PROFILE is set.
+func profileFlag() string {
+	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
+		return " --profile " + profile
+	}
+	return ""
+}
+
+// roleFromARN returns "role <name>" for an assumed-role ARN, otherwise the ARN.
+func roleFromARN(arn string) string {
+	_, rest, found := strings.Cut(arn, ":assumed-role/")
+	if !found {
+		return arn
+	}
+	role, _, _ := strings.Cut(rest, "/")
+	return "role " + role
+}
 
 func init() {
 	Register(provider.AWS, NewAWS)
 }
+
+var _ Cloud = (*AWS)(nil)
