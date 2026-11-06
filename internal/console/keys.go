@@ -3,7 +3,7 @@ package console
 import (
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/elenaochkina/dbtest/internal/providercfg"
+	"github.com/elenaochkina/dbtest/provider"
 )
 
 // handleKey moves the cursor, runs the selected action, retries failed
@@ -28,7 +28,7 @@ func (m model) handleKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.retry()
-		m.aws = providercfg.Status{}
+		m.aws = provider.Status{}
 		return m, checkAWS(m.checkAWS)
 	case "q", "ctrl+c":
 		return m, tea.Quit

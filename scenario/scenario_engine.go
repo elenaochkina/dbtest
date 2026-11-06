@@ -20,7 +20,7 @@ import (
 // Config holds the parameters every step may read. Each step uses only the
 // fields it needs; it is threaded into the RunContext, not consumed directly.
 type Config struct {
-	Provider provider.ProviderName
+	Provider provider.DBServiceName
 	// warehouse
 	Seed       int64
 	Warehouses int

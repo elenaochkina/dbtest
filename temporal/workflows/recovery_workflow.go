@@ -13,7 +13,7 @@ import (
 )
 
 type RecoveryWorkflowConfig struct {
-	Provider    provider.ProviderName
+	Provider    provider.DBServiceName
 	Request     provider.ProvisionRequest
 	Disruption  provider.Disruption
 	Repetitions int
@@ -218,7 +218,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 }
 
 // runnerFor pairs a provider with the place its containers run.
-func runnerFor(p provider.ProviderName) (harness.RunnerName, error) {
+func runnerFor(p provider.DBServiceName) (harness.RunnerName, error) {
 	switch p {
 	case provider.Docker:
 		return harness.Docker, nil

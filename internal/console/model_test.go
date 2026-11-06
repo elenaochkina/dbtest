@@ -12,7 +12,6 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
-	"github.com/elenaochkina/dbtest/internal/providercfg"
 	"github.com/elenaochkina/dbtest/internal/service"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
@@ -29,8 +28,8 @@ func newTestModel() model {
 			{name: "worker", state: service.StateStarting},
 		},
 		retry: func() {},
-		checkAWS: func(context.Context) providercfg.Status {
-			return providercfg.Status{State: providercfg.StateReady, Detail: "role dbtest"}
+		checkAWS: func(context.Context) provider.Status {
+			return provider.Status{State: provider.StateReady, Detail: "role dbtest"}
 		},
 	}
 }
@@ -359,7 +358,7 @@ func TestAWSRowShowsCheckingThenResult(t *testing.T) {
 	if line := current.statusLines()[4]; !strings.HasPrefix(line, "aws ") || !strings.Contains(line, "checking") {
 		t.Fatalf("aws line = %q, want checking", line)
 	}
-	current = send(current, awsStatusMsg{State: providercfg.StateNeedsLogin, Detail: "token expired"})
+	current = send(current, awsStatusMsg{State: provider.StateNeedsLogin, Detail: "token expired"})
 	if line := current.statusLines()[4]; !strings.Contains(line, "needs login") || !strings.HasSuffix(line, " token expired") {
 		t.Fatalf("aws line = %q, want needs login and the detail", line)
 	}
@@ -367,10 +366,10 @@ func TestAWSRowShowsCheckingThenResult(t *testing.T) {
 
 func TestRetryKeyChecksAWSAgain(t *testing.T) {
 	checks := 0
-	current := send(newTestModel(), awsStatusMsg{State: providercfg.StateReady, Detail: "role dbtest"})
-	current.checkAWS = func(context.Context) providercfg.Status {
+	current := send(newTestModel(), awsStatusMsg{State: provider.StateReady, Detail: "role dbtest"})
+	current.checkAWS = func(context.Context) provider.Status {
 		checks++
-		return providercfg.Status{State: providercfg.StateMisconfigured, Detail: "missing AWS_REGION"}
+		return provider.Status{State: provider.StateMisconfigured, Detail: "missing AWS_REGION"}
 	}
 	next, command := current.Update(keyPress("r"))
 	current = next.(model)
@@ -378,7 +377,7 @@ func TestRetryKeyChecksAWSAgain(t *testing.T) {
 		t.Fatalf("aws = %+v, command = %v, want checking and a command", current.aws, command)
 	}
 	current = send(current, command())
-	if checks != 1 || current.aws.State != providercfg.StateMisconfigured {
+	if checks != 1 || current.aws.State != provider.StateMisconfigured {
 		t.Fatalf("checks = %d, aws = %+v, want 1 check and misconfigured", checks, current.aws)
 	}
 }

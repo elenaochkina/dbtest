@@ -12,30 +12,30 @@ import (
 )
 
 type ProvisionInput struct {
-	Provider provider.ProviderName
+	Provider provider.DBServiceName
 	Request  provider.ProvisionRequest
 	Token    string
 	Password string
 }
 
 type WaitForReadyInput struct {
-	Provider provider.ProviderName
+	Provider provider.DBServiceName
 	Cluster  provider.ClusterInfo
 }
 
 type DeprovisionInput struct {
-	Provider  provider.ProviderName
+	Provider  provider.DBServiceName
 	ClusterID string
 }
 
 type DisruptInput struct {
-	Provider   provider.ProviderName
+	Provider   provider.DBServiceName
 	Cluster    provider.ClusterInfo
 	Disruption provider.Disruption
 }
 
 type CheckSupportedInput struct {
-	Provider   provider.ProviderName
+	Provider   provider.DBServiceName
 	Request    provider.ProvisionRequest
 	Disruption provider.Disruption
 }

@@ -26,7 +26,7 @@ type recoveryForm struct {
 // providerChoices lists the providers in the order the form shows them.
 var providerChoices = []struct {
 	label string
-	name  provider.ProviderName
+	name  provider.DBServiceName
 }{
 	{"docker", provider.Docker},
 	{"aws-rds", provider.RDS},
@@ -73,7 +73,7 @@ func (form recoveryForm) options() []string {
 }
 
 // disruptions returns the disruptions the provider supports.
-func disruptions(name provider.ProviderName, highAvailability bool) []string {
+func disruptions(name provider.DBServiceName, highAvailability bool) []string {
 	var supported []string
 	switch name {
 	case provider.Docker, provider.Aurora:
@@ -293,7 +293,7 @@ func (form recoveryForm) summary() []string {
 }
 
 // providerLabel returns the form's label for name.
-func providerLabel(name provider.ProviderName) string {
+func providerLabel(name provider.DBServiceName) string {
 	for _, choice := range providerChoices {
 		if choice.name == name {
 			return choice.label
