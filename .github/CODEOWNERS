@@ -1,0 +1,7 @@
+# Maintainers own the contracts that clouds, database services and runners implement.
+/provider/provider.go               @elenaochkina
+/provider/cloud/cloud.go            @elenaochkina
+/provider/dbservice/dbservice.go    @elenaochkina
+/provider/dbservice/dbservicetest/  @elenaochkina
+/provider/all/                      @elenaochkina
+/harness/harness.go                 @elenaochkina
