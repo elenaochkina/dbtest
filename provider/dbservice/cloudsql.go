@@ -29,8 +29,17 @@ type cloudsqlservice struct {
 	tel     *telemetry.Telemetry
 }
 
-// NewCloudSQLService builds Cloud SQL in the GCP cloud.
-func NewCloudSQLService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+// cloudSQLRegistration registers Cloud SQL; Build returns the service that provisions it.
+type cloudSQLRegistration struct{}
+
+func (cloudSQLRegistration) Name() provider.DBServiceName { return provider.CloudSQL }
+
+func (cloudSQLRegistration) Clouds() []provider.CloudName { return []provider.CloudName{provider.GCP} }
+
+func (cloudSQLRegistration) SupportsHighAvailability() bool { return true }
+
+// Build builds Cloud SQL in the GCP cloud.
+func (cloudSQLRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
 	gcpCloud, ok := c.(*cloud.GCP)
 	if !ok {
 		return nil, fmt.Errorf("cloudsql needs the gcp cloud, got %s", c.Name())
@@ -274,9 +283,9 @@ func (p *cloudsqlservice) Deprovision(ctx context.Context, clusterID string) err
 	return nil
 }
 
-// cloudSQLDisruptions returns restart, and failover on a regional instance.
+// Disruptions returns restart, and failover on a regional instance.
 // Cloud SQL has no ungraceful kill.
-func cloudSQLDisruptions(req provider.ProvisionRequest) []provider.Disruption {
+func (cloudSQLRegistration) Disruptions(req provider.ProvisionRequest) []provider.Disruption {
 	if req.HighAvailability {
 		return []provider.Disruption{provider.Restart, provider.Failover}
 	}
@@ -386,13 +395,7 @@ func hasCode(err error, code int) bool {
 }
 
 func init() {
-	Register(Descriptor{
-		Name:                     provider.CloudSQL,
-		Clouds:                   []provider.CloudName{provider.GCP},
-		SupportsHighAvailability: true,
-		Disruptions:              cloudSQLDisruptions,
-		BuildDBService:           NewCloudSQLService,
-	})
+	Register(cloudSQLRegistration{})
 }
 
 var _ DBService = (*cloudsqlservice)(nil)

@@ -28,8 +28,17 @@ type dockerservice struct {
 	tel    *telemetry.Telemetry
 }
 
-// NewDockerService builds Postgres in Docker on the local cloud.
-func NewDockerService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+// dockerRegistration registers Docker Postgres; Build returns the service that provisions it.
+type dockerRegistration struct{}
+
+func (dockerRegistration) Name() provider.DBServiceName { return provider.Docker }
+
+func (dockerRegistration) Clouds() []provider.CloudName { return []provider.CloudName{provider.Local} }
+
+func (dockerRegistration) SupportsHighAvailability() bool { return false }
+
+// Build builds Postgres in Docker on the local cloud.
+func (dockerRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
 	local, ok := c.(*cloud.Local)
 	if !ok {
 		return nil, fmt.Errorf("docker needs the local cloud, got %s", c.Name())
@@ -216,8 +225,8 @@ func (p *dockerservice) Deprovision(ctx context.Context, clusterID string) error
 	return nil
 }
 
-// dockerDisruptions lists what a container can be put through.
-func dockerDisruptions(provider.ProvisionRequest) []provider.Disruption {
+// Disruptions lists what a container can be put through.
+func (dockerRegistration) Disruptions(provider.ProvisionRequest) []provider.Disruption {
 	return []provider.Disruption{provider.Restart, provider.Crash}
 }
 
@@ -287,13 +296,7 @@ func (p *dockerservice) waitStopped(ctx context.Context, containerID string) err
 }
 
 func init() {
-	Register(Descriptor{
-		Name:                     provider.Docker,
-		Clouds:                   []provider.CloudName{provider.Local},
-		SupportsHighAvailability: false,
-		Disruptions:              dockerDisruptions,
-		BuildDBService:           NewDockerService,
-	})
+	Register(dockerRegistration{})
 }
 
 var _ DBService = (*dockerservice)(nil)

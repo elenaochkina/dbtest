@@ -9,9 +9,9 @@ import (
 )
 
 func TestCloudSQLRegistersInGCP(t *testing.T) {
-	descriptor, ok := Get(provider.CloudSQL)
-	if !ok || !slices.Equal(descriptor.Clouds, []provider.CloudName{provider.GCP}) || !descriptor.SupportsHighAvailability {
-		t.Fatalf("Get(cloudsql) = %+v, %v", descriptor, ok)
+	registration, ok := Get(provider.CloudSQL)
+	if !ok || !slices.Equal(registration.Clouds(), []provider.CloudName{provider.GCP}) || !registration.SupportsHighAvailability() {
+		t.Fatalf("Get(cloudsql) = %+v, %v", registration, ok)
 	}
 	if !cloud.Supports(provider.GCP, provider.CloudSQL) {
 		t.Error("gcp does not support cloudsql")
@@ -19,30 +19,30 @@ func TestCloudSQLRegistersInGCP(t *testing.T) {
 }
 
 func TestCloudSQLDisruptions(t *testing.T) {
-	if got := cloudSQLDisruptions(provider.ProvisionRequest{}); !slices.Equal(got, []provider.Disruption{provider.Restart}) {
+	if got := (cloudSQLRegistration{}).Disruptions(provider.ProvisionRequest{}); !slices.Equal(got, []provider.Disruption{provider.Restart}) {
 		t.Errorf("without a standby: %v", got)
 	}
-	got := cloudSQLDisruptions(provider.ProvisionRequest{HighAvailability: true})
+	got := (cloudSQLRegistration{}).Disruptions(provider.ProvisionRequest{HighAvailability: true})
 	if !slices.Equal(got, []provider.Disruption{provider.Restart, provider.Failover}) {
 		t.Errorf("with a standby: %v", got)
 	}
 }
 
-func TestNewCloudSQLServiceRejectsOtherCloud(t *testing.T) {
-	if _, err := NewCloudSQLService(testCloud{name: provider.AWS}, nil); err == nil {
-		t.Fatal("NewCloudSQLService returned no error for a non-GCP cloud")
+func TestCloudSQLBuildRejectsOtherCloud(t *testing.T) {
+	if _, err := (cloudSQLRegistration{}).Build(testCloud{name: provider.AWS}, nil); err == nil {
+		t.Fatal("Build returned no error for a non-GCP cloud")
 	}
 }
 
-func TestNewCloudSQLServiceNeedsProject(t *testing.T) {
+func TestCloudSQLBuildNeedsProject(t *testing.T) {
 	t.Setenv("GCP_PROJECT", "")
 	t.Setenv("GCP_AUTHORIZED_NETWORKS", "203.0.113.7/32")
 	c, err := cloud.NewGCP()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewCloudSQLService(c, nil); err == nil {
-		t.Fatal("NewCloudSQLService returned no error without GCP_PROJECT")
+	if _, err := (cloudSQLRegistration{}).Build(c, nil); err == nil {
+		t.Fatal("Build returned no error without GCP_PROJECT")
 	}
 }
 

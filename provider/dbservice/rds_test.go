@@ -9,9 +9,9 @@ import (
 )
 
 func TestRDSRegistersInAWS(t *testing.T) {
-	descriptor, ok := Get(provider.RDS)
-	if !ok || !slices.Equal(descriptor.Clouds, []provider.CloudName{provider.AWS}) || !descriptor.SupportsHighAvailability {
-		t.Fatalf("Get(rds) = %+v, %v", descriptor, ok)
+	registration, ok := Get(provider.RDS)
+	if !ok || !slices.Equal(registration.Clouds(), []provider.CloudName{provider.AWS}) || !registration.SupportsHighAvailability() {
+		t.Fatalf("Get(rds) = %+v, %v", registration, ok)
 	}
 	if !cloud.Supports(provider.AWS, provider.RDS) {
 		t.Error("aws does not support rds")
@@ -19,18 +19,18 @@ func TestRDSRegistersInAWS(t *testing.T) {
 }
 
 func TestRDSDisruptions(t *testing.T) {
-	if got := rdsDisruptions(provider.ProvisionRequest{}); !slices.Equal(got, []provider.Disruption{provider.Restart}) {
+	if got := (rdsRegistration{}).Disruptions(provider.ProvisionRequest{}); !slices.Equal(got, []provider.Disruption{provider.Restart}) {
 		t.Errorf("without a standby: %v", got)
 	}
-	got := rdsDisruptions(provider.ProvisionRequest{HighAvailability: true})
+	got := (rdsRegistration{}).Disruptions(provider.ProvisionRequest{HighAvailability: true})
 	if !slices.Equal(got, []provider.Disruption{provider.Restart, provider.Failover}) {
 		t.Errorf("with a standby: %v", got)
 	}
 }
 
-func TestNewRDSServiceRejectsOtherCloud(t *testing.T) {
-	if _, err := NewRDSService(testCloud{name: provider.GCP}, nil); err == nil {
-		t.Fatal("NewRDSService returned no error for a non-AWS cloud")
+func TestRDSBuildRejectsOtherCloud(t *testing.T) {
+	if _, err := (rdsRegistration{}).Build(testCloud{name: provider.GCP}, nil); err == nil {
+		t.Fatal("Build returned no error for a non-AWS cloud")
 	}
 }
 

@@ -31,21 +31,29 @@ func (testService) Disrupt(_ context.Context, cluster provider.ClusterInfo, _ pr
 	return cluster, nil
 }
 
-// register adds a test service that runs in the given clouds and fails over
+// testRegistration is a service that runs in the given clouds and fails over
 // only with a standby.
+type testRegistration struct {
+	name   provider.DBServiceName
+	clouds []provider.CloudName
+}
+
+func (r testRegistration) Name() provider.DBServiceName { return r.name }
+func (r testRegistration) Clouds() []provider.CloudName { return r.clouds }
+func (testRegistration) SupportsHighAvailability() bool { return true }
+func (testRegistration) Disruptions(req provider.ProvisionRequest) []provider.Disruption {
+	if req.HighAvailability {
+		return []provider.Disruption{provider.Restart, provider.Failover}
+	}
+	return []provider.Disruption{provider.Restart}
+}
+func (testRegistration) Build(cloud.Cloud, *telemetry.Telemetry) (DBService, error) {
+	return testService{}, nil
+}
+
+// register adds a testRegistration.
 func register(name provider.DBServiceName, clouds ...provider.CloudName) {
-	Register(Descriptor{
-		Name:                     name,
-		Clouds:                   clouds,
-		SupportsHighAvailability: true,
-		Disruptions: func(req provider.ProvisionRequest) []provider.Disruption {
-			if req.HighAvailability {
-				return []provider.Disruption{provider.Restart, provider.Failover}
-			}
-			return []provider.Disruption{provider.Restart}
-		},
-		BuildDBService: func(cloud.Cloud, *telemetry.Telemetry) (DBService, error) { return testService{}, nil },
-	})
+	Register(testRegistration{name: name, clouds: clouds})
 }
 
 func TestRegisterHostsServiceInItsClouds(t *testing.T) {
@@ -106,9 +114,9 @@ func TestGetAndNames(t *testing.T) {
 	register("test-b", "test-cloud-names")
 	register("test-a", "test-cloud-names")
 
-	descriptor, ok := Get("test-a")
-	if !ok || !descriptor.SupportsHighAvailability {
-		t.Errorf("Get(test-a) = %+v, %v", descriptor, ok)
+	registration, ok := Get("test-a")
+	if !ok || !registration.SupportsHighAvailability() {
+		t.Errorf("Get(test-a) = %+v, %v", registration, ok)
 	}
 	if _, ok := Get("test-missing"); ok {
 		t.Error("Get(test-missing) found a service")

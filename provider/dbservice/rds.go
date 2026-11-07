@@ -27,8 +27,17 @@ type rdsservice struct {
 	tel    *telemetry.Telemetry
 }
 
-// NewRDSService builds RDS in the AWS cloud.
-func NewRDSService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+// rdsRegistration registers RDS; Build returns the service that provisions it.
+type rdsRegistration struct{}
+
+func (rdsRegistration) Name() provider.DBServiceName { return provider.RDS }
+
+func (rdsRegistration) Clouds() []provider.CloudName { return []provider.CloudName{provider.AWS} }
+
+func (rdsRegistration) SupportsHighAvailability() bool { return true }
+
+// Build builds RDS in the AWS cloud.
+func (rdsRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
 	awsCloud, ok := c.(*cloud.AWS)
 	if !ok {
 		return nil, fmt.Errorf("rds needs the aws cloud, got %s", c.Name())
@@ -294,9 +303,9 @@ func (p *rdsservice) Deprovision(ctx context.Context, clusterID string) error {
 	return nil
 }
 
-// rdsDisruptions lists what RDS can apply. There is no ungraceful kill: the API
+// Disruptions lists what RDS can apply. There is no ungraceful kill: the API
 // offers a reboot and, on Multi-AZ, a reboot that fails over.
-func rdsDisruptions(req provider.ProvisionRequest) []provider.Disruption {
+func (rdsRegistration) Disruptions(req provider.ProvisionRequest) []provider.Disruption {
 	if req.HighAvailability {
 		return []provider.Disruption{provider.Restart, provider.Failover}
 	}
@@ -447,13 +456,7 @@ func (p *rdsservice) waitForStatus(ctx context.Context, instanceID string, timeo
 }
 
 func init() {
-	Register(Descriptor{
-		Name:                     provider.RDS,
-		Clouds:                   []provider.CloudName{provider.AWS},
-		SupportsHighAvailability: true,
-		Disruptions:              rdsDisruptions,
-		BuildDBService:           NewRDSService,
-	})
+	Register(rdsRegistration{})
 }
 
 var _ DBService = (*rdsservice)(nil)

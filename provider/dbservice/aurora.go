@@ -27,8 +27,17 @@ type auroraservice struct {
 	tel    *telemetry.Telemetry
 }
 
-// NewAuroraService builds Aurora in the AWS cloud.
-func NewAuroraService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+// auroraRegistration registers Aurora; Build returns the service that provisions it.
+type auroraRegistration struct{}
+
+func (auroraRegistration) Name() provider.DBServiceName { return provider.Aurora }
+
+func (auroraRegistration) Clouds() []provider.CloudName { return []provider.CloudName{provider.AWS} }
+
+func (auroraRegistration) SupportsHighAvailability() bool { return true }
+
+// Build builds Aurora in the AWS cloud.
+func (auroraRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
 	awsCloud, ok := c.(*cloud.AWS)
 	if !ok {
 		return nil, fmt.Errorf("aurora needs the aws cloud, got %s", c.Name())
@@ -318,9 +327,9 @@ func (p *auroraservice) Deprovision(ctx context.Context, clusterID string) error
 	return nil
 }
 
-// auroraDisruptions lists what Aurora can apply. A failover needs a reader to
+// Disruptions lists what Aurora can apply. A failover needs a reader to
 // promote.
-func auroraDisruptions(req provider.ProvisionRequest) []provider.Disruption {
+func (auroraRegistration) Disruptions(req provider.ProvisionRequest) []provider.Disruption {
 	if req.HighAvailability {
 		return []provider.Disruption{provider.Restart, provider.Crash, provider.Failover}
 	}
@@ -530,13 +539,7 @@ func poll(ctx context.Context, timeout, interval time.Duration, check func(conte
 }
 
 func init() {
-	Register(Descriptor{
-		Name:                     provider.Aurora,
-		Clouds:                   []provider.CloudName{provider.AWS},
-		SupportsHighAvailability: true,
-		Disruptions:              auroraDisruptions,
-		BuildDBService:           NewAuroraService,
-	})
+	Register(auroraRegistration{})
 }
 
 var _ DBService = (*auroraservice)(nil)

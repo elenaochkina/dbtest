@@ -73,8 +73,8 @@ func (form recoveryForm) options() []string {
 
 // supportsHighAvailability reports whether the chosen service can run with a standby.
 func (form recoveryForm) supportsHighAvailability() bool {
-	descriptor, ok := dbservice.Get(form.cfg.Provider)
-	return ok && descriptor.SupportsHighAvailability
+	registration, ok := dbservice.Get(form.cfg.Provider)
+	return ok && registration.SupportsHighAvailability()
 }
 
 // show moves to step with an empty input. On a choice step the cursor is on

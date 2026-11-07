@@ -9,9 +9,9 @@ import (
 )
 
 func TestAuroraRegistersInAWS(t *testing.T) {
-	descriptor, ok := Get(provider.Aurora)
-	if !ok || !slices.Equal(descriptor.Clouds, []provider.CloudName{provider.AWS}) || !descriptor.SupportsHighAvailability {
-		t.Fatalf("Get(aurora) = %+v, %v", descriptor, ok)
+	registration, ok := Get(provider.Aurora)
+	if !ok || !slices.Equal(registration.Clouds(), []provider.CloudName{provider.AWS}) || !registration.SupportsHighAvailability() {
+		t.Fatalf("Get(aurora) = %+v, %v", registration, ok)
 	}
 	if !cloud.Supports(provider.AWS, provider.Aurora) {
 		t.Error("aws does not support aurora")
@@ -19,18 +19,18 @@ func TestAuroraRegistersInAWS(t *testing.T) {
 }
 
 func TestAuroraDisruptions(t *testing.T) {
-	if got := auroraDisruptions(provider.ProvisionRequest{}); !slices.Equal(got, []provider.Disruption{provider.Restart, provider.Crash}) {
+	if got := (auroraRegistration{}).Disruptions(provider.ProvisionRequest{}); !slices.Equal(got, []provider.Disruption{provider.Restart, provider.Crash}) {
 		t.Errorf("without a reader: %v", got)
 	}
-	got := auroraDisruptions(provider.ProvisionRequest{HighAvailability: true})
+	got := (auroraRegistration{}).Disruptions(provider.ProvisionRequest{HighAvailability: true})
 	if !slices.Equal(got, []provider.Disruption{provider.Restart, provider.Crash, provider.Failover}) {
 		t.Errorf("with a reader: %v", got)
 	}
 }
 
-func TestNewAuroraServiceRejectsOtherCloud(t *testing.T) {
-	if _, err := NewAuroraService(testCloud{name: provider.GCP}, nil); err == nil {
-		t.Fatal("NewAuroraService returned no error for a non-AWS cloud")
+func TestAuroraBuildRejectsOtherCloud(t *testing.T) {
+	if _, err := (auroraRegistration{}).Build(testCloud{name: provider.GCP}, nil); err == nil {
+		t.Fatal("Build returned no error for a non-AWS cloud")
 	}
 }
 
