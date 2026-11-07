@@ -10,14 +10,15 @@ import (
 	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
-	_ "github.com/elenaochkina/dbtest/provider/aws"
-	_ "github.com/elenaochkina/dbtest/provider/docker"
+	"github.com/elenaochkina/dbtest/provider/cloud"
+	"github.com/elenaochkina/dbtest/provider/dbservice"
 	"github.com/elenaochkina/dbtest/scenario"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 func main() {
+	cloudName := flag.String("cloud", "local", "cloud name (local, aws)")
 	providerName := flag.String("provider", "docker", "provider name (docker)")
 	scenarioName := flag.String("scenario", "all", "scenario to run (warehouse, benchmark, all)")
 	seed := flag.Int64("seed", 42, "random seed for warehouse data")
@@ -54,8 +55,12 @@ func main() {
 	}
 	defer statePool.Close()
 
-	//return a provider for a requested name; builds a provider object
-	p, err := provider.Run(provider.DBServiceName(*providerName), tel)
+	c, err := cloud.NewCloudProvider(provider.CloudName(*cloudName))
+	if err != nil {
+		slog.Error("cloud init failed", "error", err)
+		os.Exit(1)
+	}
+	p, err := dbservice.NewDBService(provider.DBServiceName(*providerName), c, tel)
 	if err != nil {
 		slog.Error("provider init failed", "error", err)
 		os.Exit(1)

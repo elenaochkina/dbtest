@@ -1,5 +1,4 @@
-// Package providercfg checks whether a cloud is ready to use.
-package providercfg
+package cloud
 
 import (
 	"context"
@@ -8,16 +7,32 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 )
 
-// CheckAWS reports whether the RDS and Aurora providers can run: the .env
-// variables are set and the credentials are valid.
-func CheckAWS(ctx context.Context) provider.Status {
+// AWS is the AWS cloud, with the config its services share.
+type AWS struct {
+	config awssdk.Config
+}
+
+// NewAWS loads the AWS config from the environment and the shared config files.
+func NewAWS() (Cloud, error) {
+	config, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("load aws config: %w", err)
+	}
+	return &AWS{config: config}, nil
+}
+
+func (c *AWS) Name() provider.CloudName { return provider.AWS }
+
+// Check reports whether the .env variables are set and the credentials are valid.
+func (c *AWS) Check(ctx context.Context) provider.Status {
 	if missing := missingAWSVariables(); len(missing) > 0 {
 		count := fmt.Sprintf("%d variables", len(missing))
 		if len(missing) == 1 {
@@ -27,19 +42,24 @@ func CheckAWS(ctx context.Context) provider.Status {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
-	if err != nil {
-		return provider.Status{State: provider.StateMisconfigured, Detail: err.Error()}
-	}
-	identity, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	identity, err := sts.NewFromConfig(c.config).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return provider.Status{State: provider.StateNeedsLogin, Detail: "run aws sso login" + profileFlag()}
 	}
-	return provider.Status{State: provider.StateReady, Detail: roleFromARN(aws.ToString(identity.Arn))}
+	return provider.Status{State: provider.StateReady, Detail: roleFromARN(awssdk.ToString(identity.Arn))}
 }
 
-// missingAWSVariables returns the variables from .env that the RDS and Aurora
-// providers and the Fargate runner need and that are not set.
+func (c *AWS) Runner() harness.RunnerName { return harness.Fargate }
+
+func (c *AWS) Supports(service provider.DBServiceName) bool {
+	return Supports(provider.AWS, service)
+}
+
+// Config returns the AWS config the cloud's services build their clients from.
+func (c *AWS) Config() awssdk.Config { return c.config }
+
+// missingAWSVariables returns the variables from .env that the AWS services and
+// the Fargate runner need and that are not set.
 func missingAWSVariables() []string {
 	var missing []string
 	for _, name := range []string{
@@ -74,3 +94,9 @@ func roleFromARN(arn string) string {
 	role, _, _ := strings.Cut(rest, "/")
 	return "role " + role
 }
+
+func init() {
+	Register(provider.AWS, NewAWS)
+}
+
+var _ Cloud = (*AWS)(nil)

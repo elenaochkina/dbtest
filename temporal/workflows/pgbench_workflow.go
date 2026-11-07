@@ -12,6 +12,7 @@ import (
 // PgBenchWorkflowConfig is the input to PgBenchWorkflow.
 // It holds provisioning (Provider, Request) and the workload params.
 type PgBenchWorkflowConfig struct {
+	Cloud    provider.CloudName
 	Provider provider.DBServiceName
 	Request  provider.ProvisionRequest // cluster resource spec the caller declares
 	Workload workload.Config
@@ -64,6 +65,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
 		if derr := workflow.ExecuteActivity(dctx, prov.Deprovision, activities.DeprovisionInput{
+			Cloud:     cfg.Cloud,
 			Provider:  cfg.Provider,
 			ClusterID: clusterID,
 		}).Get(dctx, nil); derr != nil && err == nil {
@@ -73,6 +75,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 
 	var cluster provider.ClusterInfo
 	if err = workflow.ExecuteActivity(ctx, prov.Provision, activities.ProvisionInput{
+		Cloud:    cfg.Cloud,
 		Provider: cfg.Provider,
 		Request:  cfg.Request,
 		Token:    clusterID,
@@ -82,6 +85,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 	}
 
 	if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
+		Cloud:    cfg.Cloud,
 		Provider: cfg.Provider,
 		Cluster:  cluster,
 	}).Get(ctx, nil); err != nil {

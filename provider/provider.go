@@ -1,11 +1,7 @@
 package provider
 
 import (
-	"context"
 	"fmt"
-	"sort"
-
-	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 // PGTarget is provider-agnostic connection info for a Postgres instance.
@@ -43,19 +39,6 @@ type ProvisionRequest struct {
 	HighAvailability bool
 }
 
-type Provider interface {
-	Provision(ctx context.Context, req ProvisionRequest, token, password string) (ClusterInfo, error)
-	WaitForReady(ctx context.Context, cluster ClusterInfo) error
-	Deprovision(ctx context.Context, clusterID string) error
-
-	// Supports reports whether req could be disrupted this way.
-	Supports(req ProvisionRequest, disruption Disruption) bool
-
-	// Disrupt applies the disruption and returns once the cluster has settled.
-	// The returned ClusterInfo replaces the caller's copy.
-	Disrupt(ctx context.Context, cluster ClusterInfo, disruption Disruption) (ClusterInfo, error)
-}
-
 // DBServiceName identifies a database service.
 type DBServiceName string
 
@@ -87,31 +70,4 @@ const (
 type Status struct {
 	State  State
 	Detail string
-}
-
-// registry maps provider names to constructor functions.
-// Populated by each provider package via init() + Register().
-var registry = map[DBServiceName]func(*telemetry.Telemetry) (Provider, error){}
-
-// Call this from init() in each provider package.
-func Register(name DBServiceName, fn func(*telemetry.Telemetry) (Provider, error)) {
-	registry[name] = fn
-}
-
-// Run returns a Provider for the given name.
-func Run(name DBServiceName, tel *telemetry.Telemetry) (Provider, error) {
-	fn, ok := registry[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown provider %q; registered: %v", name, registeredNames())
-	}
-	return fn(tel)
-}
-
-func registeredNames() []string {
-	names := make([]string, 0, len(registry))
-	for k := range registry {
-		names = append(names, string(k))
-	}
-	sort.Strings(names)
-	return names
 }

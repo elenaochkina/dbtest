@@ -25,11 +25,11 @@ type DBService interface {
 
 // Descriptor describes a database service without building it.
 type Descriptor struct {
-	Name             provider.DBServiceName
-	Clouds           []provider.CloudName
-	HighAvailability bool
-	Disruptions      func(provider.ProvisionRequest) []provider.Disruption
-	BuildDBService   func(cloud.Cloud, *telemetry.Telemetry) (DBService, error)
+	Name                     provider.DBServiceName
+	Clouds                   []provider.CloudName
+	SupportsHighAvailability bool
+	Disruptions              func(provider.ProvisionRequest) []provider.Disruption
+	BuildDBService           func(cloud.Cloud, *telemetry.Telemetry) (DBService, error)
 }
 
 var registry = map[provider.DBServiceName]Descriptor{}

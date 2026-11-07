@@ -1,4 +1,4 @@
-package docker
+package dbservice
 
 import (
 	"context"
@@ -16,34 +16,34 @@ import (
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5"
 )
 
-type dockerProvider struct {
+// dockerservice runs Postgres in a local Docker container.
+type dockerservice struct {
 	client *dockerclient.Client
 	image  string
 	tel    *telemetry.Telemetry
 }
 
-// New creates a Docker provider.
-func New(tel *telemetry.Telemetry) (*dockerProvider, error) {
+// NewDockerService builds Postgres in Docker on the local cloud.
+func NewDockerService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+	local, ok := c.(*cloud.Local)
+	if !ok {
+		return nil, fmt.Errorf("docker needs the local cloud, got %s", c.Name())
+	}
 	img := os.Getenv("DOCKER_PG_IMAGE")
 	if img == "" {
 		img = "postgres:16"
 	}
-
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, fmt.Errorf("docker client: %w", err)
-	}
-
-	return &dockerProvider{client: client, image: img, tel: tel}, nil
+	return &dockerservice{client: local.Client(), image: img, tel: tel}, nil
 }
 
 // The password parameter is ignored by Docker — it is fixed at "test". The
 // token is used as the container name for idempotency
-func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRequest, token, _ string) (provider.ClusterInfo, error) {
+func (p *dockerservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, _ string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 {
@@ -76,7 +76,7 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 			Resources:       dockerResources(req),
 		},
 		&network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{networkName: {}},
+			EndpointsConfig: map[string]*network.EndpointSettings{dockerNetwork: {}},
 		},
 		nil, name)
 
@@ -127,22 +127,22 @@ func (p *dockerProvider) Provision(ctx context.Context, req provider.ProvisionRe
 	}, nil
 }
 
-// networkName is a single long-lived network shared by every run.
-const networkName = "dbtest-net"
+// dockerNetwork is a single long-lived network shared by every run.
+const dockerNetwork = "dbtest-net"
 
 // ensureNetwork creates the shared network if it does not already exist.
-func (p *dockerProvider) ensureNetwork(ctx context.Context) error {
-	_, err := p.client.NetworkInspect(ctx, networkName, network.InspectOptions{})
+func (p *dockerservice) ensureNetwork(ctx context.Context) error {
+	_, err := p.client.NetworkInspect(ctx, dockerNetwork, network.InspectOptions{})
 	if err == nil {
 		return nil
 	}
 	if !errdefs.IsNotFound(err) {
-		return fmt.Errorf("inspect network %q: %w", networkName, err)
+		return fmt.Errorf("inspect network %q: %w", dockerNetwork, err)
 	}
-	if _, err := p.client.NetworkCreate(ctx, networkName, network.CreateOptions{}); err != nil {
+	if _, err := p.client.NetworkCreate(ctx, dockerNetwork, network.CreateOptions{}); err != nil {
 		// A concurrent run may have won the race; that is success, not failure.
 		if !errdefs.IsConflict(err) {
-			return fmt.Errorf("create network %q: %w", networkName, err)
+			return fmt.Errorf("create network %q: %w", dockerNetwork, err)
 		}
 	}
 	return nil
@@ -161,7 +161,7 @@ func dockerResources(req provider.ProvisionRequest) container.Resources {
 	return res
 }
 
-func (p *dockerProvider) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
+func (p *dockerservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
@@ -184,7 +184,7 @@ func (p *dockerProvider) WaitForReady(ctx context.Context, cluster provider.Clus
 	return fmt.Errorf("cluster %s did not become ready within 30s", cluster.ID)
 }
 
-func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) error {
+func (p *dockerservice) Deprovision(ctx context.Context, clusterID string) error {
 	var lastErr error
 	for attempt := range 3 {
 		lastErr = p.deprovision(ctx, clusterID)
@@ -216,15 +216,15 @@ func (p *dockerProvider) Deprovision(ctx context.Context, clusterID string) erro
 	return nil
 }
 
-// Supports reports which disruptions a container can be put through.
-func (p *dockerProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
-	return disruption == provider.Restart || disruption == provider.Crash
+// dockerDisruptions lists what a container can be put through.
+func dockerDisruptions(provider.ProvisionRequest) []provider.Disruption {
+	return []provider.Disruption{provider.Restart, provider.Crash}
 }
 
 // Disrupt stops the container and starts it again, gracefully for Restart and
 // with a SIGKILL for Crash, so that Crash comes back through WAL recovery rather
 // than a clean shutdown.
-func (p *dockerProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
+func (p *dockerservice) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	switch disruption {
@@ -271,7 +271,7 @@ func (p *dockerProvider) Disrupt(ctx context.Context, cluster provider.ClusterIn
 	}, nil
 }
 
-func (p *dockerProvider) waitStopped(ctx context.Context, containerID string) error {
+func (p *dockerservice) waitStopped(ctx context.Context, containerID string) error {
 	statusCh, errCh := p.client.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
 	select {
 	case err := <-errCh:
@@ -286,21 +286,21 @@ func (p *dockerProvider) waitStopped(ctx context.Context, containerID string) er
 	}
 }
 
-// uses for init() as a parameter
-func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
-	return New(tel)
-}
-
 func init() {
-	provider.Register(provider.Docker, newProvider)
+	Register(Descriptor{
+		Name:                     provider.Docker,
+		Clouds:                   []provider.CloudName{provider.Local},
+		SupportsHighAvailability: false,
+		Disruptions:              dockerDisruptions,
+		BuildDBService:           NewDockerService,
+	})
 }
 
-// Compile-time assertion that dockerProvider satisfies the core Provider contract.
-var _ provider.Provider = (*dockerProvider)(nil)
+var _ DBService = (*dockerservice)(nil)
 
 // hostPort inspects the container and returns the host port mapped to Postgres
 // 5432/tcp.
-func (p *dockerProvider) hostPort(ctx context.Context, containerID string) (string, error) {
+func (p *dockerservice) hostPort(ctx context.Context, containerID string) (string, error) {
 	info, err := p.client.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return "", fmt.Errorf("container inspect: %w", err)
@@ -336,7 +336,7 @@ func targetForContainer(name string) provider.PGTarget {
 }
 
 // deprovision performs a single stop+remove attempt.
-func (p *dockerProvider) deprovision(ctx context.Context, clusterID string) error {
+func (p *dockerservice) deprovision(ctx context.Context, clusterID string) error {
 	timeout := 5
 	if err := p.client.ContainerStop(ctx, clusterID, container.StopOptions{Timeout: &timeout}); err != nil {
 		if !errdefs.IsNotFound(err) {

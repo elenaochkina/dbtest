@@ -6,9 +6,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/elenaochkina/dbtest/internal/logbus"
-	"github.com/elenaochkina/dbtest/internal/providercfg"
 	"github.com/elenaochkina/dbtest/internal/service"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
@@ -23,13 +23,17 @@ type model struct {
 	form          recoveryForm
 	log           []logbus.Line
 	collectLogs   func() []logbus.Line
-	aws           provider.Status
-	checkAWS      func(context.Context) provider.Status
+	clouds        []cloudStatus
+	checkCloud    func(context.Context, provider.CloudName) provider.Status
 }
 
 // New returns the console model, showing the service launcher's services and
 // the lines logged to logs.
 func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
+	var clouds []cloudStatus
+	for _, name := range cloud.Names() {
+		clouds = append(clouds, cloudStatus{name: name})
+	}
 	return model{
 		services: []serviceStatus{
 			{name: "state db", state: service.StateStarting},
@@ -41,12 +45,13 @@ func New(serviceLauncher *service.Launcher, logs *logbus.Bus) tea.Model {
 		retry:         serviceLauncher.RetryFailed,
 		startRecovery: serviceLauncher.StartRecovery,
 		collectLogs:   logs.Collect,
-		checkAWS:      providercfg.CheckAWS,
+		clouds:        clouds,
+		checkCloud:    checkCloud,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(waitForEvent(m.events), collectLogs(m.collectLogs), checkAWS(m.checkAWS))
+	return tea.Batch(waitForEvent(m.events), collectLogs(m.collectLogs), checkClouds(m.clouds, m.checkCloud))
 }
 
 func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
@@ -60,8 +65,8 @@ func (m model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case logBatchMsg:
 		m.appendLog(message)
 		return m, collectLogs(m.collectLogs)
-	case awsStatusMsg:
-		m.setAWSStatus(message)
+	case cloudStatusMsg:
+		m.setCloudStatus(message)
 	case tea.KeyPressMsg:
 		return m.handleKey(message)
 	}
