@@ -3,6 +3,8 @@ package providercfg
 import (
 	"context"
 	"testing"
+
+	"github.com/elenaochkina/dbtest/provider"
 )
 
 func TestCheckAWSReportsMissingVariables(t *testing.T) {
@@ -13,7 +15,7 @@ func TestCheckAWSReportsMissingVariables(t *testing.T) {
 	t.Setenv("AWS_ECS_LOG_GROUP", "")
 
 	status := CheckAWS(context.Background())
-	want := Status{State: StateMisconfigured, Detail: "2 variables missing: run source .env (AWS_ECS_CLUSTER, AWS_ECS_LOG_GROUP)"}
+	want := provider.Status{State: provider.StateMisconfigured, Detail: "2 variables missing: run source .env (AWS_ECS_CLUSTER, AWS_ECS_LOG_GROUP)"}
 	if status != want {
 		t.Fatalf("status = %+v, want %+v", status, want)
 	}

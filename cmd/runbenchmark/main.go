@@ -55,7 +55,7 @@ func main() {
 	defer statePool.Close()
 
 	//return a provider for a requested name; builds a provider object
-	p, err := provider.Run(provider.ProviderName(*providerName), tel)
+	p, err := provider.Run(provider.DBServiceName(*providerName), tel)
 	if err != nil {
 		slog.Error("provider init failed", "error", err)
 		os.Exit(1)
@@ -63,7 +63,7 @@ func main() {
 
 	rc := &scenario.RunContext{
 		Cfg: scenario.Config{
-			Provider:    provider.ProviderName(*providerName),
+			Provider:    provider.DBServiceName(*providerName),
 			Seed:        *seed,
 			Warehouses:  *warehouses,
 			ScaleFactor: *scaleFactor,

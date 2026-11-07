@@ -12,7 +12,7 @@ import (
 // PgBenchWorkflowConfig is the input to PgBenchWorkflow.
 // It holds provisioning (Provider, Request) and the workload params.
 type PgBenchWorkflowConfig struct {
-	Provider provider.ProviderName
+	Provider provider.DBServiceName
 	Request  provider.ProvisionRequest // cluster resource spec the caller declares
 	Workload workload.Config
 }

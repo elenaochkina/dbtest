@@ -19,13 +19,13 @@ import (
 type StartRunInput struct {
 	Scenario string
 	Seed     int64
-	Provider provider.ProviderName
+	Provider provider.DBServiceName
 }
 
 // SaveDowntimeInput persists what the prober measured, one row per disruption.
 type SaveDowntimeInput struct {
 	RunID      uuid.UUID
-	Provider   provider.ProviderName
+	Provider   provider.DBServiceName
 	Disruption provider.Disruption
 	Result     probe.Result
 	// DisruptedAt is when each disruption was applied, in order.

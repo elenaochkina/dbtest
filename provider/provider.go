@@ -29,10 +29,10 @@ func (t PGTarget) URL(password string) string {
 
 // ClusterInfo is returned by Provision and used to connect and deprovision.
 type ClusterInfo struct {
-	ID       string   // provider-specific identifier (e.g. Docker container ID, RDS instance ID)
+	ID       string
 	Target   PGTarget // how the worker reaches the database
 	Internal PGTarget // a sibling container reaches the same database.
-	Password string   // master password; rendered into a DSN at connect time, never persisted
+	Password string   // rendered into a DSN at connect time, never persisted
 }
 
 type ProvisionRequest struct {
@@ -43,45 +43,63 @@ type ProvisionRequest struct {
 	HighAvailability bool
 }
 
-// Provider is the interface every database provider must satisfy.
-
 type Provider interface {
 	Provision(ctx context.Context, req ProvisionRequest, token, password string) (ClusterInfo, error)
 	WaitForReady(ctx context.Context, cluster ClusterInfo) error
 	Deprovision(ctx context.Context, clusterID string) error
 
-	// Supports reports whether req could be disrupted this way. It takes the
-	// request rather than a cluster so the caller can ask before provisioning.
+	// Supports reports whether req could be disrupted this way.
 	Supports(req ProvisionRequest, disruption Disruption) bool
 
 	// Disrupt applies the disruption and returns once the cluster has settled.
 	// The returned ClusterInfo replaces the caller's copy.
-	//
-	// Not safe to retry: a second call is a second disruption, which a prober
-	// records as a real outage.
 	Disrupt(ctx context.Context, cluster ClusterInfo, disruption Disruption) (ClusterInfo, error)
 }
 
-// ProviderName is the typed identifier for a provider implementation.
-type ProviderName string
+// DBServiceName identifies a database service.
+type DBServiceName string
 
 const (
-	Docker ProviderName = "docker"
-	RDS    ProviderName = "rds"
-	Aurora ProviderName = "aurora"
+	Docker DBServiceName = "docker"
+	RDS    DBServiceName = "rds"
+	Aurora DBServiceName = "aurora"
 )
+
+// CloudName identifies a cloud.
+type CloudName string
+
+const (
+	Local CloudName = "local"
+	AWS   CloudName = "aws"
+	GCP   CloudName = "gcp"
+)
+
+// State is whether a cloud can be used.
+type State string
+
+const (
+	StateReady         State = "ready"
+	StateNeedsLogin    State = "needs login"
+	StateMisconfigured State = "misconfigured"
+)
+
+// Status is a cloud's state and a line explaining it.
+type Status struct {
+	State  State
+	Detail string
+}
 
 // registry maps provider names to constructor functions.
 // Populated by each provider package via init() + Register().
-var registry = map[ProviderName]func(*telemetry.Telemetry) (Provider, error){}
+var registry = map[DBServiceName]func(*telemetry.Telemetry) (Provider, error){}
 
 // Call this from init() in each provider package.
-func Register(name ProviderName, fn func(*telemetry.Telemetry) (Provider, error)) {
+func Register(name DBServiceName, fn func(*telemetry.Telemetry) (Provider, error)) {
 	registry[name] = fn
 }
 
 // Run returns a Provider for the given name.
-func Run(name ProviderName, tel *telemetry.Telemetry) (Provider, error) {
+func Run(name DBServiceName, tel *telemetry.Telemetry) (Provider, error) {
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown provider %q; registered: %v", name, registeredNames())
