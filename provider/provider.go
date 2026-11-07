@@ -43,9 +43,10 @@ type ProvisionRequest struct {
 type DBServiceName string
 
 const (
-	Docker DBServiceName = "docker"
-	RDS    DBServiceName = "rds"
-	Aurora DBServiceName = "aurora"
+	Docker   DBServiceName = "docker"
+	RDS      DBServiceName = "rds"
+	Aurora   DBServiceName = "aurora"
+	CloudSQL DBServiceName = "cloudsql"
 )
 
 // CloudName identifies a cloud.

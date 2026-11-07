@@ -50,5 +50,7 @@ output "worker_env" {
     export AWS_ECS_SUBNET_IDS=${join(",", data.aws_subnets.default.ids)}
     export AWS_ECS_SECURITY_GROUP_IDS=${aws_security_group.task.id}
     export AWS_ECS_LOG_GROUP=${aws_cloudwatch_log_group.tasks.name}
+    export AWS_ECS_PROBE_TASK_DEFINITION=${aws_ecs_task_definition.probe.family}
+    export AWS_ECS_BENCH_TASK_DEFINITION=${aws_ecs_task_definition.bench.family}
   EOT
 }

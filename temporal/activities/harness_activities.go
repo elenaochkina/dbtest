@@ -1,7 +1,6 @@
 package activities
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -24,7 +23,8 @@ type RunnerInput struct {
 
 // ProbeInput describes the prober container to start.
 type ProbeInput struct {
-	Runner harness.RunnerName // which backend runs it
+	Cloud  provider.CloudName
+	Runner harness.RunnerName // which of the cloud's runners starts it
 	Image  string
 	Name   string
 	// DSN addresses the database as a sibling container sees it, which is not the
@@ -44,6 +44,7 @@ type ProbeReadyInput struct {
 
 // BenchContainerInput describes the bench container to run.
 type BenchContainerInput struct {
+	Cloud  provider.CloudName
 	Runner harness.RunnerName
 	Image  string
 	Name   string
@@ -58,6 +59,7 @@ type BenchContainerInput struct {
 // ContainerInput is the input to a Stop activity.
 // The workflow builds it from the handle Run returned.
 type ContainerInput struct {
+	Cloud  provider.CloudName
 	Runner harness.RunnerName
 	Handle harness.Handle
 }
@@ -72,22 +74,42 @@ func NewHarnessActivities(tel *telemetry.Telemetry) *HarnessActivities {
 	return &HarnessActivities{tel: tel}
 }
 
-// ResolveRunner builds the cloud and returns the runner that starts containers in it.
-func (a *HarnessActivities) ResolveRunner(ctx context.Context, input RunnerInput) (harness.RunnerName, error) {
+// ResolvedRunner is the runner that starts a run's containers and the images it starts.
+type ResolvedRunner struct {
+	Name   harness.RunnerName
+	Images harness.Images
+}
+
+// ResolveRunner builds the cloud and returns its default runner and that runner's images.
+func (a *HarnessActivities) ResolveRunner(ctx context.Context, input RunnerInput) (ResolvedRunner, error) {
 	c, err := cloud.NewCloudProvider(input.Cloud)
 	if err != nil {
-		return "", temporal.NewNonRetryableApplicationError(err.Error(), "UnknownCloud", err)
+		return ResolvedRunner{}, temporal.NewNonRetryableApplicationError(err.Error(), "UnknownCloud", err)
 	}
-	return c.Runner(), nil
+	name := c.Runners()[0]
+	return ResolvedRunner{Name: name, Images: c.Images(name)}, nil
+}
+
+// runner builds the named runner in the named cloud.
+func (a *HarnessActivities) runner(cloudName provider.CloudName, name harness.RunnerName) (harness.Runner, error) {
+	c, err := cloud.NewCloudProvider(cloudName)
+	if err != nil {
+		return nil, fmt.Errorf("cloud %q: %w", cloudName, err)
+	}
+	r, err := c.NewRunner(name, a.tel)
+	if err != nil {
+		return nil, fmt.Errorf("runner %q: %w", name, err)
+	}
+	return r, nil
 }
 
 // StartProbe launches the prober and returns once it is running.
 // The prober polls until it is stopped, so the workflow holds the handle across
 // the disruptions.
 func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (harness.Handle, error) {
-	r, err := harness.NewRunner(input.Runner, a.tel)
+	r, err := a.runner(input.Cloud, input.Runner)
 	if err != nil {
-		return harness.Handle{}, fmt.Errorf("runner %q: %w", input.Runner, err)
+		return harness.Handle{}, err
 	}
 
 	h, err := r.Run(ctx, probeSpec(input))
@@ -107,9 +129,9 @@ func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (h
 //
 // Not safe to retry: stopping discards the container.
 func (a *HarnessActivities) StopProbe(ctx context.Context, input ContainerInput) (probe.Result, error) {
-	r, err := harness.NewRunner(input.Runner, a.tel)
+	r, err := a.runner(input.Cloud, input.Runner)
 	if err != nil {
-		return probe.Result{}, fmt.Errorf("runner %q: %w", input.Runner, err)
+		return probe.Result{}, err
 	}
 
 	// The prober prints its result before exiting, so parse before judging the error.
@@ -119,7 +141,7 @@ func (a *HarnessActivities) StopProbe(ctx context.Context, input ContainerInput)
 		if stopErr != nil {
 			return probe.Result{}, fmt.Errorf("stop probe: %w", stopErr)
 		}
-		return probe.Result{}, fmt.Errorf("%w: %s", parseErr, tailLines(out))
+		return probe.Result{}, fmt.Errorf("%w: %s", parseErr, harness.Tail(out))
 	}
 	if stopErr != nil && a.tel != nil {
 		a.tel.Logger.Warn("prober exited badly but produced a result",
@@ -141,9 +163,9 @@ func (a *HarnessActivities) StopProbe(ctx context.Context, input ContainerInput)
 // InitializeBenchContainer runs bench's setup phase and waits for it to finish.
 // The output is discarded: a failed seed arrives as a non-zero exit.
 func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input BenchContainerInput) error {
-	r, err := harness.NewRunner(input.Runner, a.tel)
+	r, err := a.runner(input.Cloud, input.Runner)
 	if err != nil {
-		return fmt.Errorf("runner %q: %w", input.Runner, err)
+		return err
 	}
 
 	h, err := r.Run(ctx, benchSpec(input))
@@ -169,7 +191,7 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 		a.tel.Logger.Info("database seeded",
 			slog.String("image", input.Image),
 			slog.Int("scale", input.Scale),
-			slog.String("output", tailLines(out)),
+			slog.String("output", harness.Tail(out)),
 		)
 	}
 	return nil
@@ -254,13 +276,4 @@ func benchSpec(in BenchContainerInput) harness.Spec {
 		// Seeding ends on its own, so Stop waits for it.
 		SelfExits: true,
 	}
-}
-
-// tailLines returns the last few lines of container output, for an error message.
-func tailLines(out []byte) string {
-	lines := bytes.Split(bytes.TrimSpace(out), []byte("\n"))
-	if len(lines) > 5 {
-		lines = lines[len(lines)-5:]
-	}
-	return string(bytes.Join(lines, []byte("\n")))
 }

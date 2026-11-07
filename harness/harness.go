@@ -5,10 +5,6 @@ package harness
 import (
 	"bytes"
 	"context"
-	"fmt"
-	"sort"
-
-	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 type Spec struct {
@@ -43,7 +39,14 @@ type Runner interface {
 	Stop(ctx context.Context, h Handle) ([]byte, error)
 }
 
-// RunnerName is the typed identifier for a Runner implementation.
+// Images names what a runner starts for the probe and bench containers: image
+// tags for Docker, task definitions for Fargate.
+type Images struct {
+	Probe string
+	Bench string
+}
+
+// RunnerName names a Runner implementation. A cloud lists the ones it can build.
 type RunnerName string
 
 const (
@@ -51,32 +54,8 @@ const (
 	Fargate RunnerName = "fargate"
 )
 
-var registry = map[RunnerName]func(*telemetry.Telemetry) (Runner, error){}
-
-func Register(name RunnerName, fn func(*telemetry.Telemetry) (Runner, error)) {
-	registry[name] = fn
-}
-
-// NewRunner returns a Runner for the given name.
-func NewRunner(name RunnerName, tel *telemetry.Telemetry) (Runner, error) {
-	fn, ok := registry[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown runner %q; registered: %v", name, registeredNames())
-	}
-	return fn(tel)
-}
-
-func registeredNames() []string {
-	names := make([]string, 0, len(registry))
-	for k := range registry {
-		names = append(names, string(k))
-	}
-	sort.Strings(names)
-	return names
-}
-
-// tail returns the last few lines, for an error message.
-func tail(out []byte) string {
+// Tail returns the last few lines of container output, for an error message.
+func Tail(out []byte) string {
 	lines := bytes.Split(bytes.TrimSpace(out), []byte("\n"))
 	if len(lines) > 5 {
 		lines = lines[len(lines)-5:]

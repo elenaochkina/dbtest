@@ -2,6 +2,7 @@ package dbservice
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
@@ -17,8 +18,12 @@ func (c testCloud) Name() provider.CloudName { return c.name }
 func (c testCloud) Check(context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady}
 }
-func (c testCloud) Runner() harness.RunnerName             { return harness.Docker }
-func (c testCloud) Supports(s provider.DBServiceName) bool { return cloud.Supports(c.name, s) }
+func (c testCloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
+func (c testCloud) NewRunner(harness.RunnerName, *telemetry.Telemetry) (harness.Runner, error) {
+	return nil, errors.New("test cloud runs no containers")
+}
+func (c testCloud) Images(harness.RunnerName) harness.Images { return harness.Images{} }
+func (c testCloud) Supports(s provider.DBServiceName) bool   { return cloud.Supports(c.name, s) }
 
 type testService struct{}
 
@@ -31,33 +36,41 @@ func (testService) Disrupt(_ context.Context, cluster provider.ClusterInfo, _ pr
 	return cluster, nil
 }
 
-// register adds a test service that runs in the given clouds and fails over
+// testRegistration is a service that runs in the given clouds and fails over
 // only with a standby.
-func register(name provider.DBServiceName, clouds ...provider.CloudName) {
-	Register(Descriptor{
-		Name:                     name,
-		Clouds:                   clouds,
-		SupportsHighAvailability: true,
-		Disruptions: func(req provider.ProvisionRequest) []provider.Disruption {
-			if req.HighAvailability {
-				return []provider.Disruption{provider.Restart, provider.Failover}
-			}
-			return []provider.Disruption{provider.Restart}
-		},
-		BuildDBService: func(cloud.Cloud, *telemetry.Telemetry) (DBService, error) { return testService{}, nil },
-	})
+type testRegistration struct {
+	name   provider.DBServiceName
+	clouds []provider.CloudName
 }
 
-func TestRegisterHostsServiceInItsClouds(t *testing.T) {
-	register("test-hosted", "test-cloud-a", "test-cloud-b")
+func (r testRegistration) Name() provider.DBServiceName { return r.name }
+func (r testRegistration) Clouds() []provider.CloudName { return r.clouds }
+func (testRegistration) SupportsHighAvailability() bool { return true }
+func (testRegistration) Disruptions(req provider.ProvisionRequest) []provider.Disruption {
+	if req.HighAvailability {
+		return []provider.Disruption{provider.Restart, provider.Failover}
+	}
+	return []provider.Disruption{provider.Restart}
+}
+func (testRegistration) Build(cloud.Cloud, *telemetry.Telemetry) (DBService, error) {
+	return testService{}, nil
+}
+
+// register adds a testRegistration.
+func register(name provider.DBServiceName, clouds ...provider.CloudName) {
+	Register(testRegistration{name: name, clouds: clouds})
+}
+
+func TestRegisterRecordsServiceInItsClouds(t *testing.T) {
+	register("test-registered", "test-cloud-a", "test-cloud-b")
 
 	for _, name := range []provider.CloudName{"test-cloud-a", "test-cloud-b"} {
-		if !cloud.Supports(name, "test-hosted") {
-			t.Errorf("cloud.Supports(%s, test-hosted) = false, want true", name)
+		if !cloud.Supports(name, "test-registered") {
+			t.Errorf("cloud.Supports(%s, test-registered) = false, want true", name)
 		}
 	}
-	if cloud.Supports("test-cloud-c", "test-hosted") {
-		t.Error("cloud.Supports(test-cloud-c, test-hosted) = true, want false")
+	if cloud.Supports("test-cloud-c", "test-registered") {
+		t.Error("cloud.Supports(test-cloud-c, test-registered) = true, want false")
 	}
 }
 
@@ -106,9 +119,9 @@ func TestGetAndNames(t *testing.T) {
 	register("test-b", "test-cloud-names")
 	register("test-a", "test-cloud-names")
 
-	descriptor, ok := Get("test-a")
-	if !ok || !descriptor.SupportsHighAvailability {
-		t.Errorf("Get(test-a) = %+v, %v", descriptor, ok)
+	registration, ok := Get("test-a")
+	if !ok || !registration.SupportsHighAvailability() {
+		t.Errorf("Get(test-a) = %+v, %v", registration, ok)
 	}
 	if _, ok := Get("test-missing"); ok {
 		t.Error("Get(test-missing) found a service")

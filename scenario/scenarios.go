@@ -14,7 +14,7 @@ import (
 var durabilityTables = []string{"warehouse", "orders"}
 var benchmarkResources = provider.ProvisionRequest{
 	VCPU:            2,
-	MemoryMiB:       2048,
+	MemoryMiB:       8192,
 	PostgresVersion: "18",
 }
 

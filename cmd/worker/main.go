@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 
+	_ "github.com/elenaochkina/dbtest/provider/all"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	dbtemporal "github.com/elenaochkina/dbtest/temporal"

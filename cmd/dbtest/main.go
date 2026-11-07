@@ -14,6 +14,7 @@ import (
 	"github.com/elenaochkina/dbtest/internal/console"
 	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/service"
+	_ "github.com/elenaochkina/dbtest/provider/all"
 )
 
 // dbtest runs the interactive console.

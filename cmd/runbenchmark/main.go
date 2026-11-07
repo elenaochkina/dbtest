@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
+	_ "github.com/elenaochkina/dbtest/provider/all"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/provider/dbservice"
 	"github.com/elenaochkina/dbtest/scenario"
@@ -18,7 +19,7 @@ import (
 )
 
 func main() {
-	cloudName := flag.String("cloud", "local", "cloud name (local, aws)")
+	cloudName := flag.String("cloud", "local", "cloud name (local, aws, gcp)")
 	providerName := flag.String("provider", "docker", "provider name (docker)")
 	scenarioName := flag.String("scenario", "all", "scenario to run (warehouse, benchmark, all)")
 	seed := flag.Int64("seed", 42, "random seed for warehouse data")

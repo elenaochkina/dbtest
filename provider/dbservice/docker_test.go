@@ -8,22 +8,22 @@ import (
 )
 
 func TestDockerRegistersInLocal(t *testing.T) {
-	descriptor, ok := Get(provider.Docker)
-	if !ok || !slices.Equal(descriptor.Clouds, []provider.CloudName{provider.Local}) || descriptor.SupportsHighAvailability {
-		t.Fatalf("Get(docker) = %+v, %v", descriptor, ok)
+	registration, ok := Get(provider.Docker)
+	if !ok || !slices.Equal(registration.Clouds(), []provider.CloudName{provider.Local}) || registration.SupportsHighAvailability() {
+		t.Fatalf("Get(docker) = %+v, %v", registration, ok)
 	}
 }
 
 func TestDockerDisruptions(t *testing.T) {
-	got := dockerDisruptions(provider.ProvisionRequest{HighAvailability: true})
+	got := (dockerRegistration{}).Disruptions(provider.ProvisionRequest{HighAvailability: true})
 	if !slices.Equal(got, []provider.Disruption{provider.Restart, provider.Crash}) {
 		t.Errorf("dockerDisruptions = %v", got)
 	}
 }
 
-func TestNewDockerServiceRejectsOtherCloud(t *testing.T) {
-	if _, err := NewDockerService(testCloud{name: provider.AWS}, nil); err == nil {
-		t.Fatal("NewDockerService returned no error for a non-local cloud")
+func TestDockerBuildRejectsOtherCloud(t *testing.T) {
+	if _, err := (dockerRegistration{}).Build(testCloud{name: provider.AWS}, nil); err == nil {
+		t.Fatal("Build returned no error for a non-local cloud")
 	}
 }
 

@@ -2,11 +2,13 @@ package cloud
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 type testCloud struct{ name provider.CloudName }
@@ -15,8 +17,12 @@ func (c testCloud) Name() provider.CloudName { return c.name }
 func (c testCloud) Check(context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady}
 }
-func (c testCloud) Runner() harness.RunnerName             { return harness.Docker }
-func (c testCloud) Supports(s provider.DBServiceName) bool { return Supports(c.name, s) }
+func (c testCloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
+func (c testCloud) NewRunner(harness.RunnerName, *telemetry.Telemetry) (harness.Runner, error) {
+	return nil, errors.New("test cloud runs no containers")
+}
+func (c testCloud) Images(harness.RunnerName) harness.Images { return harness.Images{} }
+func (c testCloud) Supports(s provider.DBServiceName) bool   { return Supports(c.name, s) }
 
 func TestNewCloudProviderBuildsRegisteredCloud(t *testing.T) {
 	Register("test-new", func() (Cloud, error) { return testCloud{name: "test-new"}, nil })
@@ -46,14 +52,14 @@ func TestNamesAreSorted(t *testing.T) {
 	}
 }
 
-func TestSupportsFollowsHost(t *testing.T) {
-	Host("test-host", "test-service")
+func TestSupportsFollowsRegisteredServices(t *testing.T) {
+	RegisterService("test-cloud", "test-service")
 
-	if !Supports("test-host", "test-service") {
-		t.Error("Supports(test-host, test-service) = false, want true")
+	if !Supports("test-cloud", "test-service") {
+		t.Error("Supports(test-cloud, test-service) = false, want true")
 	}
-	if Supports("test-host", "test-other") {
-		t.Error("Supports(test-host, test-other) = true, want false")
+	if Supports("test-cloud", "test-other") {
+		t.Error("Supports(test-cloud, test-other) = true, want false")
 	}
 	if Supports("test-elsewhere", "test-service") {
 		t.Error("Supports(test-elsewhere, test-service) = true, want false")

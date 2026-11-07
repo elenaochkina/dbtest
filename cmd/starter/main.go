@@ -18,10 +18,10 @@ import (
 // starter triggers one workflow execution and waits for it. It talks only to the Temporal server;
 func main() {
 	// Parse flags.
-	cloudName := flag.String("cloud", "local", "cloud name (local, aws)")
-	providerName := flag.String("provider", "docker", "provider name (docker, rds, aurora)")
+	cloudName := flag.String("cloud", "local", "cloud name (local, aws, gcp)")
+	providerName := flag.String("provider", "docker", "provider name (docker, rds, aurora, cloudsql)")
 	vcpu := flag.Float64("vcpu", 2, "cluster vCPU")
-	memoryMiB := flag.Int("memory-mib", 2048, "cluster memory (MiB)")
+	memoryMiB := flag.Int("memory-mib", 8192, "cluster memory (MiB)")
 	diskGiB := flag.Int("disk-gib", 0, "cluster disk (GiB); 0 = provider default")
 	pgVersion := flag.String("pg-version", "18", "postgres engine version")
 	seed := flag.Int64("seed", 42, "random seed for warehouse data")
@@ -37,8 +37,6 @@ func main() {
 	repetitions := flag.Int("repetitions", 3, "how many times to disrupt")
 	settle := flag.Duration("settle", 30*time.Second, "wait after each disruption before the next")
 	highAvailability := flag.Bool("ha", false, "provision with a standby, which failover needs")
-	probeImage := flag.String("probe-image", "dbtest/probe:dev", "prober image")
-	benchImage := flag.String("bench-image", "dbtest/bench:dev", "bench image")
 	probeInterval := flag.Duration("probe-interval", 0, "time between probe samples; 0 leaves the prober's default")
 	probeTimeout := flag.Duration("probe-timeout", 0, "probe connect and read timeout; 0 leaves the prober's default")
 	probeWriteTimeout := flag.Duration("probe-write-timeout", 0, "probe write timeout; 0 leaves the prober's default")
@@ -98,8 +96,6 @@ func main() {
 			Disruption:        provider.Disruption(*disruption),
 			Repetitions:       *repetitions,
 			Settle:            *settle,
-			ProbeImage:        *probeImage,
-			BenchImage:        *benchImage,
 			Scale:             *scaleFactor,
 			ProbeInterval:     *probeInterval,
 			ProbeTimeout:      *probeTimeout,

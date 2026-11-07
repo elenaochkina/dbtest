@@ -11,7 +11,9 @@ PROBE_IMAGE ?= dbtest/probe:dev
 
 TF := terraform -chdir=terraform/aws
 
-.PHONY: build test images bench-image probe-image registry-login push push-bench push-probe aws-cidr aws-apply
+STATE_DSN ?= postgres://postgres:test@localhost:5433/postgres
+
+.PHONY: build test images bench-image probe-image registry-login push push-bench push-probe aws-cidr aws-apply env run-worker refresh
 
 build:
 	go build ./...
@@ -55,3 +57,18 @@ aws-cidr:
 
 aws-apply:
 	$(TF) apply
+
+# Write .env from the terraform/aws outputs and the GCP settings. The GCP list
+# allows only this machine's current public IP to reach new Cloud SQL instances.
+env:
+	$(TF) output -raw worker_env > .env
+	printf 'export DBTEST_DOCKER_NETWORK=dbtest-net\nexport DBTEST_PROBE_IMAGE=$(PROBE_IMAGE)\nexport DBTEST_BENCH_IMAGE=$(BENCH_IMAGE)\n' >> .env
+	printf 'export GCP_PROJECT=%s\nexport GCP_REGION=us-west1\nexport GCP_AUTHORIZED_NETWORKS=%s/32\n' \
+	  "$$(gcloud config get-value project 2>/dev/null)" "$$(curl -s https://checkip.amazonaws.com)" >> .env
+
+# Run the worker in the foreground with .env loaded. Ctrl-C stops it.
+run-worker:
+	. ./.env && STATE_DSN='$(STATE_DSN)' go run ./cmd/worker
+
+# Point AWS and GCP at this machine's current public IP, then start the worker.
+refresh: aws-cidr aws-apply env run-worker

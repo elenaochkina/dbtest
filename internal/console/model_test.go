@@ -150,7 +150,8 @@ func TestRecoveryFormServicesFollowCloud(t *testing.T) {
 		options []string
 	}{
 		{[]string{"enter"}, []string{"docker"}},
-		{[]string{"up", "enter"}, []string{"aurora", "rds"}},
+		{[]string{"up", "enter"}, []string{"cloudsql"}},
+		{[]string{"up", "up", "enter"}, []string{"aurora", "rds"}},
 	} {
 		_, current := startRecoveryWithKeys(t, test.keys...)
 		if options := current.form.options(); current.form.step != "database service" || !slices.Equal(options, test.options) {
@@ -165,10 +166,10 @@ func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
 		options []string
 		want    string
 	}{
-		{[]string{"up", "enter", "down", "enter", "enter"}, []string{"restart"}, "restart"},
-		{[]string{"up", "enter", "down", "enter", "down", "enter"}, []string{"restart", "failover"}, "restart"},
-		{[]string{"up", "enter", "enter", "enter"}, []string{"restart", "crash"}, "crash"},
-		{[]string{"up", "enter", "enter", "down", "enter"}, []string{"restart", "crash", "failover"}, "crash"},
+		{[]string{"up", "up", "enter", "down", "enter", "enter"}, []string{"restart"}, "restart"},
+		{[]string{"up", "up", "enter", "down", "enter", "down", "enter"}, []string{"restart", "failover"}, "restart"},
+		{[]string{"up", "up", "enter", "enter", "enter"}, []string{"restart", "crash"}, "crash"},
+		{[]string{"up", "up", "enter", "enter", "down", "enter"}, []string{"restart", "crash", "failover"}, "crash"},
 	} {
 		_, current := startRecoveryWithKeys(t, test.keys...)
 		options := current.form.options()
@@ -179,7 +180,7 @@ func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
 }
 
 func TestRecoveryFormStartsAuroraFailover(t *testing.T) {
-	started, current := startRecoveryWithKeys(t, "up", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter", "enter")
+	started, current := startRecoveryWithKeys(t, "up", "up", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter", "enter")
 	if len(started) != 1 {
 		t.Fatalf("started %d recoveries, want 1", len(started))
 	}
@@ -187,16 +188,13 @@ func TestRecoveryFormStartsAuroraFailover(t *testing.T) {
 	if cfg.Cloud != provider.AWS || cfg.Provider != provider.Aurora || !cfg.Request.HighAvailability || cfg.Disruption != provider.Failover {
 		t.Fatalf("started %+v, want aurora HA failover", cfg)
 	}
-	if cfg.ProbeImage != "dbtest-probe" || cfg.BenchImage != "dbtest-bench" {
-		t.Fatalf("images = %s, %s, want the Fargate task definitions", cfg.ProbeImage, cfg.BenchImage)
-	}
 	if current.form.step != "" {
 		t.Fatalf("form still open on %q", current.form.step)
 	}
 }
 
 func TestRecoveryFormEscapeGoesBackThenCloses(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "up", "enter", "down", "enter", "enter", "esc")
+	_, current := startRecoveryWithKeys(t, "up", "up", "enter", "down", "enter", "enter", "esc")
 	if current.form.step != "high availability" {
 		t.Fatalf("step = %q, want high availability", current.form.step)
 	}
@@ -207,7 +205,7 @@ func TestRecoveryFormEscapeGoesBackThenCloses(t *testing.T) {
 }
 
 func TestRecoveryFormBackShowsCurrentChoice(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "up", "enter", "down", "enter", "esc")
+	_, current := startRecoveryWithKeys(t, "up", "up", "enter", "down", "enter", "esc")
 	if options := current.form.options(); current.form.step != "database service" || options[current.form.cursor] != "rds" {
 		t.Fatalf("step %q cursor on %q, want database service on rds", current.form.step, options[current.form.cursor])
 	}
@@ -218,7 +216,7 @@ func TestRecoveryFormBackShowsCurrentChoice(t *testing.T) {
 }
 
 func TestRecoveryFormMenuKeyCloses(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "up", "enter", "down", "enter", "enter", "m")
+	_, current := startRecoveryWithKeys(t, "up", "up", "enter", "down", "enter", "enter", "m")
 	if current.form.step != "" {
 		t.Fatalf("form still open on %q", current.form.step)
 	}
@@ -282,8 +280,8 @@ func TestRecoveryFormConfirmShowsChoices(t *testing.T) {
 		want        []string
 		wantWarning bool
 	}{
-		{[]string{"enter", "enter", "enter", "enter", "enter"}, []string{"cloud              local", "database service   docker", "crash", "memory             2048 MiB", "disk               provider default"}, false},
-		{[]string{"up", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter"}, []string{"cloud              aws", "database service   aurora", "high availability  yes", "failover"}, true},
+		{[]string{"enter", "enter", "enter", "enter", "enter"}, []string{"cloud              local", "database service   docker", "crash", "memory             8192 MiB", "disk               provider default"}, false},
+		{[]string{"up", "up", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter"}, []string{"cloud              aws", "database service   aurora", "high availability  yes", "failover"}, true},
 	} {
 		started, current := startRecoveryWithKeys(t, test.keys...)
 		if current.form.step != "confirm" || len(started) != 0 {

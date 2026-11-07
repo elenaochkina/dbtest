@@ -15,6 +15,7 @@ import (
 	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	awscloud "github.com/elenaochkina/dbtest/provider/cloud/aws"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -27,9 +28,18 @@ type rdsservice struct {
 	tel    *telemetry.Telemetry
 }
 
-// NewRDSService builds RDS in the AWS cloud.
-func NewRDSService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	awsCloud, ok := c.(*cloud.AWS)
+// rdsRegistration registers RDS; Build returns the service that provisions it.
+type rdsRegistration struct{}
+
+func (rdsRegistration) Name() provider.DBServiceName { return provider.RDS }
+
+func (rdsRegistration) Clouds() []provider.CloudName { return []provider.CloudName{provider.AWS} }
+
+func (rdsRegistration) SupportsHighAvailability() bool { return true }
+
+// Build builds RDS in the AWS cloud.
+func (rdsRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+	awsCloud, ok := c.(*awscloud.AWSCloud)
 	if !ok {
 		return nil, fmt.Errorf("rds needs the aws cloud, got %s", c.Name())
 	}
@@ -217,11 +227,9 @@ func resolveRDSClass(req provider.ProvisionRequest, override string) string {
 		vcpu      float64
 		memoryMiB int
 	}{
-		{"db.t3.small", 2, 2048},
-		{"db.t3.medium", 2, 4096},
-		{"db.t3.large", 2, 8192},
-		{"db.t3.xlarge", 4, 16384},
-		{"db.m6g.2xlarge", 8, 32768},
+		{"db.m7i.large", 2, 8192},
+		{"db.m7i.xlarge", 4, 16384},
+		{"db.m7i.2xlarge", 8, 32768},
 	}
 
 	for _, c := range table {
@@ -296,9 +304,9 @@ func (p *rdsservice) Deprovision(ctx context.Context, clusterID string) error {
 	return nil
 }
 
-// rdsDisruptions lists what RDS can apply. There is no ungraceful kill: the API
+// Disruptions lists what RDS can apply. There is no ungraceful kill: the API
 // offers a reboot and, on Multi-AZ, a reboot that fails over.
-func rdsDisruptions(req provider.ProvisionRequest) []provider.Disruption {
+func (rdsRegistration) Disruptions(req provider.ProvisionRequest) []provider.Disruption {
 	if req.HighAvailability {
 		return []provider.Disruption{provider.Restart, provider.Failover}
 	}
@@ -449,13 +457,7 @@ func (p *rdsservice) waitForStatus(ctx context.Context, instanceID string, timeo
 }
 
 func init() {
-	Register(Descriptor{
-		Name:                     provider.RDS,
-		Clouds:                   []provider.CloudName{provider.AWS},
-		SupportsHighAvailability: true,
-		Disruptions:              rdsDisruptions,
-		BuildDBService:           NewRDSService,
-	})
+	Register(rdsRegistration{})
 }
 
 var _ DBService = (*rdsservice)(nil)

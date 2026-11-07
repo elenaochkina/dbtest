@@ -21,8 +21,6 @@ type RecoveryWorkflowConfig struct {
 	// Settle is how long to wait after each disruption before the next one,
 	Settle time.Duration
 
-	ProbeImage        string
-	BenchImage        string
 	Scale             int
 	ProbeInterval     time.Duration
 	ProbeTimeout      time.Duration
@@ -57,7 +55,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		return err
 	}
 
-	var runner harness.RunnerName
+	var runner activities.ResolvedRunner
 	if err = workflow.ExecuteActivity(ctx, harn.ResolveRunner, activities.RunnerInput{
 		Cloud: cfg.Cloud,
 	}).Get(ctx, &runner); err != nil {
@@ -123,8 +121,9 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	// Seeding finishes before the prober starts
 	if err = workflow.ExecuteActivity(ctx, harn.InitializeBenchContainer, activities.BenchContainerInput{
-		Runner:   runner,
-		Image:    cfg.BenchImage,
+		Cloud:    cfg.Cloud,
+		Runner:   runner.Name,
+		Image:    runner.Images.Bench,
 		Name:     "dbtest-seed-" + runID.String(),
 		DSN:      cluster.Internal.URL(cluster.Password),
 		Workload: "pgbench",
@@ -135,8 +134,9 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	var probeHandle harness.Handle
 	if err = workflow.ExecuteActivity(ctx, harn.StartProbe, activities.ProbeInput{
-		Runner:       runner,
-		Image:        cfg.ProbeImage,
+		Cloud:        cfg.Cloud,
+		Runner:       runner.Name,
+		Image:        runner.Images.Probe,
 		Name:         "dbtest-probe-" + runID.String(),
 		DSN:          cluster.Internal.URL(cluster.Password),
 		Interval:     cfg.ProbeInterval,
@@ -154,7 +154,8 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, onceOnly)
 		_ = workflow.ExecuteActivity(dctx, harn.StopProbe, activities.ContainerInput{
-			Runner: runner,
+			Cloud:  cfg.Cloud,
+			Runner: runner.Name,
 			Handle: probeHandle,
 		}).Get(dctx, nil)
 	}()
@@ -210,7 +211,8 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	var result probe.Result
 	octx := workflow.WithActivityOptions(ctx, onceOnly)
 	if err = workflow.ExecuteActivity(octx, harn.StopProbe, activities.ContainerInput{
-		Runner: runner,
+		Cloud:  cfg.Cloud,
+		Runner: runner.Name,
 		Handle: probeHandle,
 	}).Get(ctx, &result); err != nil {
 		return err

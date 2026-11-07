@@ -72,8 +72,8 @@ func (form recoveryForm) options() []string {
 
 // supportsHighAvailability reports whether the chosen service can run with a standby.
 func (form recoveryForm) supportsHighAvailability() bool {
-	descriptor, ok := dbservice.Get(form.cfg.Provider)
-	return ok && descriptor.SupportsHighAvailability
+	registration, ok := dbservice.Get(form.cfg.Provider)
+	return ok && registration.SupportsHighAvailability()
 }
 
 // show moves to step with an empty input. On a choice step the cursor is on
@@ -176,10 +176,6 @@ func (form recoveryForm) choose(choice string) recoveryForm {
 	switch form.step {
 	case "cloud":
 		form.cfg.Cloud = provider.CloudName(choice)
-		form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest/probe:dev", "dbtest/bench:dev"
-		if form.cfg.Cloud != provider.Local {
-			form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest-probe", "dbtest-bench"
-		}
 	case "database service":
 		form.cfg.Provider = provider.DBServiceName(choice)
 		form.cfg.Request.HighAvailability = false

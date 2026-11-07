@@ -1,11 +1,13 @@
-package cloud
+package aws
 
 import (
 	"context"
 	"slices"
 	"testing"
 
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 )
 
 func TestAWSCheckReportsMissingVariables(t *testing.T) {
@@ -15,7 +17,7 @@ func TestAWSCheckReportsMissingVariables(t *testing.T) {
 	t.Setenv("AWS_ECS_CLUSTER", "")
 	t.Setenv("AWS_ECS_LOG_GROUP", "")
 
-	status := (&AWS{}).Check(context.Background())
+	status := (&AWSCloud{}).Check(context.Background())
 	want := provider.Status{State: provider.StateMisconfigured, Detail: "2 variables missing: run source .env (AWS_ECS_CLUSTER, AWS_ECS_LOG_GROUP)"}
 	if status != want {
 		t.Fatalf("status = %+v, want %+v", status, want)
@@ -23,8 +25,8 @@ func TestAWSCheckReportsMissingVariables(t *testing.T) {
 }
 
 func TestAWSRegistersItself(t *testing.T) {
-	if !slices.Contains(Names(), provider.AWS) {
-		t.Errorf("Names() = %v, want aws", Names())
+	if !slices.Contains(cloud.Names(), provider.AWS) {
+		t.Errorf("cloud.Names() = %v, want aws", cloud.Names())
 	}
 }
 
@@ -47,5 +49,15 @@ func TestProfileFlag(t *testing.T) {
 	t.Setenv("AWS_PROFILE", "")
 	if got := profileFlag(); got != "" {
 		t.Errorf("profileFlag() = %q, want empty", got)
+	}
+}
+
+func TestImagesReadTaskDefinitions(t *testing.T) {
+	t.Setenv("AWS_ECS_PROBE_TASK_DEFINITION", "other-probe")
+	t.Setenv("AWS_ECS_BENCH_TASK_DEFINITION", "")
+
+	want := harness.Images{Probe: "other-probe", Bench: "dbtest-bench"}
+	if got := (&AWSCloud{}).Images(harness.Fargate); got != want {
+		t.Errorf("Images() = %+v, want %+v", got, want)
 	}
 }
