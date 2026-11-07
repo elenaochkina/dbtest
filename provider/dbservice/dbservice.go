@@ -41,12 +41,12 @@ type Registration interface {
 	Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error)
 }
 
-var registry = map[provider.DBServiceName]Registration{}
+var registeredServices = map[provider.DBServiceName]Registration{}
 
 // Register adds a database service and records the clouds it runs in. Call it
 // from init() in the service's file.
 func Register(registration Registration) {
-	registry[registration.Name()] = registration
+	registeredServices[registration.Name()] = registration
 	for _, name := range registration.Clouds() {
 		cloud.RegisterService(name, registration.Name())
 	}
@@ -54,19 +54,19 @@ func Register(registration Registration) {
 
 // Get returns the named service's registration.
 func Get(name provider.DBServiceName) (Registration, bool) {
-	registration, ok := registry[name]
+	registration, ok := registeredServices[name]
 	return registration, ok
 }
 
 // Names returns the registered services, sorted.
 func Names() []provider.DBServiceName {
-	return slices.Sorted(maps.Keys(registry))
+	return slices.Sorted(maps.Keys(registeredServices))
 }
 
 // Disruptions returns the disruptions the named service supports for req, or
 // none if it is not registered.
 func Disruptions(name provider.DBServiceName, req provider.ProvisionRequest) []provider.Disruption {
-	registration, ok := registry[name]
+	registration, ok := registeredServices[name]
 	if !ok {
 		return nil
 	}
@@ -75,7 +75,7 @@ func Disruptions(name provider.DBServiceName, req provider.ProvisionRequest) []p
 
 // NewDBService builds the named service in cloud. It fails if the service does not run in cloud.
 func NewDBService(name provider.DBServiceName, c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	registration, ok := registry[name]
+	registration, ok := registeredServices[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown database service %q; registered: %v", name, Names())
 	}
