@@ -74,13 +74,20 @@ func NewHarnessActivities(tel *telemetry.Telemetry) *HarnessActivities {
 	return &HarnessActivities{tel: tel}
 }
 
-// ResolveRunner builds the cloud and returns its default runner.
-func (a *HarnessActivities) ResolveRunner(ctx context.Context, input RunnerInput) (harness.RunnerName, error) {
+// ResolvedRunner is the runner that starts a run's containers and the images it starts.
+type ResolvedRunner struct {
+	Name   harness.RunnerName
+	Images harness.Images
+}
+
+// ResolveRunner builds the cloud and returns its default runner and that runner's images.
+func (a *HarnessActivities) ResolveRunner(ctx context.Context, input RunnerInput) (ResolvedRunner, error) {
 	c, err := cloud.NewCloudProvider(input.Cloud)
 	if err != nil {
-		return "", temporal.NewNonRetryableApplicationError(err.Error(), "UnknownCloud", err)
+		return ResolvedRunner{}, temporal.NewNonRetryableApplicationError(err.Error(), "UnknownCloud", err)
 	}
-	return c.Runners()[0], nil
+	name := c.Runners()[0]
+	return ResolvedRunner{Name: name, Images: c.Images(name)}, nil
 }
 
 // runner builds the named runner in the named cloud.

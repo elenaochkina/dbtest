@@ -28,6 +28,9 @@ type Cloud interface {
 	// NewRunner builds the named runner.
 	NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error)
 
+	// Images returns what the named runner starts for the probe and bench.
+	Images(name harness.RunnerName) harness.Images
+
 	// Supports reports whether service runs in this cloud.
 	Supports(service provider.DBServiceName) bool
 }
@@ -82,6 +85,14 @@ func MissingVariables(names ...string) (provider.Status, bool) {
 		count = "1 variable"
 	}
 	return provider.Status{State: provider.StateMisconfigured, Detail: count + " missing: run source .env (" + strings.Join(missing, ", ") + ")"}, true
+}
+
+// EnvOr returns the environment variable key, or fallback when it is unset.
+func EnvOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 
 // UnknownRunner is the error a cloud returns for a runner it does not build.

@@ -21,7 +21,8 @@ func (c testCloud) Runners() []harness.RunnerName { return []harness.RunnerName{
 func (c testCloud) NewRunner(harness.RunnerName, *telemetry.Telemetry) (harness.Runner, error) {
 	return nil, errors.New("test cloud runs no containers")
 }
-func (c testCloud) Supports(s provider.DBServiceName) bool { return Supports(c.name, s) }
+func (c testCloud) Images(harness.RunnerName) harness.Images { return harness.Images{} }
+func (c testCloud) Supports(s provider.DBServiceName) bool   { return Supports(c.name, s) }
 
 func TestNewCloudProviderBuildsRegisteredCloud(t *testing.T) {
 	Register("test-new", func() (Cloud, error) { return testCloud{name: "test-new"}, nil })

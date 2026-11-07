@@ -19,8 +19,6 @@ func defaultRecovery() workflows.RecoveryWorkflowConfig {
 		Disruption:  provider.Crash,
 		Repetitions: 3,
 		Settle:      30 * time.Second,
-		ProbeImage:  "dbtest/probe:dev",
-		BenchImage:  "dbtest/bench:dev",
 		Scale:       1,
 	}
 }

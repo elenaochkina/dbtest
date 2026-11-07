@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 )
@@ -48,5 +49,15 @@ func TestProfileFlag(t *testing.T) {
 	t.Setenv("AWS_PROFILE", "")
 	if got := profileFlag(); got != "" {
 		t.Errorf("profileFlag() = %q, want empty", got)
+	}
+}
+
+func TestImagesReadTaskDefinitions(t *testing.T) {
+	t.Setenv("AWS_ECS_PROBE_TASK_DEFINITION", "other-probe")
+	t.Setenv("AWS_ECS_BENCH_TASK_DEFINITION", "")
+
+	want := harness.Images{Probe: "other-probe", Bench: "dbtest-bench"}
+	if got := (&Cloud{}).Images(harness.Fargate); got != want {
+		t.Errorf("Images() = %+v, want %+v", got, want)
 	}
 }

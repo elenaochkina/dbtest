@@ -37,8 +37,6 @@ func main() {
 	repetitions := flag.Int("repetitions", 3, "how many times to disrupt")
 	settle := flag.Duration("settle", 30*time.Second, "wait after each disruption before the next")
 	highAvailability := flag.Bool("ha", false, "provision with a standby, which failover needs")
-	probeImage := flag.String("probe-image", "dbtest/probe:dev", "prober image")
-	benchImage := flag.String("bench-image", "dbtest/bench:dev", "bench image")
 	probeInterval := flag.Duration("probe-interval", 0, "time between probe samples; 0 leaves the prober's default")
 	probeTimeout := flag.Duration("probe-timeout", 0, "probe connect and read timeout; 0 leaves the prober's default")
 	probeWriteTimeout := flag.Duration("probe-write-timeout", 0, "probe write timeout; 0 leaves the prober's default")
@@ -98,8 +96,6 @@ func main() {
 			Disruption:        provider.Disruption(*disruption),
 			Repetitions:       *repetitions,
 			Settle:            *settle,
-			ProbeImage:        *probeImage,
-			BenchImage:        *benchImage,
 			Scale:             *scaleFactor,
 			ProbeInterval:     *probeInterval,
 			ProbeTimeout:      *probeTimeout,

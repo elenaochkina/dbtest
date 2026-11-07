@@ -66,6 +66,8 @@ func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (ha
 	return machine.NewRunner(name, tel)
 }
 
+func (c *Cloud) Images(harness.RunnerName) harness.Images { return local.DockerImages() }
+
 func (c *Cloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.GCP, service)
 }

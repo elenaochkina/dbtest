@@ -62,7 +62,7 @@ aws-apply:
 # allows only this machine's current public IP to reach new Cloud SQL instances.
 env:
 	$(TF) output -raw worker_env > .env
-	printf 'export DBTEST_DOCKER_NETWORK=dbtest-net\n' >> .env
+	printf 'export DBTEST_DOCKER_NETWORK=dbtest-net\nexport DBTEST_PROBE_IMAGE=$(PROBE_IMAGE)\nexport DBTEST_BENCH_IMAGE=$(BENCH_IMAGE)\n' >> .env
 	printf 'export GCP_PROJECT=%s\nexport GCP_REGION=us-west1\nexport GCP_AUTHORIZED_NETWORKS=%s/32\n' \
 	  "$$(gcloud config get-value project 2>/dev/null)" "$$(curl -s https://checkip.amazonaws.com)" >> .env
 

@@ -39,6 +39,13 @@ type Runner interface {
 	Stop(ctx context.Context, h Handle) ([]byte, error)
 }
 
+// Images names what a runner starts for the probe and bench containers: image
+// tags for Docker, task definitions for Fargate.
+type Images struct {
+	Probe string
+	Bench string
+}
+
 // RunnerName names a Runner implementation. A cloud lists the ones it can build.
 type RunnerName string
 

@@ -88,8 +88,8 @@ source .env
 STATE_DSN='postgres://postgres:test@localhost:5433/postgres' ./worker
 ```
 
-Fargate runs take task definition names as images:
-`-probe-image dbtest-probe -bench-image dbtest-bench`.
+Fargate runs start the task definitions named in `.env`
+(`AWS_ECS_PROBE_TASK_DEFINITION`, `AWS_ECS_BENCH_TASK_DEFINITION`).
 
 ## Changes
 

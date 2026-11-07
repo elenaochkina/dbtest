@@ -50,6 +50,17 @@ func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (ha
 	return newDockerRunner(c.client, tel), nil
 }
 
+func (c *Cloud) Images(harness.RunnerName) harness.Images { return DockerImages() }
+
+// DockerImages returns the probe and bench image tags from .env, defaulting to
+// the tags make images builds.
+func DockerImages() harness.Images {
+	return harness.Images{
+		Probe: cloud.EnvOr("DBTEST_PROBE_IMAGE", "dbtest/probe:dev"),
+		Bench: cloud.EnvOr("DBTEST_BENCH_IMAGE", "dbtest/bench:dev"),
+	}
+}
+
 func (c *Cloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.Local, service)
 }

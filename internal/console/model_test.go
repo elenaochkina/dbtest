@@ -160,13 +160,6 @@ func TestRecoveryFormServicesFollowCloud(t *testing.T) {
 	}
 }
 
-func TestRecoveryFormGCPUsesLocalImages(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "up", "enter")
-	if cfg := current.form.cfg; cfg.Cloud != provider.GCP || cfg.ProbeImage != "dbtest/probe:dev" || cfg.BenchImage != "dbtest/bench:dev" {
-		t.Fatalf("cloud %s images %s, %s, want gcp with the local images", cfg.Cloud, cfg.ProbeImage, cfg.BenchImage)
-	}
-}
-
 func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
 	for _, test := range []struct {
 		keys    []string
@@ -194,9 +187,6 @@ func TestRecoveryFormStartsAuroraFailover(t *testing.T) {
 	cfg := started[0]
 	if cfg.Cloud != provider.AWS || cfg.Provider != provider.Aurora || !cfg.Request.HighAvailability || cfg.Disruption != provider.Failover {
 		t.Fatalf("started %+v, want aurora HA failover", cfg)
-	}
-	if cfg.ProbeImage != "dbtest-probe" || cfg.BenchImage != "dbtest-bench" {
-		t.Fatalf("images = %s, %s, want the Fargate task definitions", cfg.ProbeImage, cfg.BenchImage)
 	}
 	if current.form.step != "" {
 		t.Fatalf("form still open on %q", current.form.step)
