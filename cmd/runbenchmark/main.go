@@ -69,6 +69,7 @@ func main() {
 
 	rc := &scenario.RunContext{
 		Cfg: scenario.Config{
+			Cloud:       provider.CloudName(*cloudName),
 			Provider:    provider.DBServiceName(*providerName),
 			Seed:        *seed,
 			Warehouses:  *warehouses,

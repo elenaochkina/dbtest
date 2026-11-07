@@ -34,6 +34,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
 			scenario   TEXT         NOT NULL,
 			seed       BIGINT       NOT NULL,
+			cloud      TEXT         NOT NULL,
 			provider   TEXT         NOT NULL,
 			started_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
 			ended_at   TIMESTAMPTZ,

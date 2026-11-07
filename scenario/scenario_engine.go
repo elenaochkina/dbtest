@@ -21,6 +21,7 @@ import (
 // Config holds the parameters every step may read. Each step uses only the
 // fields it needs; it is threaded into the RunContext, not consumed directly.
 type Config struct {
+	Cloud    provider.CloudName
 	Provider provider.DBServiceName
 	// warehouse
 	Seed       int64
@@ -117,6 +118,7 @@ func Run(ctx context.Context, name string, rc *RunContext) (err error) {
 	run, startErr := state.StartRun(ctx, rc.StatePool, state.RunConfig{
 		Seed:     rc.Cfg.Seed,
 		Scenario: name,
+		Cloud:    string(rc.Cfg.Cloud),
 		Provider: string(rc.Cfg.Provider),
 	}, rc.Tel)
 	if startErr != nil {

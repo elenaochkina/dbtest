@@ -19,6 +19,7 @@ import (
 type StartRunInput struct {
 	Scenario string
 	Seed     int64
+	Cloud    provider.CloudName
 	Provider provider.DBServiceName
 }
 
@@ -58,6 +59,7 @@ func (a *StateDBActivities) StartRun(ctx context.Context, input StartRunInput) (
 	run, err := state.StartRun(ctx, a.statePool, state.RunConfig{
 		Seed:     input.Seed,
 		Scenario: input.Scenario,
+		Cloud:    string(input.Cloud),
 		Provider: string(input.Provider),
 	}, a.tel)
 	if err != nil {
