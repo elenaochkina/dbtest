@@ -61,16 +61,16 @@ func register(name provider.DBServiceName, clouds ...provider.CloudName) {
 	Register(testRegistration{name: name, clouds: clouds})
 }
 
-func TestRegisterHostsServiceInItsClouds(t *testing.T) {
-	register("test-hosted", "test-cloud-a", "test-cloud-b")
+func TestRegisterRecordsServiceInItsClouds(t *testing.T) {
+	register("test-registered", "test-cloud-a", "test-cloud-b")
 
 	for _, name := range []provider.CloudName{"test-cloud-a", "test-cloud-b"} {
-		if !cloud.Supports(name, "test-hosted") {
-			t.Errorf("cloud.Supports(%s, test-hosted) = false, want true", name)
+		if !cloud.Supports(name, "test-registered") {
+			t.Errorf("cloud.Supports(%s, test-registered) = false, want true", name)
 		}
 	}
-	if cloud.Supports("test-cloud-c", "test-hosted") {
-		t.Error("cloud.Supports(test-cloud-c, test-hosted) = true, want false")
+	if cloud.Supports("test-cloud-c", "test-registered") {
+		t.Error("cloud.Supports(test-cloud-c, test-registered) = true, want false")
 	}
 }
 

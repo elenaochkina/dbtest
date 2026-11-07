@@ -36,18 +36,18 @@ type Cloud interface {
 }
 
 var (
-	registry = map[provider.CloudName]func() (Cloud, error){}
-	hosted   = map[provider.CloudName][]provider.DBServiceName{}
+	registeredClouds   = map[provider.CloudName]func() (Cloud, error){}
+	registeredServices = map[provider.CloudName][]provider.DBServiceName{}
 )
 
 // Register adds a cloud's constructor.
 func Register(name provider.CloudName, fn func() (Cloud, error)) {
-	registry[name] = fn
+	registeredClouds[name] = fn
 }
 
 // NewCloudProvider builds the named cloud.
 func NewCloudProvider(name provider.CloudName) (Cloud, error) {
-	fn, ok := registry[name]
+	fn, ok := registeredClouds[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown cloud %q; registered: %v", name, Names())
 	}
@@ -55,17 +55,17 @@ func NewCloudProvider(name provider.CloudName) (Cloud, error) {
 }
 
 func Names() []provider.CloudName {
-	return slices.Sorted(maps.Keys(registry))
+	return slices.Sorted(maps.Keys(registeredClouds))
 }
 
-// Host records that service runs in the named cloud. dbservice.Register calls it.
-func Host(name provider.CloudName, service provider.DBServiceName) {
-	hosted[name] = append(hosted[name], service)
+// RegisterService records that service runs in the named cloud. dbservice.Register calls it.
+func RegisterService(name provider.CloudName, service provider.DBServiceName) {
+	registeredServices[name] = append(registeredServices[name], service)
 }
 
 // Supports reports whether service runs in the named cloud.
 func Supports(name provider.CloudName, service provider.DBServiceName) bool {
-	return slices.Contains(hosted[name], service)
+	return slices.Contains(registeredServices[name], service)
 }
 
 // MissingVariables returns a misconfigured status naming the .env variables

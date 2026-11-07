@@ -52,14 +52,14 @@ func TestNamesAreSorted(t *testing.T) {
 	}
 }
 
-func TestSupportsFollowsHost(t *testing.T) {
-	Host("test-host", "test-service")
+func TestSupportsFollowsRegisteredServices(t *testing.T) {
+	RegisterService("test-cloud", "test-service")
 
-	if !Supports("test-host", "test-service") {
-		t.Error("Supports(test-host, test-service) = false, want true")
+	if !Supports("test-cloud", "test-service") {
+		t.Error("Supports(test-cloud, test-service) = false, want true")
 	}
-	if Supports("test-host", "test-other") {
-		t.Error("Supports(test-host, test-other) = true, want false")
+	if Supports("test-cloud", "test-other") {
+		t.Error("Supports(test-cloud, test-other) = true, want false")
 	}
 	if Supports("test-elsewhere", "test-service") {
 		t.Error("Supports(test-elsewhere, test-service) = true, want false")

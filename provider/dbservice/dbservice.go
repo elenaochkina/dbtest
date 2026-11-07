@@ -48,7 +48,7 @@ var registry = map[provider.DBServiceName]Registration{}
 func Register(registration Registration) {
 	registry[registration.Name()] = registration
 	for _, name := range registration.Clouds() {
-		cloud.Host(name, registration.Name())
+		cloud.RegisterService(name, registration.Name())
 	}
 }
 
