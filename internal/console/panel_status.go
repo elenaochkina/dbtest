@@ -33,7 +33,7 @@ func (m *model) setServiceState(event service.Event) {
 	}
 }
 
-// statusLines returns one line per line of each service's detail, then the AWS row.
+// statusLines returns one line per line of each service's detail, then one row per cloud.
 func (m model) statusLines() []string {
 	lines := make([]string, 0, len(m.services))
 	for _, status := range m.services {
@@ -47,5 +47,5 @@ func (m model) statusLines() []string {
 			lines = append(lines, fmt.Sprintf("%s %s %s", padRight(name, 12), state, line))
 		}
 	}
-	return append(lines, m.awsLine())
+	return append(lines, m.cloudLines()...)
 }
