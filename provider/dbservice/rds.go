@@ -39,7 +39,7 @@ func (rdsRegistration) SupportsHighAvailability() bool { return true }
 
 // Build builds RDS in the AWS cloud.
 func (rdsRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	awsCloud, ok := c.(*awscloud.Cloud)
+	awsCloud, ok := c.(*awscloud.AWSCloud)
 	if !ok {
 		return nil, fmt.Errorf("rds needs the aws cloud, got %s", c.Name())
 	}

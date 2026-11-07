@@ -17,7 +17,7 @@ func TestAWSCheckReportsMissingVariables(t *testing.T) {
 	t.Setenv("AWS_ECS_CLUSTER", "")
 	t.Setenv("AWS_ECS_LOG_GROUP", "")
 
-	status := (&Cloud{}).Check(context.Background())
+	status := (&AWSCloud{}).Check(context.Background())
 	want := provider.Status{State: provider.StateMisconfigured, Detail: "2 variables missing: run source .env (AWS_ECS_CLUSTER, AWS_ECS_LOG_GROUP)"}
 	if status != want {
 		t.Fatalf("status = %+v, want %+v", status, want)
@@ -57,7 +57,7 @@ func TestImagesReadTaskDefinitions(t *testing.T) {
 	t.Setenv("AWS_ECS_BENCH_TASK_DEFINITION", "")
 
 	want := harness.Images{Probe: "other-probe", Bench: "dbtest-bench"}
-	if got := (&Cloud{}).Images(harness.Fargate); got != want {
+	if got := (&AWSCloud{}).Images(harness.Fargate); got != want {
 		t.Errorf("Images() = %+v, want %+v", got, want)
 	}
 }

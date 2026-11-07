@@ -39,7 +39,7 @@ func (auroraRegistration) SupportsHighAvailability() bool { return true }
 
 // Build builds Aurora in the AWS cloud.
 func (auroraRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	awsCloud, ok := c.(*awscloud.Cloud)
+	awsCloud, ok := c.(*awscloud.AWSCloud)
 	if !ok {
 		return nil, fmt.Errorf("aurora needs the aws cloud, got %s", c.Name())
 	}

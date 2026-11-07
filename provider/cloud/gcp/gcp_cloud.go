@@ -16,8 +16,8 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
-// Cloud is Google Cloud, with the project and region its services share.
-type Cloud struct {
+// GCPCloud is Google Cloud, with the project and region its services share.
+type GCPCloud struct {
 	project string
 	region  string
 }
@@ -28,14 +28,14 @@ func New() (cloud.Cloud, error) {
 	if region == "" {
 		region = "us-west1"
 	}
-	return &Cloud{project: os.Getenv("GCP_PROJECT"), region: region}, nil
+	return &GCPCloud{project: os.Getenv("GCP_PROJECT"), region: region}, nil
 }
 
-func (c *Cloud) Name() provider.CloudName { return provider.GCP }
+func (c *GCPCloud) Name() provider.CloudName { return provider.GCP }
 
 // Check reports whether the .env variables are set and Application Default
 // Credentials can get a token.
-func (c *Cloud) Check(ctx context.Context) provider.Status {
+func (c *GCPCloud) Check(ctx context.Context) provider.Status {
 	if status, missing := cloud.MissingVariables("GCP_PROJECT", "GCP_AUTHORIZED_NETWORKS"); missing {
 		return status
 	}
@@ -52,10 +52,10 @@ func (c *Cloud) Check(ctx context.Context) provider.Status {
 }
 
 // Runners lists Docker on this machine until a Cloud Run runner exists.
-func (c *Cloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
+func (c *GCPCloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
 
 // NewRunner builds the local cloud's Docker runner.
-func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
+func (c *GCPCloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
 	if name != harness.Docker {
 		return nil, cloud.UnknownRunner(c, name)
 	}
@@ -66,20 +66,20 @@ func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (ha
 	return machine.NewRunner(name, tel)
 }
 
-func (c *Cloud) Images(harness.RunnerName) harness.Images { return local.DockerImages() }
+func (c *GCPCloud) Images(harness.RunnerName) harness.Images { return local.DockerImages() }
 
-func (c *Cloud) Supports(service provider.DBServiceName) bool {
+func (c *GCPCloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.GCP, service)
 }
 
 // Project returns the project the cloud's services create resources in.
-func (c *Cloud) Project() string { return c.project }
+func (c *GCPCloud) Project() string { return c.project }
 
 // Region returns the region the cloud's services create resources in.
-func (c *Cloud) Region() string { return c.region }
+func (c *GCPCloud) Region() string { return c.region }
 
 func init() {
 	cloud.Register(provider.GCP, New)
 }
 
-var _ cloud.Cloud = (*Cloud)(nil)
+var _ cloud.Cloud = (*GCPCloud)(nil)

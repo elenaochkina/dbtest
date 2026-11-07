@@ -41,7 +41,7 @@ func (cloudSQLRegistration) SupportsHighAvailability() bool { return true }
 
 // Build builds Cloud SQL in the GCP cloud.
 func (cloudSQLRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	gcpCloud, ok := c.(*gcpcloud.Cloud)
+	gcpCloud, ok := c.(*gcpcloud.GCPCloud)
 	if !ok {
 		return nil, fmt.Errorf("cloudsql needs the gcp cloud, got %s", c.Name())
 	}

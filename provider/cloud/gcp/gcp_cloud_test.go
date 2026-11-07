@@ -35,7 +35,7 @@ func TestGCPDefaultsRegion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if region := c.(*Cloud).Region(); region != "us-west1" {
+	if region := c.(*GCPCloud).Region(); region != "us-west1" {
 		t.Errorf("Region() = %q, want us-west1", region)
 	}
 }

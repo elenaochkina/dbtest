@@ -18,8 +18,8 @@ import (
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
-// Cloud is the AWS cloud, with the config its services share.
-type Cloud struct {
+// AWSCloud is the AWS cloud, with the config its services share.
+type AWSCloud struct {
 	config awssdk.Config
 }
 
@@ -29,13 +29,13 @@ func New() (cloud.Cloud, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
-	return &Cloud{config: config}, nil
+	return &AWSCloud{config: config}, nil
 }
 
-func (c *Cloud) Name() provider.CloudName { return provider.AWS }
+func (c *AWSCloud) Name() provider.CloudName { return provider.AWS }
 
 // Check reports whether the .env variables are set and the credentials are valid.
-func (c *Cloud) Check(ctx context.Context) provider.Status {
+func (c *AWSCloud) Check(ctx context.Context) provider.Status {
 	if status, missing := cloud.MissingVariables(
 		"AWS_REGION",
 		"AWS_RDS_SECURITY_GROUP_IDS",
@@ -55,10 +55,10 @@ func (c *Cloud) Check(ctx context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady, Detail: roleFromARN(awssdk.ToString(identity.Arn))}
 }
 
-func (c *Cloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Fargate} }
+func (c *AWSCloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Fargate} }
 
 // NewRunner builds the Fargate runner on the cloud's config.
-func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
+func (c *AWSCloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
 	if name != harness.Fargate {
 		return nil, cloud.UnknownRunner(c, name)
 	}
@@ -67,19 +67,19 @@ func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (ha
 
 // Images returns the probe and bench task definitions from .env, defaulting to
 // the families terraform/aws creates.
-func (c *Cloud) Images(harness.RunnerName) harness.Images {
+func (c *AWSCloud) Images(harness.RunnerName) harness.Images {
 	return harness.Images{
 		Probe: cloud.EnvOr("AWS_ECS_PROBE_TASK_DEFINITION", "dbtest-probe"),
 		Bench: cloud.EnvOr("AWS_ECS_BENCH_TASK_DEFINITION", "dbtest-bench"),
 	}
 }
 
-func (c *Cloud) Supports(service provider.DBServiceName) bool {
+func (c *AWSCloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.AWS, service)
 }
 
 // Config returns the AWS config the cloud's services build their clients from.
-func (c *Cloud) Config() awssdk.Config { return c.config }
+func (c *AWSCloud) Config() awssdk.Config { return c.config }
 
 // profileFlag returns " --profile <name>" when AWS_PROFILE is set.
 func profileFlag() string {
@@ -103,4 +103,4 @@ func init() {
 	cloud.Register(provider.AWS, New)
 }
 
-var _ cloud.Cloud = (*Cloud)(nil)
+var _ cloud.Cloud = (*AWSCloud)(nil)

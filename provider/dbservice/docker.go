@@ -40,7 +40,7 @@ func (dockerRegistration) SupportsHighAvailability() bool { return false }
 
 // Build builds Postgres in Docker on the local cloud.
 func (dockerRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	local, ok := c.(*localcloud.Cloud)
+	local, ok := c.(*localcloud.LocalCloud)
 	if !ok {
 		return nil, fmt.Errorf("docker needs the local cloud, got %s", c.Name())
 	}
