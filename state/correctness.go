@@ -18,6 +18,7 @@ import (
 type RunConfig struct {
 	Seed     int64
 	Scenario string
+	Cloud    string
 	Provider string
 }
 
@@ -27,6 +28,7 @@ type Run struct {
 	ID       uuid.UUID
 	Scenario string
 	Seed     int64
+	Cloud    string
 	Provider string
 	Logger   *slog.Logger
 }
@@ -36,23 +38,24 @@ type Run struct {
 func StartRun(ctx context.Context, pool *pgxpool.Pool, cfg RunConfig, tel *telemetry.Telemetry) (*Run, error) {
 	var id uuid.UUID
 	err := pool.QueryRow(ctx,
-		`INSERT INTO runs (scenario, seed, provider, started_at)
-		 VALUES ($1, $2, $3, now())
+		`INSERT INTO runs (scenario, seed, cloud, provider, started_at)
+		 VALUES ($1, $2, $3, $4, now())
 		 RETURNING id`,
-		cfg.Scenario, cfg.Seed, cfg.Provider,
+		cfg.Scenario, cfg.Seed, cfg.Cloud, cfg.Provider,
 	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("StartRun: %w", err)
 	}
 
 	logger := tel.Logger.With("package", "state")
-	logger.Info("run started", "run_id", id, "scenario", cfg.Scenario, "seed", cfg.Seed)
+	logger.Info("run started", "run_id", id, "scenario", cfg.Scenario, "seed", cfg.Seed, "cloud", cfg.Cloud, "provider", cfg.Provider)
 
 	return &Run{
 		Pool:     pool,
 		ID:       id,
 		Scenario: cfg.Scenario,
 		Seed:     cfg.Seed,
+		Cloud:    cfg.Cloud,
 		Provider: cfg.Provider,
 		Logger:   logger,
 	}, nil
@@ -63,7 +66,7 @@ func LastRun(ctx context.Context, pool *pgxpool.Pool, scenario string) (*Run, er
 	var r Run
 	r.Pool = pool
 	err := pool.QueryRow(ctx,
-		`SELECT id, scenario, seed, provider
+		`SELECT id, scenario, seed, cloud, provider
 		 FROM runs
 		 WHERE scenario = $1
 		   AND ended_at IS NOT NULL
@@ -71,7 +74,7 @@ func LastRun(ctx context.Context, pool *pgxpool.Pool, scenario string) (*Run, er
 		 ORDER BY ended_at DESC
 		 LIMIT 1`,
 		scenario,
-	).Scan(&r.ID, &r.Scenario, &r.Seed, &r.Provider)
+	).Scan(&r.ID, &r.Scenario, &r.Seed, &r.Cloud, &r.Provider)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

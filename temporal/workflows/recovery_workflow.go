@@ -65,6 +65,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	var runID uuid.UUID
 	if err = workflow.ExecuteActivity(ctx, runs.StartRun, activities.StartRunInput{
 		Scenario: "recovery",
+		Cloud:    cfg.Cloud,
 		Provider: cfg.Provider,
 	}).Get(ctx, &runID); err != nil {
 		return err

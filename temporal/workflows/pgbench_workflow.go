@@ -36,6 +36,7 @@ func PgBenchWorkflow(ctx workflow.Context, cfg PgBenchWorkflowConfig) (err error
 	if err = workflow.ExecuteActivity(ctx, runs.StartRun, activities.StartRunInput{
 		Scenario: "pg-bench",
 		Seed:     cfg.Workload.Seed,
+		Cloud:    cfg.Cloud,
 		Provider: cfg.Provider,
 	}).Get(ctx, &runID); err != nil {
 		return err
