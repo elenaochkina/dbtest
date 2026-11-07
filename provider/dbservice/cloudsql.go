@@ -13,6 +13,7 @@ import (
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	gcpcloud "github.com/elenaochkina/dbtest/provider/cloud/gcp"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -40,7 +41,7 @@ func (cloudSQLRegistration) SupportsHighAvailability() bool { return true }
 
 // Build builds Cloud SQL in the GCP cloud.
 func (cloudSQLRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	gcpCloud, ok := c.(*cloud.GCP)
+	gcpCloud, ok := c.(*gcpcloud.Cloud)
 	if !ok {
 		return nil, fmt.Errorf("cloudsql needs the gcp cloud, got %s", c.Name())
 	}

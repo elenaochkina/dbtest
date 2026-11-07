@@ -17,6 +17,7 @@ import (
 	"github.com/docker/go-connections/nat"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	localcloud "github.com/elenaochkina/dbtest/provider/cloud/local"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5"
 )
@@ -39,7 +40,7 @@ func (dockerRegistration) SupportsHighAvailability() bool { return false }
 
 // Build builds Postgres in Docker on the local cloud.
 func (dockerRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	local, ok := c.(*cloud.Local)
+	local, ok := c.(*localcloud.Cloud)
 	if !ok {
 		return nil, fmt.Errorf("docker needs the local cloud, got %s", c.Name())
 	}

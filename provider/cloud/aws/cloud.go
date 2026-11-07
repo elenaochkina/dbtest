@@ -1,4 +1,5 @@
-package cloud
+// Package aws is the AWS cloud: its config, readiness check and runners.
+package aws
 
 import (
 	"context"
@@ -13,27 +14,28 @@ import (
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 )
 
-// AWS is the AWS cloud, with the config its services share.
-type AWS struct {
+// Cloud is the AWS cloud, with the config its services share.
+type Cloud struct {
 	config awssdk.Config
 }
 
-// NewAWS loads the AWS config from the environment and the shared config files.
-func NewAWS() (Cloud, error) {
+// New loads the AWS config from the environment and the shared config files.
+func New() (cloud.Cloud, error) {
 	config, err := awsconfig.LoadDefaultConfig(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
 	}
-	return &AWS{config: config}, nil
+	return &Cloud{config: config}, nil
 }
 
-func (c *AWS) Name() provider.CloudName { return provider.AWS }
+func (c *Cloud) Name() provider.CloudName { return provider.AWS }
 
 // Check reports whether the .env variables are set and the credentials are valid.
-func (c *AWS) Check(ctx context.Context) provider.Status {
-	if status, missing := missingVariables(
+func (c *Cloud) Check(ctx context.Context) provider.Status {
+	if status, missing := cloud.MissingVariables(
 		"AWS_REGION",
 		"AWS_RDS_SECURITY_GROUP_IDS",
 		"AWS_ECS_CLUSTER",
@@ -52,14 +54,14 @@ func (c *AWS) Check(ctx context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady, Detail: roleFromARN(awssdk.ToString(identity.Arn))}
 }
 
-func (c *AWS) Runner() harness.RunnerName { return harness.Fargate }
+func (c *Cloud) Runner() harness.RunnerName { return harness.Fargate }
 
-func (c *AWS) Supports(service provider.DBServiceName) bool {
-	return Supports(provider.AWS, service)
+func (c *Cloud) Supports(service provider.DBServiceName) bool {
+	return cloud.Supports(provider.AWS, service)
 }
 
 // Config returns the AWS config the cloud's services build their clients from.
-func (c *AWS) Config() awssdk.Config { return c.config }
+func (c *Cloud) Config() awssdk.Config { return c.config }
 
 // profileFlag returns " --profile <name>" when AWS_PROFILE is set.
 func profileFlag() string {
@@ -80,7 +82,7 @@ func roleFromARN(arn string) string {
 }
 
 func init() {
-	Register(provider.AWS, NewAWS)
+	cloud.Register(provider.AWS, New)
 }
 
-var _ Cloud = (*AWS)(nil)
+var _ cloud.Cloud = (*Cloud)(nil)

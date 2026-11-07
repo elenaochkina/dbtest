@@ -14,6 +14,7 @@ import (
 	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	awscloud "github.com/elenaochkina/dbtest/provider/cloud/aws"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -38,7 +39,7 @@ func (auroraRegistration) SupportsHighAvailability() bool { return true }
 
 // Build builds Aurora in the AWS cloud.
 func (auroraRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
-	awsCloud, ok := c.(*cloud.AWS)
+	awsCloud, ok := c.(*awscloud.Cloud)
 	if !ok {
 		return nil, fmt.Errorf("aurora needs the aws cloud, got %s", c.Name())
 	}

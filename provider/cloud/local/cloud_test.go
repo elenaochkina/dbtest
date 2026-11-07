@@ -1,4 +1,4 @@
-package cloud
+package local
 
 import (
 	"context"
@@ -6,17 +6,18 @@ import (
 	"testing"
 
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 )
 
 func TestLocalRegistersItself(t *testing.T) {
-	if !slices.Contains(Names(), provider.Local) {
-		t.Errorf("Names() = %v, want local", Names())
+	if !slices.Contains(cloud.Names(), provider.Local) {
+		t.Errorf("cloud.Names() = %v, want local", cloud.Names())
 	}
 }
 
 func TestLocalCheckReportsDaemonDown(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
-	c, err := NewLocal()
+	c, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}

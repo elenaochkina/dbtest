@@ -60,9 +60,9 @@ func Supports(name provider.CloudName, service provider.DBServiceName) bool {
 	return slices.Contains(hosted[name], service)
 }
 
-// missingVariables returns a misconfigured status naming the .env variables
+// MissingVariables returns a misconfigured status naming the .env variables
 // that are not set, and whether any are missing.
-func missingVariables(names ...string) (provider.Status, bool) {
+func MissingVariables(names ...string) (provider.Status, bool) {
 	var missing []string
 	for _, name := range names {
 		if os.Getenv(name) == "" {

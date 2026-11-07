@@ -1,4 +1,4 @@
-package cloud
+package gcp
 
 import (
 	"context"
@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 )
 
 func TestGCPRegistersItself(t *testing.T) {
-	if !slices.Contains(Names(), provider.GCP) {
-		t.Errorf("Names() = %v, want gcp", Names())
+	if !slices.Contains(cloud.Names(), provider.GCP) {
+		t.Errorf("cloud.Names() = %v, want gcp", cloud.Names())
 	}
 }
 
@@ -18,7 +19,7 @@ func TestGCPCheckReportsMissingVariables(t *testing.T) {
 	t.Setenv("GCP_PROJECT", "dbtest")
 	t.Setenv("GCP_AUTHORIZED_NETWORKS", "")
 
-	c, err := NewGCP()
+	c, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,11 +31,11 @@ func TestGCPCheckReportsMissingVariables(t *testing.T) {
 
 func TestGCPDefaultsRegion(t *testing.T) {
 	t.Setenv("GCP_REGION", "")
-	c, err := NewGCP()
+	c, err := New()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if region := c.(*GCP).Region(); region != "us-west1" {
+	if region := c.(*Cloud).Region(); region != "us-west1" {
 		t.Errorf("Region() = %q, want us-west1", region)
 	}
 }

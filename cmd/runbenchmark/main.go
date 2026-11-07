@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
+	_ "github.com/elenaochkina/dbtest/provider/all"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/provider/dbservice"
 	"github.com/elenaochkina/dbtest/scenario"

@@ -1,4 +1,5 @@
-package cloud
+// Package local is the machine dbtest runs on, reached through Docker.
+package local
 
 import (
 	"context"
@@ -9,26 +10,27 @@ import (
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 )
 
-// Local is the machine dbtest runs on, reached through the Docker daemon.
-type Local struct {
+// Cloud is the machine dbtest runs on, reached through the Docker daemon.
+type Cloud struct {
 	client *dockerclient.Client
 }
 
-// NewLocal builds a Docker client from the environment.
-func NewLocal() (Cloud, error) {
+// New builds a Docker client from the environment.
+func New() (cloud.Cloud, error) {
 	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
-	return &Local{client: client}, nil
+	return &Cloud{client: client}, nil
 }
 
-func (c *Local) Name() provider.CloudName { return provider.Local }
+func (c *Cloud) Name() provider.CloudName { return provider.Local }
 
 // Check reports whether the Docker daemon answers.
-func (c *Local) Check(ctx context.Context) provider.Status {
+func (c *Cloud) Check(ctx context.Context) provider.Status {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if _, err := c.client.Ping(ctx); err != nil {
@@ -37,17 +39,17 @@ func (c *Local) Check(ctx context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady, Detail: "docker is running"}
 }
 
-func (c *Local) Runner() harness.RunnerName { return harness.Docker }
+func (c *Cloud) Runner() harness.RunnerName { return harness.Docker }
 
-func (c *Local) Supports(service provider.DBServiceName) bool {
-	return Supports(provider.Local, service)
+func (c *Cloud) Supports(service provider.DBServiceName) bool {
+	return cloud.Supports(provider.Local, service)
 }
 
 // Client returns the Docker client the cloud's services use.
-func (c *Local) Client() *dockerclient.Client { return c.client }
+func (c *Cloud) Client() *dockerclient.Client { return c.client }
 
 func init() {
-	Register(provider.Local, NewLocal)
+	cloud.Register(provider.Local, New)
 }
 
-var _ Cloud = (*Local)(nil)
+var _ cloud.Cloud = (*Cloud)(nil)

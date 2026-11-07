@@ -1,4 +1,4 @@
-package cloud
+package aws
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 )
 
 func TestAWSCheckReportsMissingVariables(t *testing.T) {
@@ -15,7 +16,7 @@ func TestAWSCheckReportsMissingVariables(t *testing.T) {
 	t.Setenv("AWS_ECS_CLUSTER", "")
 	t.Setenv("AWS_ECS_LOG_GROUP", "")
 
-	status := (&AWS{}).Check(context.Background())
+	status := (&Cloud{}).Check(context.Background())
 	want := provider.Status{State: provider.StateMisconfigured, Detail: "2 variables missing: run source .env (AWS_ECS_CLUSTER, AWS_ECS_LOG_GROUP)"}
 	if status != want {
 		t.Fatalf("status = %+v, want %+v", status, want)
@@ -23,8 +24,8 @@ func TestAWSCheckReportsMissingVariables(t *testing.T) {
 }
 
 func TestAWSRegistersItself(t *testing.T) {
-	if !slices.Contains(Names(), provider.AWS) {
-		t.Errorf("Names() = %v, want aws", Names())
+	if !slices.Contains(cloud.Names(), provider.AWS) {
+		t.Errorf("cloud.Names() = %v, want aws", cloud.Names())
 	}
 }
 

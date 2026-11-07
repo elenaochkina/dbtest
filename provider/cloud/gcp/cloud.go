@@ -1,4 +1,5 @@
-package cloud
+// Package gcp is Google Cloud: its project, region and readiness check.
+package gcp
 
 import (
 	"context"
@@ -10,29 +11,30 @@ import (
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 )
 
-// GCP is Google Cloud, with the project and region its services share.
-type GCP struct {
+// Cloud is Google Cloud, with the project and region its services share.
+type Cloud struct {
 	project string
 	region  string
 }
 
-// NewGCP reads the project and region from the environment.
-func NewGCP() (Cloud, error) {
+// New reads the project and region from the environment.
+func New() (cloud.Cloud, error) {
 	region := os.Getenv("GCP_REGION")
 	if region == "" {
 		region = "us-west1"
 	}
-	return &GCP{project: os.Getenv("GCP_PROJECT"), region: region}, nil
+	return &Cloud{project: os.Getenv("GCP_PROJECT"), region: region}, nil
 }
 
-func (c *GCP) Name() provider.CloudName { return provider.GCP }
+func (c *Cloud) Name() provider.CloudName { return provider.GCP }
 
 // Check reports whether the .env variables are set and Application Default
 // Credentials can get a token.
-func (c *GCP) Check(ctx context.Context) provider.Status {
-	if status, missing := missingVariables("GCP_PROJECT", "GCP_AUTHORIZED_NETWORKS"); missing {
+func (c *Cloud) Check(ctx context.Context) provider.Status {
+	if status, missing := cloud.MissingVariables("GCP_PROJECT", "GCP_AUTHORIZED_NETWORKS"); missing {
 		return status
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -48,20 +50,20 @@ func (c *GCP) Check(ctx context.Context) provider.Status {
 }
 
 // Runner runs the probe and bench containers on this machine until a Cloud Run runner exists.
-func (c *GCP) Runner() harness.RunnerName { return harness.Docker }
+func (c *Cloud) Runner() harness.RunnerName { return harness.Docker }
 
-func (c *GCP) Supports(service provider.DBServiceName) bool {
-	return Supports(provider.GCP, service)
+func (c *Cloud) Supports(service provider.DBServiceName) bool {
+	return cloud.Supports(provider.GCP, service)
 }
 
 // Project returns the project the cloud's services create resources in.
-func (c *GCP) Project() string { return c.project }
+func (c *Cloud) Project() string { return c.project }
 
 // Region returns the region the cloud's services create resources in.
-func (c *GCP) Region() string { return c.region }
+func (c *Cloud) Region() string { return c.region }
 
 func init() {
-	Register(provider.GCP, NewGCP)
+	cloud.Register(provider.GCP, New)
 }
 
-var _ Cloud = (*GCP)(nil)
+var _ cloud.Cloud = (*Cloud)(nil)

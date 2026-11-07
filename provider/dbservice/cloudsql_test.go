@@ -6,6 +6,7 @@ import (
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	gcpcloud "github.com/elenaochkina/dbtest/provider/cloud/gcp"
 )
 
 func TestCloudSQLRegistersInGCP(t *testing.T) {
@@ -37,7 +38,7 @@ func TestCloudSQLBuildRejectsOtherCloud(t *testing.T) {
 func TestCloudSQLBuildNeedsProject(t *testing.T) {
 	t.Setenv("GCP_PROJECT", "")
 	t.Setenv("GCP_AUTHORIZED_NETWORKS", "203.0.113.7/32")
-	c, err := cloud.NewGCP()
+	c, err := gcpcloud.New()
 	if err != nil {
 		t.Fatal(err)
 	}
