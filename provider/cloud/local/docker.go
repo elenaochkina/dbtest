@@ -1,4 +1,4 @@
-package harness
+package local
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
@@ -22,22 +23,19 @@ type dockerRunner struct {
 	tel     *telemetry.Telemetry
 }
 
-// NewDockerRunner creates a Docker runner. The network is runner-wide rather than per-spec,
-// mirroring Fargate, where subnets and security groups are static infrastructure.
-func NewDockerRunner(tel *telemetry.Telemetry) (Runner, error) {
-	client, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, fmt.Errorf("docker client: %w", err)
+// newDockerRunner builds a Docker runner on the cloud's client. The network is
+// runner-wide rather than per-spec, mirroring Fargate, where subnets and
+// security groups are static infrastructure.
+func newDockerRunner(client *dockerclient.Client, tel *telemetry.Telemetry) harness.Runner {
+	network := os.Getenv("DBTEST_DOCKER_NETWORK")
+	if network == "" {
+		network = "dbtest-net"
 	}
-	net := os.Getenv("DBTEST_DOCKER_NETWORK")
-	if net == "" {
-		net = "dbtest-net"
-	}
-	return &dockerRunner{client: client, network: net, tel: tel}, nil
+	return &dockerRunner{client: client, network: network, tel: tel}
 }
 
 // Run creates and starts the container.
-func (r *dockerRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
+func (r *dockerRunner) Run(ctx context.Context, spec harness.Spec) (harness.Handle, error) {
 	var netConfig *network.NetworkingConfig
 	if r.network != "" {
 		netConfig = &network.NetworkingConfig{
@@ -57,15 +55,15 @@ func (r *dockerRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
 	id := resp.ID
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return Handle{}, fmt.Errorf("image %q not found locally — run `make images`: %w", spec.Image, err)
+			return harness.Handle{}, fmt.Errorf("image %q not found locally — run `make images`: %w", spec.Image, err)
 		}
 		// A retried activity finds its own container from the first attempt.
 		if spec.Name == "" || !errdefs.IsConflict(err) {
-			return Handle{}, fmt.Errorf("container create %q: %w", spec.Name, err)
+			return harness.Handle{}, fmt.Errorf("container create %q: %w", spec.Name, err)
 		}
 		existing, ierr := r.client.ContainerInspect(ctx, spec.Name)
 		if ierr != nil {
-			return Handle{}, fmt.Errorf("adopt existing container %q: %w", spec.Name, ierr)
+			return harness.Handle{}, fmt.Errorf("adopt existing container %q: %w", spec.Name, ierr)
 		}
 		id = existing.ID
 		if r.tel != nil {
@@ -78,7 +76,7 @@ func (r *dockerRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
 
 	// Starting an already-running container is a no-op.
 	if err := r.client.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
-		return Handle{}, fmt.Errorf("container start: %w", err)
+		return harness.Handle{}, fmt.Errorf("container start: %w", err)
 	}
 
 	if r.tel != nil {
@@ -89,14 +87,14 @@ func (r *dockerRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
 			slog.String("network", r.network),
 		)
 	}
-	return Handle{ID: id, SelfExits: spec.SelfExits}, nil
+	return harness.Handle{ID: id, SelfExits: spec.SelfExits}, nil
 }
 
 // Stop ends the container and returns what it printed. Every path collects and
 // removes: elsewhere the output outlives the container in the platform's log
 // service, and a runner that drops it on failure would hide the one thing worth
 // reading.
-func (r *dockerRunner) Stop(ctx context.Context, h Handle) ([]byte, error) {
+func (r *dockerRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, error) {
 	err := r.terminate(ctx, h)
 	var code int
 	if err == nil {
@@ -115,7 +113,7 @@ func (r *dockerRunner) Stop(ctx context.Context, h Handle) ([]byte, error) {
 	case err != nil:
 		return out, err
 	case code != 0:
-		return out, fmt.Errorf("container exited %d: %s", code, tail(out))
+		return out, fmt.Errorf("container exited %d: %s", code, harness.Tail(out))
 	case collectErr != nil:
 		return out, collectErr
 	case removeErr != nil:
@@ -127,7 +125,7 @@ func (r *dockerRunner) Stop(ctx context.Context, h Handle) ([]byte, error) {
 // terminate asks a still-running container to exit. The grace period has to
 // outlast one sample plus writing the result, or the container is killed
 // mid-print and the output is lost.
-func (r *dockerRunner) terminate(ctx context.Context, h Handle) error {
+func (r *dockerRunner) terminate(ctx context.Context, h harness.Handle) error {
 	if h.SelfExits {
 		return nil
 	}
@@ -194,8 +192,4 @@ func (r *dockerRunner) remove(ctx context.Context, id string) error {
 	return nil
 }
 
-func init() {
-	Register(Docker, NewDockerRunner)
-}
-
-var _ Runner = (*dockerRunner)(nil)
+var _ harness.Runner = (*dockerRunner)(nil)

@@ -123,6 +123,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	// Seeding finishes before the prober starts
 	if err = workflow.ExecuteActivity(ctx, harn.InitializeBenchContainer, activities.BenchContainerInput{
+		Cloud:    cfg.Cloud,
 		Runner:   runner,
 		Image:    cfg.BenchImage,
 		Name:     "dbtest-seed-" + runID.String(),
@@ -135,6 +136,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	var probeHandle harness.Handle
 	if err = workflow.ExecuteActivity(ctx, harn.StartProbe, activities.ProbeInput{
+		Cloud:        cfg.Cloud,
 		Runner:       runner,
 		Image:        cfg.ProbeImage,
 		Name:         "dbtest-probe-" + runID.String(),
@@ -154,6 +156,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, onceOnly)
 		_ = workflow.ExecuteActivity(dctx, harn.StopProbe, activities.ContainerInput{
+			Cloud:  cfg.Cloud,
 			Runner: runner,
 			Handle: probeHandle,
 		}).Get(dctx, nil)
@@ -210,6 +213,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	var result probe.Result
 	octx := workflow.WithActivityOptions(ctx, onceOnly)
 	if err = workflow.ExecuteActivity(octx, harn.StopProbe, activities.ContainerInput{
+		Cloud:  cfg.Cloud,
 		Runner: runner,
 		Handle: probeHandle,
 	}).Get(ctx, &result); err != nil {

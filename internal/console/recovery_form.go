@@ -198,7 +198,7 @@ func (form recoveryForm) choose(choice string) recoveryForm {
 // with the Docker runner on this machine.
 func runsInDocker(name provider.CloudName) bool {
 	c, err := cloud.NewCloudProvider(name)
-	return err == nil && c.Runner() == harness.Docker
+	return err == nil && c.Runners()[0] == harness.Docker
 }
 
 // isNumberStep reports whether the current step takes a number.

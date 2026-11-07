@@ -2,6 +2,7 @@ package dbservice
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
@@ -17,7 +18,10 @@ func (c testCloud) Name() provider.CloudName { return c.name }
 func (c testCloud) Check(context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady}
 }
-func (c testCloud) Runner() harness.RunnerName             { return harness.Docker }
+func (c testCloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
+func (c testCloud) NewRunner(harness.RunnerName, *telemetry.Telemetry) (harness.Runner, error) {
+	return nil, errors.New("test cloud runs no containers")
+}
 func (c testCloud) Supports(s provider.DBServiceName) bool { return cloud.Supports(c.name, s) }
 
 type testService struct{}

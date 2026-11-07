@@ -1,4 +1,4 @@
-package harness
+package aws
 
 import (
 	"context"
@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
@@ -26,30 +26,21 @@ type fargateRunner struct {
 }
 
 type fargateConfig struct {
-	region           string
 	cluster          string
 	subnetIDs        []string
 	securityGroupIDs []string
 	logGroup         string
 }
 
-func NewFargateRunner(tel *telemetry.Telemetry) (Runner, error) {
+// newFargateRunner builds a Fargate runner from the cloud's config.
+func newFargateRunner(config awssdk.Config, tel *telemetry.Telemetry) (harness.Runner, error) {
 	cfg := loadFargateConfig()
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
-
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("load aws config: %w", err)
-	}
-	if cfg.region != "" {
-		awsCfg.Region = cfg.region
-	}
-
 	return &fargateRunner{
-		ecs:  ecs.NewFromConfig(awsCfg),
-		logs: cloudwatchlogs.NewFromConfig(awsCfg),
+		ecs:  ecs.NewFromConfig(config),
+		logs: cloudwatchlogs.NewFromConfig(config),
 		cfg:  cfg,
 		tel:  tel,
 	}, nil
@@ -58,15 +49,15 @@ func NewFargateRunner(tel *telemetry.Telemetry) (Runner, error) {
 // Run starts a task and returns once it is RUNNING. RunTask reports a task as
 // PROVISIONING, so returning earlier would hand back a container that is not
 // yet accepting work.
-func (r *fargateRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
+func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Handle, error) {
 	container, err := r.containerName(ctx, spec.Image)
 	if err != nil {
-		return Handle{}, err
+		return harness.Handle{}, err
 	}
 
 	out, err := r.ecs.RunTask(ctx, &ecs.RunTaskInput{
-		Cluster:        aws.String(r.cfg.cluster),
-		TaskDefinition: aws.String(spec.Image),
+		Cluster:        awssdk.String(r.cfg.cluster),
+		TaskDefinition: awssdk.String(spec.Image),
 		LaunchType:     ecstypes.LaunchTypeFargate,
 		NetworkConfiguration: &ecstypes.NetworkConfiguration{
 			AwsvpcConfiguration: &ecstypes.AwsVpcConfiguration{
@@ -77,27 +68,27 @@ func (r *fargateRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
 		},
 		Overrides: &ecstypes.TaskOverride{
 			ContainerOverrides: []ecstypes.ContainerOverride{{
-				Name:    aws.String(container),
+				Name:    awssdk.String(container),
 				Command: spec.Args,
 			}},
 		},
 	})
 	if err != nil {
-		return Handle{}, fmt.Errorf("run task %q: %w", spec.Image, err)
+		return harness.Handle{}, fmt.Errorf("run task %q: %w", spec.Image, err)
 	}
 	// A rejected task is reported in Failures rather than as an error.
 	if len(out.Failures) > 0 {
 		f := out.Failures[0]
-		return Handle{}, fmt.Errorf("run task %q rejected: %s %s",
-			spec.Image, aws.ToString(f.Reason), aws.ToString(f.Detail))
+		return harness.Handle{}, fmt.Errorf("run task %q rejected: %s %s",
+			spec.Image, awssdk.ToString(f.Reason), awssdk.ToString(f.Detail))
 	}
 	if len(out.Tasks) == 0 {
-		return Handle{}, fmt.Errorf("run task %q returned no task", spec.Image)
+		return harness.Handle{}, fmt.Errorf("run task %q returned no task", spec.Image)
 	}
-	arn := aws.ToString(out.Tasks[0].TaskArn)
+	arn := awssdk.ToString(out.Tasks[0].TaskArn)
 
 	if err := r.waitRunning(ctx, arn); err != nil {
-		return Handle{}, err
+		return harness.Handle{}, err
 	}
 	if r.tel != nil {
 		r.tel.Logger.Info("started harness task",
@@ -106,16 +97,16 @@ func (r *fargateRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
 			slog.String("container", container),
 		)
 	}
-	return Handle{ID: arn, SelfExits: spec.SelfExits}, nil
+	return harness.Handle{ID: arn, SelfExits: spec.SelfExits}, nil
 }
 
 // Stop terminates the task unless it exits on its own, then returns its output.
-func (r *fargateRunner) Stop(ctx context.Context, h Handle) ([]byte, error) {
+func (r *fargateRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, error) {
 	if !h.SelfExits {
 		if _, err := r.ecs.StopTask(ctx, &ecs.StopTaskInput{
-			Cluster: aws.String(r.cfg.cluster),
-			Task:    aws.String(h.ID),
-			Reason:  aws.String("harness stop"),
+			Cluster: awssdk.String(r.cfg.cluster),
+			Task:    awssdk.String(h.ID),
+			Reason:  awssdk.String("harness stop"),
 		}); err != nil && !isMissing(err) {
 			return nil, fmt.Errorf("stop task: %w", err)
 		}
@@ -134,7 +125,7 @@ func (r *fargateRunner) Stop(ctx context.Context, h Handle) ([]byte, error) {
 	out, collectErr := r.collect(cctx, task)
 
 	if code := exitCode(task); code != 0 {
-		return out, fmt.Errorf("container exited %d: %s", code, tail(out))
+		return out, fmt.Errorf("container exited %d: %s", code, harness.Tail(out))
 	}
 	if collectErr != nil {
 		return out, collectErr
@@ -142,13 +133,8 @@ func (r *fargateRunner) Stop(ctx context.Context, h Handle) ([]byte, error) {
 	return out, nil
 }
 
-func init() {
-	Register(Fargate, NewFargateRunner)
-}
-
 func loadFargateConfig() fargateConfig {
 	return fargateConfig{
-		region:           os.Getenv("AWS_REGION"),
 		cluster:          os.Getenv("AWS_ECS_CLUSTER"),
 		subnetIDs:        splitNonEmpty(os.Getenv("AWS_ECS_SUBNET_IDS"), ","),
 		securityGroupIDs: splitNonEmpty(os.Getenv("AWS_ECS_SECURITY_GROUP_IDS"), ","),
@@ -182,7 +168,7 @@ func (c fargateConfig) validate() error {
 // stream is named after both.
 func (r *fargateRunner) describeContainer(ctx context.Context, taskDef string) (name, prefix string, err error) {
 	out, err := r.ecs.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
-		TaskDefinition: aws.String(taskDef),
+		TaskDefinition: awssdk.String(taskDef),
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("describe task definition %q: %w", taskDef, err)
@@ -191,7 +177,7 @@ func (r *fargateRunner) describeContainer(ctx context.Context, taskDef string) (
 	if len(defs) == 0 {
 		return "", "", fmt.Errorf("task definition %q has no container", taskDef)
 	}
-	name = aws.ToString(defs[0].Name)
+	name = awssdk.ToString(defs[0].Name)
 	if defs[0].LogConfiguration != nil {
 		prefix = defs[0].LogConfiguration.Options["awslogs-stream-prefix"]
 	}
@@ -214,7 +200,7 @@ func (r *fargateRunner) waitRunning(ctx context.Context, arn string) error {
 		if err != nil {
 			return err
 		}
-		switch aws.ToString(task.LastStatus) {
+		switch awssdk.ToString(task.LastStatus) {
 		case "RUNNING":
 			return nil
 		case "STOPPED":
@@ -235,7 +221,7 @@ func (r *fargateRunner) waitStopped(ctx context.Context, arn string) (*ecstypes.
 		if err != nil {
 			return nil, err
 		}
-		if aws.ToString(task.LastStatus) == "STOPPED" {
+		if awssdk.ToString(task.LastStatus) == "STOPPED" {
 			return task, nil
 		}
 		if err := pause(ctx, 2*time.Second); err != nil {
@@ -246,7 +232,7 @@ func (r *fargateRunner) waitStopped(ctx context.Context, arn string) (*ecstypes.
 
 func (r *fargateRunner) describeTask(ctx context.Context, arn string) (*ecstypes.Task, error) {
 	out, err := r.ecs.DescribeTasks(ctx, &ecs.DescribeTasksInput{
-		Cluster: aws.String(r.cfg.cluster),
+		Cluster: awssdk.String(r.cfg.cluster),
 		Tasks:   []string{arn},
 	})
 	if err != nil {
@@ -261,17 +247,17 @@ func (r *fargateRunner) describeTask(ctx context.Context, arn string) (*ecstypes
 // collect returns the task's output.
 // Poll until the event count settles.
 func (r *fargateRunner) collect(ctx context.Context, task *ecstypes.Task) ([]byte, error) {
-	_, prefix, err := r.describeContainer(ctx, aws.ToString(task.TaskDefinitionArn))
+	_, prefix, err := r.describeContainer(ctx, awssdk.ToString(task.TaskDefinitionArn))
 	if err != nil {
 		return nil, err
 	}
 	if len(task.Containers) == 0 {
-		return nil, fmt.Errorf("task %s has no container", aws.ToString(task.TaskArn))
+		return nil, fmt.Errorf("task %s has no container", awssdk.ToString(task.TaskArn))
 	}
 	stream := strings.Join([]string{
 		prefix,
-		aws.ToString(task.Containers[0].Name),
-		taskID(aws.ToString(task.TaskArn)),
+		awssdk.ToString(task.Containers[0].Name),
+		taskID(awssdk.ToString(task.TaskArn)),
 	}, "/")
 
 	var last []byte
@@ -310,20 +296,20 @@ func (r *fargateRunner) readStream(ctx context.Context, stream string) ([]byte, 
 	)
 	for {
 		out, err := r.logs.GetLogEvents(ctx, &cloudwatchlogs.GetLogEventsInput{
-			LogGroupName:  aws.String(r.cfg.logGroup),
-			LogStreamName: aws.String(stream),
-			StartFromHead: aws.Bool(true),
+			LogGroupName:  awssdk.String(r.cfg.logGroup),
+			LogStreamName: awssdk.String(stream),
+			StartFromHead: awssdk.Bool(true),
 			NextToken:     token,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("get log events %q: %w", stream, err)
 		}
 		for _, e := range out.Events {
-			buf.WriteString(aws.ToString(e.Message))
+			buf.WriteString(awssdk.ToString(e.Message))
 			buf.WriteByte('\n')
 		}
 		// A repeated token means the end of the stream.
-		if len(out.Events) == 0 || (token != nil && aws.ToString(out.NextForwardToken) == aws.ToString(token)) {
+		if len(out.Events) == 0 || (token != nil && awssdk.ToString(out.NextForwardToken) == awssdk.ToString(token)) {
 			return []byte(buf.String()), nil
 		}
 		token = out.NextForwardToken
@@ -344,9 +330,9 @@ func exitCode(task *ecstypes.Task) int32 {
 }
 
 func stopReason(task *ecstypes.Task) string {
-	reason := aws.ToString(task.StoppedReason)
+	reason := awssdk.ToString(task.StoppedReason)
 	if len(task.Containers) > 0 {
-		if c := aws.ToString(task.Containers[0].Reason); c != "" {
+		if c := awssdk.ToString(task.Containers[0].Reason); c != "" {
 			reason += ": " + c
 		}
 	}

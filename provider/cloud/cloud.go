@@ -11,6 +11,7 @@ import (
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 // Cloud is where database services and harness containers run.
@@ -20,8 +21,12 @@ type Cloud interface {
 	// Check reports whether the cloud is configured and logged in.
 	Check(ctx context.Context) provider.Status
 
-	// Runner names the harness runner that starts containers in this cloud.
-	Runner() harness.RunnerName
+	// Runners lists the harness runners that start containers in this cloud,
+	// the default first.
+	Runners() []harness.RunnerName
+
+	// NewRunner builds the named runner.
+	NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error)
 
 	// Supports reports whether service runs in this cloud.
 	Supports(service provider.DBServiceName) bool
@@ -77,4 +82,9 @@ func MissingVariables(names ...string) (provider.Status, bool) {
 		count = "1 variable"
 	}
 	return provider.Status{State: provider.StateMisconfigured, Detail: count + " missing: run source .env (" + strings.Join(missing, ", ") + ")"}, true
+}
+
+// UnknownRunner is the error a cloud returns for a runner it does not build.
+func UnknownRunner(c Cloud, name harness.RunnerName) error {
+	return fmt.Errorf("%s has no %q runner; it has %v", c.Name(), name, c.Runners())
 }

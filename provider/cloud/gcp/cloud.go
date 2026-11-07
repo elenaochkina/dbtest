@@ -12,6 +12,8 @@ import (
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	"github.com/elenaochkina/dbtest/provider/cloud/local"
+	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 // Cloud is Google Cloud, with the project and region its services share.
@@ -49,8 +51,20 @@ func (c *Cloud) Check(ctx context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady, Detail: "project " + c.project}
 }
 
-// Runner runs the probe and bench containers on this machine until a Cloud Run runner exists.
-func (c *Cloud) Runner() harness.RunnerName { return harness.Docker }
+// Runners lists Docker on this machine until a Cloud Run runner exists.
+func (c *Cloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
+
+// NewRunner builds the local cloud's Docker runner.
+func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
+	if name != harness.Docker {
+		return nil, cloud.UnknownRunner(c, name)
+	}
+	machine, err := local.New()
+	if err != nil {
+		return nil, err
+	}
+	return machine.NewRunner(name, tel)
+}
 
 func (c *Cloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.GCP, service)

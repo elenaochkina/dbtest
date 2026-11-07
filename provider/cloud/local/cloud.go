@@ -11,6 +11,7 @@ import (
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 // Cloud is the machine dbtest runs on, reached through the Docker daemon.
@@ -39,7 +40,15 @@ func (c *Cloud) Check(ctx context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady, Detail: "docker is running"}
 }
 
-func (c *Cloud) Runner() harness.RunnerName { return harness.Docker }
+func (c *Cloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
+
+// NewRunner builds the Docker runner on the cloud's client.
+func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
+	if name != harness.Docker {
+		return nil, cloud.UnknownRunner(c, name)
+	}
+	return newDockerRunner(c.client, tel), nil
+}
 
 func (c *Cloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.Local, service)

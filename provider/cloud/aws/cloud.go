@@ -15,6 +15,7 @@ import (
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
+	"github.com/elenaochkina/dbtest/telemetry"
 )
 
 // Cloud is the AWS cloud, with the config its services share.
@@ -54,7 +55,15 @@ func (c *Cloud) Check(ctx context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady, Detail: roleFromARN(awssdk.ToString(identity.Arn))}
 }
 
-func (c *Cloud) Runner() harness.RunnerName { return harness.Fargate }
+func (c *Cloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Fargate} }
+
+// NewRunner builds the Fargate runner on the cloud's config.
+func (c *Cloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
+	if name != harness.Fargate {
+		return nil, cloud.UnknownRunner(c, name)
+	}
+	return newFargateRunner(c.config, tel)
+}
 
 func (c *Cloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.AWS, service)
