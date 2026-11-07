@@ -134,15 +134,28 @@ func startRecoveryWithKeys(t *testing.T, keys ...string) ([]workflows.RecoveryWo
 }
 
 func TestRecoveryFormDockerSkipsHighAvailability(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "enter")
+	_, current := startRecoveryWithKeys(t, "enter", "enter")
 	if current.form.step != "disruption" {
 		t.Fatalf("step = %q, want disruption", current.form.step)
 	}
-	started, _ := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "enter")
-	want := defaultRecovery()
-	want.Disruption = provider.Crash
-	if len(started) != 1 || started[0] != want {
+	started, _ := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "enter", "enter")
+	if len(started) != 1 || started[0] != defaultRecovery() {
 		t.Fatalf("started %+v, want one docker crash recovery", started)
+	}
+}
+
+func TestRecoveryFormServicesFollowCloud(t *testing.T) {
+	for _, test := range []struct {
+		keys    []string
+		options []string
+	}{
+		{[]string{"enter"}, []string{"docker"}},
+		{[]string{"up", "enter"}, []string{"aurora", "rds"}},
+	} {
+		_, current := startRecoveryWithKeys(t, test.keys...)
+		if options := current.form.options(); current.form.step != "database service" || !slices.Equal(options, test.options) {
+			t.Errorf("%v: step %q options %v, want database service %v", test.keys, current.form.step, options, test.options)
+		}
 	}
 }
 
@@ -152,10 +165,10 @@ func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
 		options []string
 		want    string
 	}{
-		{[]string{"down", "enter", "enter"}, []string{"restart"}, "restart"},
-		{[]string{"down", "enter", "down", "enter"}, []string{"restart", "failover"}, "restart"},
-		{[]string{"down", "down", "enter", "enter"}, []string{"restart", "crash"}, "crash"},
-		{[]string{"down", "down", "enter", "down", "enter"}, []string{"restart", "crash", "failover"}, "crash"},
+		{[]string{"up", "enter", "down", "enter", "enter"}, []string{"restart"}, "restart"},
+		{[]string{"up", "enter", "down", "enter", "down", "enter"}, []string{"restart", "failover"}, "restart"},
+		{[]string{"up", "enter", "enter", "enter"}, []string{"restart", "crash"}, "crash"},
+		{[]string{"up", "enter", "enter", "down", "enter"}, []string{"restart", "crash", "failover"}, "crash"},
 	} {
 		_, current := startRecoveryWithKeys(t, test.keys...)
 		options := current.form.options()
@@ -166,12 +179,12 @@ func TestRecoveryFormDisruptionsAndDefaults(t *testing.T) {
 }
 
 func TestRecoveryFormStartsAuroraFailover(t *testing.T) {
-	started, current := startRecoveryWithKeys(t, "down", "down", "enter", "down", "enter", "down", "enter", "enter", "enter", "enter")
+	started, current := startRecoveryWithKeys(t, "up", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter", "enter")
 	if len(started) != 1 {
 		t.Fatalf("started %d recoveries, want 1", len(started))
 	}
 	cfg := started[0]
-	if cfg.Provider != provider.Aurora || !cfg.Request.HighAvailability || cfg.Disruption != provider.Failover {
+	if cfg.Cloud != provider.AWS || cfg.Provider != provider.Aurora || !cfg.Request.HighAvailability || cfg.Disruption != provider.Failover {
 		t.Fatalf("started %+v, want aurora HA failover", cfg)
 	}
 	if cfg.ProbeImage != "dbtest-probe" || cfg.BenchImage != "dbtest-bench" {
@@ -183,25 +196,36 @@ func TestRecoveryFormStartsAuroraFailover(t *testing.T) {
 }
 
 func TestRecoveryFormEscapeGoesBackThenCloses(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "down", "enter", "enter", "esc")
+	_, current := startRecoveryWithKeys(t, "up", "enter", "down", "enter", "enter", "esc")
 	if current.form.step != "high availability" {
 		t.Fatalf("step = %q, want high availability", current.form.step)
 	}
-	current = send(current, keyPress("esc"), keyPress("esc"))
+	current = send(current, keyPress("esc"), keyPress("esc"), keyPress("esc"))
 	if current.form.step != "" {
 		t.Fatalf("form still open on %q", current.form.step)
 	}
 }
 
+func TestRecoveryFormBackShowsCurrentChoice(t *testing.T) {
+	_, current := startRecoveryWithKeys(t, "up", "enter", "down", "enter", "esc")
+	if options := current.form.options(); current.form.step != "database service" || options[current.form.cursor] != "rds" {
+		t.Fatalf("step %q cursor on %q, want database service on rds", current.form.step, options[current.form.cursor])
+	}
+	current = send(current, keyPress("esc"))
+	if options := current.form.options(); current.form.step != "cloud" || options[current.form.cursor] != "aws" {
+		t.Fatalf("step %q cursor on %q, want cloud on aws", current.form.step, options[current.form.cursor])
+	}
+}
+
 func TestRecoveryFormMenuKeyCloses(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "down", "enter", "enter", "m")
+	_, current := startRecoveryWithKeys(t, "up", "enter", "down", "enter", "enter", "m")
 	if current.form.step != "" {
 		t.Fatalf("form still open on %q", current.form.step)
 	}
 }
 
 func TestRecoveryFormStartsTwice(t *testing.T) {
-	started, _ := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter")
+	started, _ := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter", "enter")
 	if len(started) != 2 {
 		t.Fatalf("started %d recoveries, want 2", len(started))
 	}
@@ -209,7 +233,7 @@ func TestRecoveryFormStartsTwice(t *testing.T) {
 
 func TestRecoveryFormStartsCustomSize(t *testing.T) {
 	started, _ := startRecoveryWithKeys(t,
-		"enter", "enter", // docker, crash
+		"enter", "enter", "enter", // local, docker, crash
 		"5", "enter", // repetitions
 		"down", "enter", // customize
 		"0", ".", "5", "enter", // vCPU
@@ -219,7 +243,6 @@ func TestRecoveryFormStartsCustomSize(t *testing.T) {
 		"enter", // confirm
 	)
 	want := defaultRecovery()
-	want.Disruption = provider.Crash
 	want.Repetitions = 5
 	want.Request.VCPU = 0.5
 	want.Request.MemoryMiB = 1024
@@ -230,7 +253,7 @@ func TestRecoveryFormStartsCustomSize(t *testing.T) {
 }
 
 func TestRecoveryFormRejectsInvalidNumber(t *testing.T) {
-	started, current := startRecoveryWithKeys(t, "enter", "enter", "0", "enter")
+	started, current := startRecoveryWithKeys(t, "enter", "enter", "enter", "0", "enter")
 	if current.form.step != "repetitions" || current.form.err == nil {
 		t.Fatalf("step = %q, err = %v, want repetitions with an error", current.form.step, current.form.err)
 	}
@@ -259,8 +282,8 @@ func TestRecoveryFormConfirmShowsChoices(t *testing.T) {
 		want        []string
 		wantWarning bool
 	}{
-		{[]string{"enter", "enter", "enter", "enter"}, []string{"docker", "crash", "memory             2048 MiB", "disk               provider default"}, false},
-		{[]string{"down", "down", "enter", "down", "enter", "down", "enter", "enter", "enter"}, []string{"aws-aurora", "high availability  yes", "failover"}, true},
+		{[]string{"enter", "enter", "enter", "enter", "enter"}, []string{"cloud              local", "database service   docker", "crash", "memory             2048 MiB", "disk               provider default"}, false},
+		{[]string{"up", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter"}, []string{"cloud              aws", "database service   aurora", "high availability  yes", "failover"}, true},
 	} {
 		started, current := startRecoveryWithKeys(t, test.keys...)
 		if current.form.step != "confirm" || len(started) != 0 {
@@ -272,14 +295,14 @@ func TestRecoveryFormConfirmShowsChoices(t *testing.T) {
 				t.Errorf("%v: summary has no %q:\n%s", test.keys, want, summary)
 			}
 		}
-		if hasWarning := strings.Contains(summary, "AWS resources"); hasWarning != test.wantWarning {
-			t.Errorf("%v: AWS warning shown = %v, want %v", test.keys, hasWarning, test.wantWarning)
+		if hasWarning := strings.Contains(summary, "resources that cost money"); hasWarning != test.wantWarning {
+			t.Errorf("%v: cost warning shown = %v, want %v", test.keys, hasWarning, test.wantWarning)
 		}
 	}
 }
 
 func TestRecoveryFormEscapeFromConfirmGoesBack(t *testing.T) {
-	_, current := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "esc")
+	_, current := startRecoveryWithKeys(t, "enter", "enter", "enter", "enter", "enter", "esc")
 	if current.form.step != "size" {
 		t.Fatalf("step = %q, want size", current.form.step)
 	}

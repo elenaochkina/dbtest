@@ -16,7 +16,7 @@ func defaultRecovery() workflows.RecoveryWorkflowConfig {
 		Cloud:       provider.Local,
 		Provider:    provider.Docker,
 		Request:     provider.ProvisionRequest{VCPU: 2, MemoryMiB: 2048, PostgresVersion: "18"},
-		Disruption:  provider.Restart,
+		Disruption:  provider.Crash,
 		Repetitions: 3,
 		Settle:      30 * time.Second,
 		ProbeImage:  "dbtest/probe:dev",

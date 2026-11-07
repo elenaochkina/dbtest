@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
+	"github.com/elenaochkina/dbtest/provider/dbservice"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
@@ -23,27 +25,16 @@ type recoveryForm struct {
 	cfg        workflows.RecoveryWorkflowConfig
 }
 
-// providerChoices lists the providers in the order the form shows them.
-var providerChoices = []struct {
-	label string
-	cloud provider.CloudName
-	name  provider.DBServiceName
-}{
-	{"docker", provider.Local, provider.Docker},
-	{"aws-rds", provider.AWS, provider.RDS},
-	{"aws-aurora", provider.AWS, provider.Aurora},
-}
-
 // openRecoveryForm returns the form on its first step, filled with the
 // recovery defaults.
 func openRecoveryForm() recoveryForm {
-	return recoveryForm{cfg: defaultRecovery()}.show("provider")
+	return recoveryForm{cfg: defaultRecovery()}.show("cloud")
 }
 
 // steps returns the steps for the choices made so far.
 func (form recoveryForm) steps() []string {
-	steps := []string{"provider"}
-	if form.cfg.Provider != provider.Docker {
+	steps := []string{"cloud", "database service"}
+	if form.supportsHighAvailability() {
 		steps = append(steps, "high availability")
 	}
 	steps = append(steps, "disruption", "repetitions", "size")
@@ -53,49 +44,69 @@ func (form recoveryForm) steps() []string {
 	return append(steps, "confirm")
 }
 
-// options returns the choices on the current step, or nil on a number step and
-// on confirm.
+// options returns the choices on the current step, or nil on a number step and on confirm.
 func (form recoveryForm) options() []string {
+	var labels []string
 	switch form.step {
-	case "provider":
-		var labels []string
-		for _, choice := range providerChoices {
-			labels = append(labels, choice.label)
+	case "cloud":
+		for _, name := range cloud.Names() {
+			labels = append(labels, string(name))
 		}
-		return labels
+	case "database service":
+		for _, name := range dbservice.Names() {
+			if cloud.Supports(form.cfg.Cloud, name) {
+				labels = append(labels, string(name))
+			}
+		}
 	case "high availability":
-		return []string{"no", "yes"}
+		labels = []string{"no", "yes"}
 	case "disruption":
-		return disruptions(form.cfg.Provider, form.cfg.Request.HighAvailability)
+		for _, disruption := range dbservice.Disruptions(form.cfg.Provider, form.cfg.Request) {
+			labels = append(labels, string(disruption))
+		}
 	case "size":
-		return []string{"use defaults", "customize"}
+		labels = []string{"use defaults", "customize"}
 	}
-	return nil
+	return labels
 }
 
-// disruptions returns the disruptions the provider supports.
-func disruptions(name provider.DBServiceName, highAvailability bool) []string {
-	var supported []string
-	switch name {
-	case provider.Docker, provider.Aurora:
-		supported = []string{"restart", "crash"}
-	case provider.RDS:
-		supported = []string{"restart"}
-	}
-	if highAvailability {
-		supported = append(supported, "failover")
-	}
-	return supported
+// supportsHighAvailability reports whether the chosen service can run with a standby.
+func (form recoveryForm) supportsHighAvailability() bool {
+	descriptor, ok := dbservice.Get(form.cfg.Provider)
+	return ok && descriptor.SupportsHighAvailability
 }
 
 // show moves to step with an empty input. On a choice step the cursor is on
-// crash if it is an option, otherwise on the first option.
+// the current choice if it is an option, otherwise on the first option.
 func (form recoveryForm) show(step string) recoveryForm {
 	form.step = step
-	form.cursor = max(0, slices.Index(form.options(), "crash"))
+	form.cursor = max(0, slices.Index(form.options(), form.current()))
 	form.input = ""
 	form.err = nil
 	return form
+}
+
+// current returns the config's value for the current choice step.
+func (form recoveryForm) current() string {
+	switch form.step {
+	case "cloud":
+		return string(form.cfg.Cloud)
+	case "database service":
+		return string(form.cfg.Provider)
+	case "high availability":
+		if form.cfg.Request.HighAvailability {
+			return "yes"
+		}
+		return "no"
+	case "disruption":
+		return string(form.cfg.Disruption)
+	case "size":
+		if form.customSize {
+			return "customize"
+		}
+		return "use defaults"
+	}
+	return ""
 }
 
 // move moves the cursor by offset within the options.
@@ -163,14 +174,15 @@ func (form recoveryForm) back() recoveryForm {
 // choose stores choice for the current choice step.
 func (form recoveryForm) choose(choice string) recoveryForm {
 	switch form.step {
-	case "provider":
-		form.cfg.Cloud = providerChoices[form.cursor].cloud
-		form.cfg.Provider = providerChoices[form.cursor].name
-		form.cfg.Request.HighAvailability = false
+	case "cloud":
+		form.cfg.Cloud = provider.CloudName(choice)
 		form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest/probe:dev", "dbtest/bench:dev"
-		if form.cfg.Provider != provider.Docker {
+		if form.cfg.Cloud != provider.Local {
 			form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest-probe", "dbtest-bench"
 		}
+	case "database service":
+		form.cfg.Provider = provider.DBServiceName(choice)
+		form.cfg.Request.HighAvailability = false
 	case "high availability":
 		form.cfg.Request.HighAvailability = choice == "yes"
 	case "disruption":
@@ -261,15 +273,15 @@ func (form recoveryForm) lines() []string {
 	return append(lines, keyHelp("next", "enter", "back", "esc", "menu", "m", "exit", "q"))
 }
 
-// summary returns one line per choice, and a warning for AWS providers.
+// summary returns one line per choice, and a cost warning outside the local cloud.
 func (form recoveryForm) summary() []string {
 	cfg := form.cfg
 	disk := strconv.Itoa(cfg.Request.DiskGiB) + " GiB"
 	if cfg.Request.DiskGiB == 0 {
 		disk = "provider default"
 	}
-	rows := [][2]string{{"provider", providerLabel(cfg.Provider)}}
-	if cfg.Provider != provider.Docker {
+	rows := [][2]string{{"cloud", string(cfg.Cloud)}, {"database service", string(cfg.Provider)}}
+	if form.supportsHighAvailability() {
 		highAvailability := "no"
 		if cfg.Request.HighAvailability {
 			highAvailability = "yes"
@@ -288,18 +300,8 @@ func (form recoveryForm) summary() []string {
 	for _, row := range rows {
 		lines = append(lines, padRight(row[0], 19)+row[1])
 	}
-	if cfg.Provider != provider.Docker {
-		lines = append(lines, levelStyle(slog.LevelWarn).Render("creates AWS resources that cost money"))
+	if cfg.Cloud != provider.Local {
+		lines = append(lines, levelStyle(slog.LevelWarn).Render("creates "+string(cfg.Cloud)+" resources that cost money"))
 	}
 	return lines
-}
-
-// providerLabel returns the form's label for name.
-func providerLabel(name provider.DBServiceName) string {
-	for _, choice := range providerChoices {
-		if choice.name == name {
-			return choice.label
-		}
-	}
-	return string(name)
 }

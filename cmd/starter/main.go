@@ -33,7 +33,7 @@ func main() {
 	workflowID := flag.String("id", "", "workflow id (default: workflow name)")
 
 	// recovery only.
-	disruption := flag.String("disruption", "restart", "disruption to apply (restart, failover, crash)")
+	disruption := flag.String("disruption", "crash", "disruption to apply (restart, failover, crash)")
 	repetitions := flag.Int("repetitions", 3, "how many times to disrupt")
 	settle := flag.Duration("settle", 30*time.Second, "wait after each disruption before the next")
 	highAvailability := flag.Bool("ha", false, "provision with a standby, which failover needs")
