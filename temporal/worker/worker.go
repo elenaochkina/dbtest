@@ -7,10 +7,6 @@ import (
 	"github.com/elenaochkina/dbtest/temporal/activities"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 
-	// Register the container runners so harness.New can resolve them inside activities.
-	_ "github.com/elenaochkina/dbtest/harness/aws"
-	_ "github.com/elenaochkina/dbtest/harness/docker"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/sdk/client"
 	sdkworker "go.temporal.io/sdk/worker"

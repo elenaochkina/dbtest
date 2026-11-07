@@ -1,5 +1,4 @@
-// Package aws runs harness containers as ECS Fargate tasks.
-package aws
+package harness
 
 import (
 	"context"
@@ -15,11 +14,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
-	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
-// fargateRunner starts one task per container.
+// fargateRunner runs containers as ECS Fargate tasks, one task per container.
 type fargateRunner struct {
 	ecs  *ecs.Client
 	logs *cloudwatchlogs.Client
@@ -35,8 +33,8 @@ type fargateConfig struct {
 	logGroup         string
 }
 
-func New(tel *telemetry.Telemetry) (*fargateRunner, error) {
-	cfg := loadConfig()
+func NewFargateRunner(tel *telemetry.Telemetry) (Runner, error) {
+	cfg := loadFargateConfig()
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -60,10 +58,10 @@ func New(tel *telemetry.Telemetry) (*fargateRunner, error) {
 // Run starts a task and returns once it is RUNNING. RunTask reports a task as
 // PROVISIONING, so returning earlier would hand back a container that is not
 // yet accepting work.
-func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Handle, error) {
+func (r *fargateRunner) Run(ctx context.Context, spec Spec) (Handle, error) {
 	container, err := r.containerName(ctx, spec.Image)
 	if err != nil {
-		return harness.Handle{}, err
+		return Handle{}, err
 	}
 
 	out, err := r.ecs.RunTask(ctx, &ecs.RunTaskInput{
@@ -85,21 +83,21 @@ func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Han
 		},
 	})
 	if err != nil {
-		return harness.Handle{}, fmt.Errorf("run task %q: %w", spec.Image, err)
+		return Handle{}, fmt.Errorf("run task %q: %w", spec.Image, err)
 	}
 	// A rejected task is reported in Failures rather than as an error.
 	if len(out.Failures) > 0 {
 		f := out.Failures[0]
-		return harness.Handle{}, fmt.Errorf("run task %q rejected: %s %s",
+		return Handle{}, fmt.Errorf("run task %q rejected: %s %s",
 			spec.Image, aws.ToString(f.Reason), aws.ToString(f.Detail))
 	}
 	if len(out.Tasks) == 0 {
-		return harness.Handle{}, fmt.Errorf("run task %q returned no task", spec.Image)
+		return Handle{}, fmt.Errorf("run task %q returned no task", spec.Image)
 	}
 	arn := aws.ToString(out.Tasks[0].TaskArn)
 
 	if err := r.waitRunning(ctx, arn); err != nil {
-		return harness.Handle{}, err
+		return Handle{}, err
 	}
 	if r.tel != nil {
 		r.tel.Logger.Info("started harness task",
@@ -108,11 +106,11 @@ func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Han
 			slog.String("container", container),
 		)
 	}
-	return harness.Handle{ID: arn, SelfExits: spec.SelfExits}, nil
+	return Handle{ID: arn, SelfExits: spec.SelfExits}, nil
 }
 
 // Stop terminates the task unless it exits on its own, then returns its output.
-func (r *fargateRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, error) {
+func (r *fargateRunner) Stop(ctx context.Context, h Handle) ([]byte, error) {
 	if !h.SelfExits {
 		if _, err := r.ecs.StopTask(ctx, &ecs.StopTaskInput{
 			Cluster: aws.String(r.cfg.cluster),
@@ -145,12 +143,10 @@ func (r *fargateRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, err
 }
 
 func init() {
-	harness.Register(harness.Fargate, func(tel *telemetry.Telemetry) (harness.Runner, error) {
-		return New(tel)
-	})
+	Register(Fargate, NewFargateRunner)
 }
 
-func loadConfig() fargateConfig {
+func loadFargateConfig() fargateConfig {
 	return fargateConfig{
 		region:           os.Getenv("AWS_REGION"),
 		cluster:          os.Getenv("AWS_ECS_CLUSTER"),
@@ -372,14 +368,6 @@ func pause(ctx context.Context, d time.Duration) error {
 	case <-time.After(d):
 		return nil
 	}
-}
-
-func tail(out []byte) string {
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) > 5 {
-		lines = lines[len(lines)-5:]
-	}
-	return strings.Join(lines, "\n")
 }
 
 func splitNonEmpty(s, sep string) []string {

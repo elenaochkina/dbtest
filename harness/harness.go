@@ -3,6 +3,7 @@
 package harness
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"sort"
@@ -56,8 +57,8 @@ func Register(name RunnerName, fn func(*telemetry.Telemetry) (Runner, error)) {
 	registry[name] = fn
 }
 
-// New returns a Runner for the given name.
-func New(name RunnerName, tel *telemetry.Telemetry) (Runner, error) {
+// NewRunner returns a Runner for the given name.
+func NewRunner(name RunnerName, tel *telemetry.Telemetry) (Runner, error) {
 	fn, ok := registry[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown runner %q; registered: %v", name, registeredNames())
@@ -72,4 +73,13 @@ func registeredNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// tail returns the last few lines, for an error message.
+func tail(out []byte) string {
+	lines := bytes.Split(bytes.TrimSpace(out), []byte("\n"))
+	if len(lines) > 5 {
+		lines = lines[len(lines)-5:]
+	}
+	return string(bytes.Join(lines, []byte("\n")))
 }

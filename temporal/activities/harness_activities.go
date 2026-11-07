@@ -85,7 +85,7 @@ func (a *HarnessActivities) ResolveRunner(ctx context.Context, input RunnerInput
 // The prober polls until it is stopped, so the workflow holds the handle across
 // the disruptions.
 func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (harness.Handle, error) {
-	r, err := harness.New(input.Runner, a.tel)
+	r, err := harness.NewRunner(input.Runner, a.tel)
 	if err != nil {
 		return harness.Handle{}, fmt.Errorf("runner %q: %w", input.Runner, err)
 	}
@@ -107,7 +107,7 @@ func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (h
 //
 // Not safe to retry: stopping discards the container.
 func (a *HarnessActivities) StopProbe(ctx context.Context, input ContainerInput) (probe.Result, error) {
-	r, err := harness.New(input.Runner, a.tel)
+	r, err := harness.NewRunner(input.Runner, a.tel)
 	if err != nil {
 		return probe.Result{}, fmt.Errorf("runner %q: %w", input.Runner, err)
 	}
@@ -141,7 +141,7 @@ func (a *HarnessActivities) StopProbe(ctx context.Context, input ContainerInput)
 // InitializeBenchContainer runs bench's setup phase and waits for it to finish.
 // The output is discarded: a failed seed arrives as a non-zero exit.
 func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input BenchContainerInput) error {
-	r, err := harness.New(input.Runner, a.tel)
+	r, err := harness.NewRunner(input.Runner, a.tel)
 	if err != nil {
 		return fmt.Errorf("runner %q: %w", input.Runner, err)
 	}
