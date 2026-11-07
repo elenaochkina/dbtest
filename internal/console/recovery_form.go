@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/provider/dbservice"
@@ -176,9 +177,9 @@ func (form recoveryForm) choose(choice string) recoveryForm {
 	switch form.step {
 	case "cloud":
 		form.cfg.Cloud = provider.CloudName(choice)
-		form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest/probe:dev", "dbtest/bench:dev"
-		if form.cfg.Cloud != provider.Local {
-			form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest-probe", "dbtest-bench"
+		form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest-probe", "dbtest-bench"
+		if runsInDocker(form.cfg.Cloud) {
+			form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest/probe:dev", "dbtest/bench:dev"
 		}
 	case "database service":
 		form.cfg.Provider = provider.DBServiceName(choice)
@@ -191,6 +192,13 @@ func (form recoveryForm) choose(choice string) recoveryForm {
 		form.customSize = choice == "customize"
 	}
 	return form
+}
+
+// runsInDocker reports whether the cloud starts the probe and bench containers
+// with the Docker runner on this machine.
+func runsInDocker(name provider.CloudName) bool {
+	c, err := cloud.NewCloudProvider(name)
+	return err == nil && c.Runner() == harness.Docker
 }
 
 // isNumberStep reports whether the current step takes a number.

@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
+	"strings"
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
@@ -56,4 +58,23 @@ func Host(name provider.CloudName, service provider.DBServiceName) {
 // Supports reports whether service runs in the named cloud.
 func Supports(name provider.CloudName, service provider.DBServiceName) bool {
 	return slices.Contains(hosted[name], service)
+}
+
+// missingVariables returns a misconfigured status naming the .env variables
+// that are not set, and whether any are missing.
+func missingVariables(names ...string) (provider.Status, bool) {
+	var missing []string
+	for _, name := range names {
+		if os.Getenv(name) == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return provider.Status{}, false
+	}
+	count := fmt.Sprintf("%d variables", len(missing))
+	if len(missing) == 1 {
+		count = "1 variable"
+	}
+	return provider.Status{State: provider.StateMisconfigured, Detail: count + " missing: run source .env (" + strings.Join(missing, ", ") + ")"}, true
 }
