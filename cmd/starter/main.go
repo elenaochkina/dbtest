@@ -18,8 +18,8 @@ import (
 // starter triggers one workflow execution and waits for it. It talks only to the Temporal server;
 func main() {
 	// Parse flags.
-	cloudName := flag.String("cloud", "local", "cloud name (local, aws)")
-	providerName := flag.String("provider", "docker", "provider name (docker, rds, aurora)")
+	cloudName := flag.String("cloud", "local", "cloud name (local, aws, gcp)")
+	providerName := flag.String("provider", "docker", "provider name (docker, rds, aurora, cloudsql)")
 	vcpu := flag.Float64("vcpu", 2, "cluster vCPU")
 	memoryMiB := flag.Int("memory-mib", 8192, "cluster memory (MiB)")
 	diskGiB := flag.Int("disk-gib", 0, "cluster disk (GiB); 0 = provider default")

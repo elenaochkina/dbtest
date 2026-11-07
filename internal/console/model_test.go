@@ -150,6 +150,7 @@ func TestRecoveryFormServicesFollowCloud(t *testing.T) {
 		options []string
 	}{
 		{[]string{"enter"}, []string{"docker"}},
+		{[]string{"up", "enter"}, []string{"cloudsql"}},
 		{[]string{"up", "up", "enter"}, []string{"aurora", "rds"}},
 	} {
 		_, current := startRecoveryWithKeys(t, test.keys...)
