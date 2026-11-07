@@ -282,7 +282,7 @@ func TestRecoveryFormConfirmShowsChoices(t *testing.T) {
 		want        []string
 		wantWarning bool
 	}{
-		{[]string{"enter", "enter", "enter", "enter", "enter"}, []string{"cloud              local", "database service   docker", "crash", "memory             2048 MiB", "disk               provider default"}, false},
+		{[]string{"enter", "enter", "enter", "enter", "enter"}, []string{"cloud              local", "database service   docker", "crash", "memory             8192 MiB", "disk               provider default"}, false},
 		{[]string{"up", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter"}, []string{"cloud              aws", "database service   aurora", "high availability  yes", "failover"}, true},
 	} {
 		started, current := startRecoveryWithKeys(t, test.keys...)

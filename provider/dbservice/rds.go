@@ -217,11 +217,9 @@ func resolveRDSClass(req provider.ProvisionRequest, override string) string {
 		vcpu      float64
 		memoryMiB int
 	}{
-		{"db.t3.small", 2, 2048},
-		{"db.t3.medium", 2, 4096},
-		{"db.t3.large", 2, 8192},
-		{"db.t3.xlarge", 4, 16384},
-		{"db.m6g.2xlarge", 8, 32768},
+		{"db.m7i.large", 2, 8192},
+		{"db.m7i.xlarge", 4, 16384},
+		{"db.m7i.2xlarge", 8, 32768},
 	}
 
 	for _, c := range table {

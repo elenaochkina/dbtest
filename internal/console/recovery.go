@@ -15,7 +15,7 @@ func defaultRecovery() workflows.RecoveryWorkflowConfig {
 	return workflows.RecoveryWorkflowConfig{
 		Cloud:       provider.Local,
 		Provider:    provider.Docker,
-		Request:     provider.ProvisionRequest{VCPU: 2, MemoryMiB: 2048, PostgresVersion: "18"},
+		Request:     provider.ProvisionRequest{VCPU: 2, MemoryMiB: 8192, PostgresVersion: "18"},
 		Disruption:  provider.Crash,
 		Repetitions: 3,
 		Settle:      30 * time.Second,

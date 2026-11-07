@@ -39,9 +39,9 @@ func TestResolveRDSClass(t *testing.T) {
 		req  provider.ProvisionRequest
 		want string
 	}{
-		{provider.ProvisionRequest{VCPU: 2, MemoryMiB: 2048}, "db.t3.small"},
-		{provider.ProvisionRequest{VCPU: 4, MemoryMiB: 8192}, "db.t3.xlarge"},
-		{provider.ProvisionRequest{VCPU: 64, MemoryMiB: 1 << 20}, "db.m6g.2xlarge"},
+		{provider.ProvisionRequest{VCPU: 2, MemoryMiB: 8192}, "db.m7i.large"},
+		{provider.ProvisionRequest{VCPU: 4, MemoryMiB: 16384}, "db.m7i.xlarge"},
+		{provider.ProvisionRequest{VCPU: 64, MemoryMiB: 1 << 20}, "db.m7i.2xlarge"},
 	} {
 		if got := resolveRDSClass(tc.req, ""); got != tc.want {
 			t.Errorf("resolveRDSClass(%+v) = %s, want %s", tc.req, got, tc.want)

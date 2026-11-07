@@ -21,7 +21,7 @@ func main() {
 	cloudName := flag.String("cloud", "local", "cloud name (local, aws)")
 	providerName := flag.String("provider", "docker", "provider name (docker, rds, aurora)")
 	vcpu := flag.Float64("vcpu", 2, "cluster vCPU")
-	memoryMiB := flag.Int("memory-mib", 2048, "cluster memory (MiB)")
+	memoryMiB := flag.Int("memory-mib", 8192, "cluster memory (MiB)")
 	diskGiB := flag.Int("disk-gib", 0, "cluster disk (GiB); 0 = provider default")
 	pgVersion := flag.String("pg-version", "18", "postgres engine version")
 	seed := flag.Int64("seed", 42, "random seed for warehouse data")
