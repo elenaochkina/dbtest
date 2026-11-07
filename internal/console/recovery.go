@@ -13,6 +13,7 @@ import (
 // defaultRecovery returns the recovery workflow input with cmd/starter's defaults.
 func defaultRecovery() workflows.RecoveryWorkflowConfig {
 	return workflows.RecoveryWorkflowConfig{
+		Cloud:       provider.Local,
 		Provider:    provider.Docker,
 		Request:     provider.ProvisionRequest{VCPU: 2, MemoryMiB: 2048, PostgresVersion: "18"},
 		Disruption:  provider.Restart,

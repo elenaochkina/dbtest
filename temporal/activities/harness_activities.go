@@ -10,9 +10,17 @@ import (
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/probe"
+	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5"
+	"go.temporal.io/sdk/temporal"
 )
+
+// RunnerInput names the cloud whose runner starts the run's containers.
+type RunnerInput struct {
+	Cloud provider.CloudName
+}
 
 // ProbeInput describes the prober container to start.
 type ProbeInput struct {
@@ -62,6 +70,15 @@ type HarnessActivities struct {
 
 func NewHarnessActivities(tel *telemetry.Telemetry) *HarnessActivities {
 	return &HarnessActivities{tel: tel}
+}
+
+// ResolveRunner builds the cloud and returns the runner that starts containers in it.
+func (a *HarnessActivities) ResolveRunner(ctx context.Context, input RunnerInput) (harness.RunnerName, error) {
+	c, err := cloud.NewCloudProvider(input.Cloud)
+	if err != nil {
+		return "", temporal.NewNonRetryableApplicationError(err.Error(), "UnknownCloud", err)
+	}
+	return c.Runner(), nil
 }
 
 // StartProbe launches the prober and returns once it is running.

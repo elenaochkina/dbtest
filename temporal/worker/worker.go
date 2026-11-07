@@ -7,9 +7,7 @@ import (
 	"github.com/elenaochkina/dbtest/temporal/activities"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 
-	// Register the providers so provider.Run can resolve them inside activities.
-
-	// Same for the container runners and harness.New.
+	// Register the container runners so harness.New can resolve them inside activities.
 	_ "github.com/elenaochkina/dbtest/harness/aws"
 	_ "github.com/elenaochkina/dbtest/harness/docker"
 

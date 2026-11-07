@@ -26,11 +26,12 @@ type recoveryForm struct {
 // providerChoices lists the providers in the order the form shows them.
 var providerChoices = []struct {
 	label string
+	cloud provider.CloudName
 	name  provider.DBServiceName
 }{
-	{"docker", provider.Docker},
-	{"aws-rds", provider.RDS},
-	{"aws-aurora", provider.Aurora},
+	{"docker", provider.Local, provider.Docker},
+	{"aws-rds", provider.AWS, provider.RDS},
+	{"aws-aurora", provider.AWS, provider.Aurora},
 }
 
 // openRecoveryForm returns the form on its first step, filled with the
@@ -163,6 +164,7 @@ func (form recoveryForm) back() recoveryForm {
 func (form recoveryForm) choose(choice string) recoveryForm {
 	switch form.step {
 	case "provider":
+		form.cfg.Cloud = providerChoices[form.cursor].cloud
 		form.cfg.Provider = providerChoices[form.cursor].name
 		form.cfg.Request.HighAvailability = false
 		form.cfg.ProbeImage, form.cfg.BenchImage = "dbtest/probe:dev", "dbtest/bench:dev"

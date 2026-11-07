@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/dbservice"
 	"github.com/elenaochkina/dbtest/state"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/elenaochkina/dbtest/workload"
@@ -35,7 +36,7 @@ type Config struct {
 // steps consume via the DSN. The caller resolves Provider before calling Run.
 type RunContext struct {
 	Cfg       Config
-	Provider  provider.Provider
+	Provider  dbservice.DBService
 	Cluster   provider.ClusterInfo
 	StatePool *pgxpool.Pool
 	Tel       *telemetry.Telemetry

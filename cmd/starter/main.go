@@ -18,6 +18,7 @@ import (
 // starter triggers one workflow execution and waits for it. It talks only to the Temporal server;
 func main() {
 	// Parse flags.
+	cloudName := flag.String("cloud", "local", "cloud name (local, aws)")
 	providerName := flag.String("provider", "docker", "provider name (docker, rds, aurora)")
 	vcpu := flag.Float64("vcpu", 2, "cluster vCPU")
 	memoryMiB := flag.Int("memory-mib", 2048, "cluster memory (MiB)")
@@ -87,10 +88,11 @@ func main() {
 	switch *workflowName {
 	case "pgbench":
 		wf = workflows.PgBenchWorkflow
-		cfg = workflows.PgBenchWorkflowConfig{Provider: provider.DBServiceName(*providerName), Request: request, Workload: workloadCfg}
+		cfg = workflows.PgBenchWorkflowConfig{Cloud: provider.CloudName(*cloudName), Provider: provider.DBServiceName(*providerName), Request: request, Workload: workloadCfg}
 	case "recovery":
 		wf = workflows.RecoveryWorkflow
 		cfg = workflows.RecoveryWorkflowConfig{
+			Cloud:             provider.CloudName(*cloudName),
 			Provider:          provider.DBServiceName(*providerName),
 			Request:           request,
 			Disruption:        provider.Disruption(*disruption),
