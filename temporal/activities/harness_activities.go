@@ -10,9 +10,17 @@ import (
 
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/probe"
+	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/jackc/pgx/v5"
+	"go.temporal.io/sdk/temporal"
 )
+
+// RunnerInput names the cloud whose runner starts the run's containers.
+type RunnerInput struct {
+	Cloud provider.CloudName
+}
 
 // ProbeInput describes the prober container to start.
 type ProbeInput struct {
@@ -64,11 +72,20 @@ func NewHarnessActivities(tel *telemetry.Telemetry) *HarnessActivities {
 	return &HarnessActivities{tel: tel}
 }
 
+// ResolveRunner builds the cloud and returns the runner that starts containers in it.
+func (a *HarnessActivities) ResolveRunner(ctx context.Context, input RunnerInput) (harness.RunnerName, error) {
+	c, err := cloud.NewCloudProvider(input.Cloud)
+	if err != nil {
+		return "", temporal.NewNonRetryableApplicationError(err.Error(), "UnknownCloud", err)
+	}
+	return c.Runner(), nil
+}
+
 // StartProbe launches the prober and returns once it is running.
 // The prober polls until it is stopped, so the workflow holds the handle across
 // the disruptions.
 func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (harness.Handle, error) {
-	r, err := harness.New(input.Runner, a.tel)
+	r, err := harness.NewRunner(input.Runner, a.tel)
 	if err != nil {
 		return harness.Handle{}, fmt.Errorf("runner %q: %w", input.Runner, err)
 	}
@@ -90,7 +107,7 @@ func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (h
 //
 // Not safe to retry: stopping discards the container.
 func (a *HarnessActivities) StopProbe(ctx context.Context, input ContainerInput) (probe.Result, error) {
-	r, err := harness.New(input.Runner, a.tel)
+	r, err := harness.NewRunner(input.Runner, a.tel)
 	if err != nil {
 		return probe.Result{}, fmt.Errorf("runner %q: %w", input.Runner, err)
 	}
@@ -124,7 +141,7 @@ func (a *HarnessActivities) StopProbe(ctx context.Context, input ContainerInput)
 // InitializeBenchContainer runs bench's setup phase and waits for it to finish.
 // The output is discarded: a failed seed arrives as a non-zero exit.
 func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input BenchContainerInput) error {
-	r, err := harness.New(input.Runner, a.tel)
+	r, err := harness.NewRunner(input.Runner, a.tel)
 	if err != nil {
 		return fmt.Errorf("runner %q: %w", input.Runner, err)
 	}

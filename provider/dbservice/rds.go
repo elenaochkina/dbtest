@@ -1,40 +1,91 @@
-package aws
+package dbservice
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	rdstypes "github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/elenaochkina/dbtest/provider"
+	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
-// rdsProvider provisions Postgres on Amazon RDS.
-type rdsProvider struct {
+// rdsservice provisions Postgres on Amazon RDS.
+type rdsservice struct {
 	client *rds.Client
-	cfg    awsConfig
+	cfg    rdsConfig
 	tel    *telemetry.Telemetry
 }
 
-// NewRDS creates an RDS-backed provider.
-func NewRDS(tel *telemetry.Telemetry) (*rdsProvider, error) {
-	cfg := loadConfig()
-	client, err := newClient(cfg)
-	if err != nil {
-		return nil, err
+// NewRDSService builds RDS in the AWS cloud.
+func NewRDSService(c cloud.Cloud, tel *telemetry.Telemetry) (DBService, error) {
+	awsCloud, ok := c.(*cloud.AWS)
+	if !ok {
+		return nil, fmt.Errorf("rds needs the aws cloud, got %s", c.Name())
 	}
-	return &rdsProvider{client: client, cfg: cfg, tel: tel}, nil
+	return &rdsservice{client: rds.NewFromConfig(awsCloud.Config()), cfg: loadRDSConfig(), tel: tel}, nil
+}
+
+// rdsConfig holds the RDS settings from the AWS_RDS_* environment.
+type rdsConfig struct {
+	Username              string
+	Database              string
+	InstanceClassOverride string
+	Public                bool
+	SubnetGroup           string
+	SecurityGroupIDs      []string
+}
+
+// loadRDSConfig reads the AWS_RDS_* environment into an rdsConfig.
+func loadRDSConfig() rdsConfig {
+	public := true
+	if b, err := strconv.ParseBool(os.Getenv("AWS_RDS_PUBLIC")); err == nil {
+		public = b
+	}
+	return rdsConfig{
+		Username:              envOr("AWS_RDS_USERNAME", "dbtest"),
+		Database:              envOr("AWS_RDS_DATABASE", "postgres"),
+		InstanceClassOverride: os.Getenv("AWS_RDS_INSTANCE_CLASS"),
+		Public:                public,
+		SubnetGroup:           os.Getenv("AWS_RDS_SUBNET_GROUP"),
+		SecurityGroupIDs:      splitNonEmpty(os.Getenv("AWS_RDS_SECURITY_GROUP_IDS"), ","),
+	}
+}
+
+// envOr returns the value of env var key, or def when it is unset/empty.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// splitNonEmpty splits s on sep, dropping empty fields. Returns nil for "".
+func splitNonEmpty(s, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(s, sep) {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // Provision creates an RDS instance sized from req
-func (p *rdsProvider) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
+func (p *rdsservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
 	if req.VCPU < 0 || req.MemoryMiB < 0 || req.DiskGiB < 0 {
@@ -53,7 +104,7 @@ func (p *rdsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 	// The token is the identifier, so the caller can name the instance before
 	// it exists.
 	instanceID := token
-	instanceClass := resolveInstanceClass(req, p.cfg.InstanceClassOverride)
+	instanceClass := resolveRDSClass(req, p.cfg.InstanceClassOverride)
 
 	input := &rds.CreateDBInstanceInput{
 		DBInstanceIdentifier: aws.String(instanceID),
@@ -132,7 +183,7 @@ func (p *rdsProvider) Provision(ctx context.Context, req provider.ProvisionReque
 }
 
 // waitForEndpoint polls DescribeDBInstances until the instance reports "available"
-func (p *rdsProvider) waitForEndpoint(ctx context.Context, instanceID string) (string, int, error) {
+func (p *rdsservice) waitForEndpoint(ctx context.Context, instanceID string) (string, int, error) {
 	deadline := time.Now().Add(25 * time.Minute)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
@@ -155,9 +206,9 @@ func (p *rdsProvider) waitForEndpoint(ctx context.Context, instanceID string) (s
 	return "", 0, fmt.Errorf("instance %s did not become available within 15m", instanceID)
 }
 
-// resolveInstanceClass maps the ProvisionRequest onto a concrete RDS instance class.
+// resolveRDSClass maps the ProvisionRequest onto a concrete RDS instance class.
 // By default is the smallest class returns.
-func resolveInstanceClass(req provider.ProvisionRequest, override string) string {
+func resolveRDSClass(req provider.ProvisionRequest, override string) string {
 	if override != "" {
 		return override
 	}
@@ -189,7 +240,7 @@ func allocatedStorageGiB(req provider.ProvisionRequest) int32 {
 }
 
 // WaitForReady verifies the instance is actually accepting Postgres connections.
-func (p *rdsProvider) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
+func (p *rdsservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	deadline := time.Now().Add(5 * time.Minute)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
@@ -210,7 +261,7 @@ func (p *rdsProvider) WaitForReady(ctx context.Context, cluster provider.Cluster
 	return fmt.Errorf("cluster %s did not accept connections within 5m", cluster.ID)
 }
 
-func (p *rdsProvider) Deprovision(ctx context.Context, clusterID string) error {
+func (p *rdsservice) Deprovision(ctx context.Context, clusterID string) error {
 	var lastErr error
 	for attempt := range 3 {
 		_, lastErr = p.client.DeleteDBInstance(ctx, &rds.DeleteDBInstanceInput{
@@ -245,21 +296,18 @@ func (p *rdsProvider) Deprovision(ctx context.Context, clusterID string) error {
 	return nil
 }
 
-// Supports reports which disruptions RDS can apply. There is no ungraceful kill:
-// the API offers a reboot and, on Multi-AZ, a reboot that fails over.
-func (p *rdsProvider) Supports(req provider.ProvisionRequest, disruption provider.Disruption) bool {
-	switch disruption {
-	case provider.Restart:
-		return true
-	case provider.Failover:
-		return req.HighAvailability
+// rdsDisruptions lists what RDS can apply. There is no ungraceful kill: the API
+// offers a reboot and, on Multi-AZ, a reboot that fails over.
+func rdsDisruptions(req provider.ProvisionRequest) []provider.Disruption {
+	if req.HighAvailability {
+		return []provider.Disruption{provider.Restart, provider.Failover}
 	}
-	return false
+	return []provider.Disruption{provider.Restart}
 }
 
 // Disrupt reboots the instance and returns once it is available again, promoting
 // the standby when asked for a failover.
-func (p *rdsProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
+func (p *rdsservice) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
 	var failover bool
 	switch disruption {
 	case provider.Restart:
@@ -301,7 +349,7 @@ func (p *rdsProvider) Disrupt(ctx context.Context, cluster provider.ClusterInfo,
 }
 
 // describe returns the instance's current state.
-func (p *rdsProvider) describe(ctx context.Context, instanceID string) (rdstypes.DBInstance, error) {
+func (p *rdsservice) describe(ctx context.Context, instanceID string) (rdstypes.DBInstance, error) {
 	out, err := p.client.DescribeDBInstances(ctx, &rds.DescribeDBInstancesInput{
 		DBInstanceIdentifier: aws.String(instanceID),
 	})
@@ -316,7 +364,7 @@ func (p *rdsProvider) describe(ctx context.Context, instanceID string) (rdstypes
 
 // waitForReboot waits for the instance to leave "available" and come back.
 // for failover needs to point to a different AZ wher a former standby (primary after failover) instance resides
-func (p *rdsProvider) waitForReboot(ctx context.Context, instanceID, zoneBefore string) error {
+func (p *rdsservice) waitForReboot(ctx context.Context, instanceID, zoneBefore string) error {
 	// Guards againist false positive and wait until instance leaves "available" status
 	left, err := p.waitForStatus(ctx, instanceID, 2*time.Minute, func(inst rdstypes.DBInstance) bool {
 		return aws.ToString(inst.DBInstanceStatus) != "available"
@@ -361,7 +409,7 @@ func (p *rdsProvider) waitForReboot(ctx context.Context, instanceID, zoneBefore 
 
 // waitForStatus polls DescribeDBInstances until want returns true. It returns
 // false if the timeout passes first, and an error only if the poll itself fails.
-func (p *rdsProvider) waitForStatus(ctx context.Context, instanceID string, timeout time.Duration, want func(rdstypes.DBInstance) bool) (bool, error) {
+func (p *rdsservice) waitForStatus(ctx context.Context, instanceID string, timeout time.Duration, want func(rdstypes.DBInstance) bool) (bool, error) {
 	parent := ctx
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
@@ -400,14 +448,14 @@ func (p *rdsProvider) waitForStatus(ctx context.Context, instanceID string, time
 	}
 }
 
-// newProvider adapts NewRDS to the registry constructor signature.
-func newProvider(tel *telemetry.Telemetry) (provider.Provider, error) {
-	return NewRDS(tel)
-}
-
 func init() {
-	provider.Register(provider.RDS, newProvider)
+	Register(Descriptor{
+		Name:                     provider.RDS,
+		Clouds:                   []provider.CloudName{provider.AWS},
+		SupportsHighAvailability: true,
+		Disruptions:              rdsDisruptions,
+		BuildDBService:           NewRDSService,
+	})
 }
 
-// Compile-time assertion that rdsProvider satisfies the core Provider contract.
-var _ provider.Provider = (*rdsProvider)(nil)
+var _ DBService = (*rdsservice)(nil)

@@ -7,7 +7,7 @@ import (
 )
 
 // handleKey moves the cursor, runs the selected action, retries failed
-// services and checks AWS again, or quits.
+// services and checks the clouds again, or quits.
 func (m model) handleKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.form.step != "" {
 		return m.handleFormKey(message)
@@ -28,8 +28,10 @@ func (m model) handleKey(message tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.retry()
-		m.aws = provider.Status{}
-		return m, checkAWS(m.checkAWS)
+		for index := range m.clouds {
+			m.clouds[index].status = provider.Status{}
+		}
+		return m, checkClouds(m.clouds, m.checkCloud)
 	case "q", "ctrl+c":
 		return m, tea.Quit
 	}

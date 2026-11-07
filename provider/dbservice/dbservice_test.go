@@ -35,9 +35,9 @@ func (testService) Disrupt(_ context.Context, cluster provider.ClusterInfo, _ pr
 // only with a standby.
 func register(name provider.DBServiceName, clouds ...provider.CloudName) {
 	Register(Descriptor{
-		Name:             name,
-		Clouds:           clouds,
-		HighAvailability: true,
+		Name:                     name,
+		Clouds:                   clouds,
+		SupportsHighAvailability: true,
 		Disruptions: func(req provider.ProvisionRequest) []provider.Disruption {
 			if req.HighAvailability {
 				return []provider.Disruption{provider.Restart, provider.Failover}
@@ -107,7 +107,7 @@ func TestGetAndNames(t *testing.T) {
 	register("test-a", "test-cloud-names")
 
 	descriptor, ok := Get("test-a")
-	if !ok || !descriptor.HighAvailability {
+	if !ok || !descriptor.SupportsHighAvailability {
 		t.Errorf("Get(test-a) = %+v, %v", descriptor, ok)
 	}
 	if _, ok := Get("test-missing"); ok {

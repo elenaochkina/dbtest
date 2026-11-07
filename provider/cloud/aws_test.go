@@ -1,23 +1,30 @@
-package providercfg
+package cloud
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/elenaochkina/dbtest/provider"
 )
 
-func TestCheckAWSReportsMissingVariables(t *testing.T) {
+func TestAWSCheckReportsMissingVariables(t *testing.T) {
 	for _, name := range []string{"AWS_REGION", "AWS_RDS_SECURITY_GROUP_IDS", "AWS_ECS_CLUSTER", "AWS_ECS_SUBNET_IDS", "AWS_ECS_SECURITY_GROUP_IDS", "AWS_ECS_LOG_GROUP"} {
 		t.Setenv(name, "set")
 	}
 	t.Setenv("AWS_ECS_CLUSTER", "")
 	t.Setenv("AWS_ECS_LOG_GROUP", "")
 
-	status := CheckAWS(context.Background())
+	status := (&AWS{}).Check(context.Background())
 	want := provider.Status{State: provider.StateMisconfigured, Detail: "2 variables missing: run source .env (AWS_ECS_CLUSTER, AWS_ECS_LOG_GROUP)"}
 	if status != want {
 		t.Fatalf("status = %+v, want %+v", status, want)
+	}
+}
+
+func TestAWSRegistersItself(t *testing.T) {
+	if !slices.Contains(Names(), provider.AWS) {
+		t.Errorf("Names() = %v, want aws", Names())
 	}
 }
 

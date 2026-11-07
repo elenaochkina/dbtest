@@ -13,6 +13,7 @@ import (
 )
 
 type RecoveryWorkflowConfig struct {
+	Cloud       provider.CloudName
 	Provider    provider.DBServiceName
 	Request     provider.ProvisionRequest
 	Disruption  provider.Disruption
@@ -46,17 +47,20 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		harn *activities.HarnessActivities
 	)
 
-	runner, err := runnerFor(cfg.Provider)
-	if err != nil {
-		return err
-	}
-
 	// Cheapest possible failure: before anything is provisioned.
 	if err = workflow.ExecuteActivity(ctx, prov.CheckSupported, activities.CheckSupportedInput{
+		Cloud:      cfg.Cloud,
 		Provider:   cfg.Provider,
 		Request:    cfg.Request,
 		Disruption: cfg.Disruption,
 	}).Get(ctx, nil); err != nil {
+		return err
+	}
+
+	var runner harness.RunnerName
+	if err = workflow.ExecuteActivity(ctx, harn.ResolveRunner, activities.RunnerInput{
+		Cloud: cfg.Cloud,
+	}).Get(ctx, &runner); err != nil {
 		return err
 	}
 
@@ -90,6 +94,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		dctx, _ := workflow.NewDisconnectedContext(ctx)
 		dctx = workflow.WithActivityOptions(dctx, defaultActivityOptions)
 		if derr := workflow.ExecuteActivity(dctx, prov.Deprovision, activities.DeprovisionInput{
+			Cloud:     cfg.Cloud,
 			Provider:  cfg.Provider,
 			ClusterID: clusterID,
 		}).Get(dctx, nil); derr != nil && err == nil {
@@ -99,6 +104,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	var cluster provider.ClusterInfo
 	if err = workflow.ExecuteActivity(ctx, prov.Provision, activities.ProvisionInput{
+		Cloud:    cfg.Cloud,
 		Provider: cfg.Provider,
 		Request:  cfg.Request,
 		Token:    clusterID,
@@ -108,6 +114,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	}
 
 	if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
+		Cloud:    cfg.Cloud,
 		Provider: cfg.Provider,
 		Cluster:  cluster,
 	}).Get(ctx, nil); err != nil {
@@ -177,6 +184,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		octx := workflow.WithActivityOptions(ctx, onceOnly)
 		disruptedAt = append(disruptedAt, workflow.Now(ctx))
 		if err = workflow.ExecuteActivity(octx, prov.Disrupt, activities.DisruptInput{
+			Cloud:      cfg.Cloud,
 			Provider:   cfg.Provider,
 			Cluster:    cluster,
 			Disruption: cfg.Disruption,
@@ -186,6 +194,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 			return err
 		}
 		if err = workflow.ExecuteActivity(ctx, prov.WaitForReady, activities.WaitForReadyInput{
+			Cloud:    cfg.Cloud,
 			Provider: cfg.Provider,
 			Cluster:  cluster,
 		}).Get(ctx, nil); err != nil {
@@ -215,17 +224,4 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		Result:      result,
 		DisruptedAt: disruptedAt,
 	}).Get(ctx, nil)
-}
-
-// runnerFor pairs a provider with the place its containers run.
-func runnerFor(p provider.DBServiceName) (harness.RunnerName, error) {
-	switch p {
-	case provider.Docker:
-		return harness.Docker, nil
-	case provider.RDS, provider.Aurora:
-		return harness.Fargate, nil
-	default:
-		return "", temporal.NewNonRetryableApplicationError(
-			"no container runner for provider "+string(p), "UnknownProvider", nil)
-	}
 }

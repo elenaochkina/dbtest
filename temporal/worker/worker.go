@@ -7,14 +7,6 @@ import (
 	"github.com/elenaochkina/dbtest/temporal/activities"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 
-	// Register the providers so provider.Run can resolve them inside activities.
-	_ "github.com/elenaochkina/dbtest/provider/aws"
-	_ "github.com/elenaochkina/dbtest/provider/docker"
-
-	// Same for the container runners and harness.New.
-	_ "github.com/elenaochkina/dbtest/harness/aws"
-	_ "github.com/elenaochkina/dbtest/harness/docker"
-
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.temporal.io/sdk/client"
 	sdkworker "go.temporal.io/sdk/worker"
