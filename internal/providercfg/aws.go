@@ -1,3 +1,4 @@
+// Package providercfg checks whether a cloud is ready to use.
 package providercfg
 
 import (
@@ -10,29 +11,31 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+
+	"github.com/elenaochkina/dbtest/provider"
 )
 
 // CheckAWS reports whether the RDS and Aurora providers can run: the .env
 // variables are set and the credentials are valid.
-func CheckAWS(ctx context.Context) Status {
+func CheckAWS(ctx context.Context) provider.Status {
 	if missing := missingAWSVariables(); len(missing) > 0 {
 		count := fmt.Sprintf("%d variables", len(missing))
 		if len(missing) == 1 {
 			count = "1 variable"
 		}
-		return Status{State: StateMisconfigured, Detail: count + " missing: run source .env (" + strings.Join(missing, ", ") + ")"}
+		return provider.Status{State: provider.StateMisconfigured, Detail: count + " missing: run source .env (" + strings.Join(missing, ", ") + ")"}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	cfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return Status{State: StateMisconfigured, Detail: err.Error()}
+		return provider.Status{State: provider.StateMisconfigured, Detail: err.Error()}
 	}
 	identity, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return Status{State: StateNeedsLogin, Detail: "run aws sso login" + profileFlag()}
+		return provider.Status{State: provider.StateNeedsLogin, Detail: "run aws sso login" + profileFlag()}
 	}
-	return Status{State: StateReady, Detail: roleFromARN(aws.ToString(identity.Arn))}
+	return provider.Status{State: provider.StateReady, Detail: roleFromARN(aws.ToString(identity.Arn))}
 }
 
 // missingAWSVariables returns the variables from .env that the RDS and Aurora

@@ -8,6 +8,7 @@ import (
 	"github.com/elenaochkina/dbtest/internal/logbus"
 	"github.com/elenaochkina/dbtest/internal/providercfg"
 	"github.com/elenaochkina/dbtest/internal/service"
+	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/workflows"
 )
 
@@ -22,8 +23,8 @@ type model struct {
 	form          recoveryForm
 	log           []logbus.Line
 	collectLogs   func() []logbus.Line
-	aws           providercfg.Status
-	checkAWS      func(context.Context) providercfg.Status
+	aws           provider.Status
+	checkAWS      func(context.Context) provider.Status
 }
 
 // New returns the console model, showing the service launcher's services and

@@ -87,11 +87,11 @@ func main() {
 	switch *workflowName {
 	case "pgbench":
 		wf = workflows.PgBenchWorkflow
-		cfg = workflows.PgBenchWorkflowConfig{Provider: provider.ProviderName(*providerName), Request: request, Workload: workloadCfg}
+		cfg = workflows.PgBenchWorkflowConfig{Provider: provider.DBServiceName(*providerName), Request: request, Workload: workloadCfg}
 	case "recovery":
 		wf = workflows.RecoveryWorkflow
 		cfg = workflows.RecoveryWorkflowConfig{
-			Provider:          provider.ProviderName(*providerName),
+			Provider:          provider.DBServiceName(*providerName),
 			Request:           request,
 			Disruption:        provider.Disruption(*disruption),
 			Repetitions:       *repetitions,
