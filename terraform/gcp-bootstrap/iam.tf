@@ -16,7 +16,7 @@ resource "google_project_iam_custom_role" "dbtest" {
 resource "google_service_account" "dbtest" {
   account_id   = "dbtest"
   display_name = "dbtest"
-  description  = "Creates, disrupts and deletes dbtest Cloud SQL instances"
+  description  = "Creates, disrupts and deletes dbtest Cloud SQL instances and AlloyDB clusters"
 
   depends_on = [google_project_service.apis]
 }

@@ -128,7 +128,7 @@ func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionR
 // create inserts the instance and waits until it is RUNNABLE, then returns its
 // public IP. A retried attempt finds the instance a prior attempt created.
 func (p *cloudsqlservice) create(ctx context.Context, req provider.ProvisionRequest, name, tier, password string) (string, error) {
-	version, err := cloudSQLVersion(req.PostgresVersion)
+	version, err := gcpPostgresVersion(req.PostgresVersion)
 	if err != nil {
 		return "", err
 	}
@@ -213,12 +213,12 @@ func resolveCloudSQLTier(req provider.ProvisionRequest, override string) string 
 	return fmt.Sprintf("db-custom-%d-%d", vcpu, memory)
 }
 
-// cloudSQLVersion maps a Postgres version such as "18" or "16.4" to POSTGRES_18
-// or POSTGRES_16. Cloud SQL picks the minor version.
-func cloudSQLVersion(version string) (string, error) {
+// gcpPostgresVersion maps a Postgres version such as "18" or "16.4" to POSTGRES_18
+// or POSTGRES_16. Cloud SQL and AlloyDB pick the minor version.
+func gcpPostgresVersion(version string) (string, error) {
 	major, _, _ := strings.Cut(version, ".")
 	if major == "" {
-		return "", errors.New("cloud sql needs a postgres version")
+		return "", errors.New("a postgres version is required")
 	}
 	return "POSTGRES_" + major, nil
 }
