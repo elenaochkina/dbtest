@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 )
@@ -26,6 +27,25 @@ func TestGCPCheckReportsMissingVariables(t *testing.T) {
 	want := provider.Status{State: provider.StateMisconfigured, Detail: "1 variable missing: run source .env (GCP_AUTHORIZED_NETWORKS)"}
 	if got := c.Check(context.Background()); got != want {
 		t.Errorf("Check() = %+v, want %+v", got, want)
+	}
+}
+
+func TestGCPRunsOnCloudRunOnly(t *testing.T) {
+	t.Setenv("GCP_CLOUDRUN_PROBE_JOB", "")
+	t.Setenv("GCP_CLOUDRUN_BENCH_JOB", "")
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Runners(); !slices.Equal(got, []harness.RunnerName{harness.CloudRun}) {
+		t.Errorf("Runners() = %v, want [cloudrun]", got)
+	}
+	if _, err := c.NewRunner(harness.Docker, nil); err == nil {
+		t.Error("NewRunner(docker) returned no error")
+	}
+	want := harness.Images{Probe: "dbtest-probe", Bench: "dbtest-bench"}
+	if got := c.Images(harness.CloudRun); got != want {
+		t.Errorf("Images() = %+v, want %+v", got, want)
 	}
 }
 

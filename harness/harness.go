@@ -40,7 +40,7 @@ type Runner interface {
 }
 
 // Images names what a runner starts for the probe and bench containers: image
-// tags for Docker, task definitions for Fargate.
+// tags for Docker, task definitions for Fargate, jobs for Cloud Run.
 type Images struct {
 	Probe string
 	Bench string
@@ -50,8 +50,9 @@ type Images struct {
 type RunnerName string
 
 const (
-	Docker  RunnerName = "docker"
-	Fargate RunnerName = "fargate"
+	Docker   RunnerName = "docker"
+	Fargate  RunnerName = "fargate"
+	CloudRun RunnerName = "cloudrun"
 )
 
 // Tail returns the last few lines of container output, for an error message.
