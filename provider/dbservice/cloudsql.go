@@ -63,17 +63,20 @@ func (cloudSQLRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBSe
 type cloudSQLConfig struct {
 	tierOverride       string
 	authorizedNetworks []string
+	network            string
 }
 
-// loadCloudSQLConfig reads GCP_SQL_TIER and GCP_AUTHORIZED_NETWORKS into a cloudSQLConfig.
+// loadCloudSQLConfig reads GCP_SQL_TIER, GCP_AUTHORIZED_NETWORKS and GCP_NETWORK (default dbtest) into a cloudSQLConfig.
 func loadCloudSQLConfig() cloudSQLConfig {
 	return cloudSQLConfig{
 		tierOverride:       os.Getenv("GCP_SQL_TIER"),
 		authorizedNetworks: splitNonEmpty(os.Getenv("GCP_AUTHORIZED_NETWORKS"), ","),
+		network:            cloud.EnvOr("GCP_NETWORK", "dbtest"),
 	}
 }
 
-// Provision creates a Cloud SQL instance sized from req and returns its public IP.
+// Provision creates a Cloud SQL instance sized from req. Target is its public IP and
+// Internal its private IP in the GCP_NETWORK VPC.
 func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -90,7 +93,7 @@ func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionR
 	instanceName := token
 	tier := resolveCloudSQLTier(req, p.cfg.tierOverride)
 
-	host, err := p.create(ctx, req, instanceName, tier, password)
+	publicIP, privateIP, err := p.create(ctx, req, instanceName, tier, password)
 	if err != nil {
 		// The instance may already be billing; delete it on a fresh ctx.
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -110,27 +113,30 @@ func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionR
 		p.tel.Logger.Info("provisioned cluster",
 			slog.String("instance", instanceName),
 			slog.String("tier", tier),
-			slog.String("endpoint", host),
+			slog.String("endpoint", publicIP),
+			slog.String("internal_endpoint", privateIP),
 			slog.Float64("vcpu", req.VCPU),
 			slog.Int("memory_mib", req.MemoryMiB),
 		)
 	}
 
-	target := provider.PGTarget{Host: host, Port: 5432, Database: "postgres", User: "postgres"}
+	target := provider.PGTarget{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
+	internal := target
+	internal.Host = privateIP
 	return provider.ClusterInfo{
 		ID:       instanceName,
 		Target:   target,
-		Internal: target,
+		Internal: internal,
 		Password: password,
 	}, nil
 }
 
 // create inserts the instance and waits until it is RUNNABLE, then returns its
-// public IP. A retried attempt finds the instance a prior attempt created.
-func (p *cloudsqlservice) create(ctx context.Context, req provider.ProvisionRequest, name, tier, password string) (string, error) {
+// public and private IPs. A retried attempt finds the instance a prior attempt created.
+func (p *cloudsqlservice) create(ctx context.Context, req provider.ProvisionRequest, name, tier, password string) (string, string, error) {
 	version, err := gcpPostgresVersion(req.PostgresVersion)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	availability := "ZONAL"
@@ -156,6 +162,7 @@ func (p *cloudsqlservice) create(ctx context.Context, req provider.ProvisionRequ
 			UserLabels:       map[string]string{"dbtest": "true"},
 			IpConfiguration: &sqladmin.IpConfiguration{
 				Ipv4Enabled:        true,
+				PrivateNetwork:     fmt.Sprintf("projects/%s/global/networks/%s", p.project, p.cfg.network),
 				AuthorizedNetworks: networks,
 			},
 			// High availability on Postgres needs backups with point-in-time recovery.
@@ -170,24 +177,36 @@ func (p *cloudsqlservice) create(ctx context.Context, req provider.ProvisionRequ
 	switch {
 	case err == nil:
 		if err := p.waitForOperation(ctx, op.Name, 30*time.Minute); err != nil {
-			return "", fmt.Errorf("create instance %s: %w", name, err)
+			return "", "", fmt.Errorf("create instance %s: %w", name, err)
 		}
 	case hasCode(err, http.StatusConflict):
 		// A prior attempt already created the instance.
 	default:
-		return "", fmt.Errorf("create instance %s: %w", name, err)
+		return "", "", fmt.Errorf("create instance %s: %w", name, err)
 	}
 
 	inst, err := p.waitForState(ctx, name, "RUNNABLE", 30*time.Minute)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
+	publicIP, privateIP := cloudSQLAddresses(inst)
+	if publicIP == "" || privateIP == "" {
+		return "", "", fmt.Errorf("instance %s has no public or no private IP", name)
+	}
+	return publicIP, privateIP, nil
+}
+
+// cloudSQLAddresses returns the instance's PRIMARY (public) and PRIVATE addresses.
+func cloudSQLAddresses(inst *sqladmin.DatabaseInstance) (publicIP, privateIP string) {
 	for _, ip := range inst.IpAddresses {
-		if ip.Type == "PRIMARY" {
-			return ip.IpAddress, nil
+		switch ip.Type {
+		case "PRIMARY":
+			publicIP = ip.IpAddress
+		case "PRIVATE":
+			privateIP = ip.IpAddress
 		}
 	}
-	return "", fmt.Errorf("instance %s has no public IP", name)
+	return publicIP, privateIP
 }
 
 // resolveCloudSQLTier builds a db-custom-<vCPU>-<MiB> tier from req, unless override is set.

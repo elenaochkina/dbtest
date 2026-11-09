@@ -7,6 +7,7 @@ import (
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	gcpcloud "github.com/elenaochkina/dbtest/provider/cloud/gcp"
+	sqladmin "google.golang.org/api/sqladmin/v1"
 )
 
 func TestCloudSQLRegistersInGCP(t *testing.T) {
@@ -64,6 +65,17 @@ func TestResolveCloudSQLTier(t *testing.T) {
 	}
 	if got := resolveCloudSQLTier(provider.ProvisionRequest{}, "db-perf-optimized-N-2"); got != "db-perf-optimized-N-2" {
 		t.Errorf("override ignored: %s", got)
+	}
+}
+
+func TestCloudSQLAddresses(t *testing.T) {
+	inst := &sqladmin.DatabaseInstance{IpAddresses: []*sqladmin.IpMapping{
+		{Type: "PRIMARY", IpAddress: "34.82.1.2"},
+		{Type: "OUTGOING", IpAddress: "34.82.9.9"},
+		{Type: "PRIVATE", IpAddress: "10.0.80.5"},
+	}}
+	if publicIP, privateIP := cloudSQLAddresses(inst); publicIP != "34.82.1.2" || privateIP != "10.0.80.5" {
+		t.Errorf("cloudSQLAddresses() = %q, %q; want 34.82.1.2, 10.0.80.5", publicIP, privateIP)
 	}
 }
 
