@@ -11,9 +11,12 @@ PROBE_IMAGE ?= dbtest/probe:dev
 
 TF := terraform -chdir=terraform/aws
 
+GCP_TF       := terraform -chdir=terraform/gcp
+GCP_REGISTRY  = $(shell $(GCP_TF) output -raw registry 2>/dev/null)
+
 STATE_DSN ?= postgres://postgres:test@localhost:5433/postgres
 
-.PHONY: build test images bench-image probe-image registry-login push push-bench push-probe aws-cidr aws-apply env run-worker refresh
+.PHONY: build test images bench-image probe-image registry-login push push-bench push-probe aws-cidr aws-apply gcp-push gcp-apply env run-worker refresh
 
 build:
 	go build ./...
@@ -48,6 +51,20 @@ push-probe:
 	docker build --platform $(PLATFORM) -f build/probe.Dockerfile -t $(REGISTRY)/probe:$(TAG) .
 	docker push $(REGISTRY)/probe:$(TAG)
 
+# Build amd64 images for Cloud Run and push them to Artifact Registry.
+gcp-push:
+	gcloud auth configure-docker $(firstword $(subst /, ,$(GCP_REGISTRY))) --quiet
+	docker build --platform linux/amd64 -f build/probe.Dockerfile -t $(GCP_REGISTRY)/probe:$(TAG) .
+	docker push $(GCP_REGISTRY)/probe:$(TAG)
+	docker build --platform linux/amd64 -f build/bench.Dockerfile -t $(GCP_REGISTRY)/bench:$(TAG) .
+	docker push $(GCP_REGISTRY)/bench:$(TAG)
+
+# Creating a job checks that its image exists, so the registry and images come first.
+gcp-apply:
+	$(GCP_TF) apply -target=google_artifact_registry_repository.dbtest
+	$(MAKE) gcp-push
+	$(GCP_TF) apply
+
 # Point the RDS ingress rule at this machine's current public IP. A rotated IP
 # locks the worker out silently: the packets are dropped, not refused.
 aws-cidr:
@@ -66,6 +83,7 @@ env:
 	printf 'export DBTEST_DOCKER_NETWORK=dbtest-net\nexport DBTEST_PROBE_IMAGE=$(PROBE_IMAGE)\nexport DBTEST_BENCH_IMAGE=$(BENCH_IMAGE)\n' >> .env
 	printf 'export GCP_PROJECT=%s\nexport GCP_REGION=us-west1\nexport GCP_AUTHORIZED_NETWORKS=%s/32\n' \
 	  "$$(gcloud config get-value project 2>/dev/null)" "$$(curl -s https://checkip.amazonaws.com)" >> .env
+	$(GCP_TF) output -raw worker_env >> .env
 
 # Run the worker in the foreground with .env loaded. Ctrl-C stops it.
 run-worker:
