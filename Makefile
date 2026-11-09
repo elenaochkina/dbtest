@@ -11,7 +11,9 @@ PROBE_IMAGE ?= dbtest/probe:dev
 
 TF := terraform -chdir=terraform/aws
 
-GCP_TF       := terraform -chdir=terraform/gcp
+# Terraform for GCP runs as the project owner from a second ADC file.
+GCP_OWNER_CREDENTIALS ?= $(HOME)/.config/gcloud/owner-adc.json
+GCP_TF       := GOOGLE_APPLICATION_CREDENTIALS=$(GCP_OWNER_CREDENTIALS) terraform -chdir=terraform/gcp
 GCP_REGISTRY  = $(shell $(GCP_TF) output -raw registry 2>/dev/null)
 
 STATE_DSN ?= postgres://postgres:test@localhost:5433/postgres
