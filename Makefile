@@ -59,7 +59,8 @@ aws-apply:
 	$(TF) apply
 
 # Write .env from the terraform/aws outputs and the GCP settings. The GCP list
-# allows only this machine's current public IP to reach new Cloud SQL instances.
+# allows only this machine's current public IP to reach new Cloud SQL instances
+# and AlloyDB clusters.
 env:
 	$(TF) output -raw worker_env > .env
 	printf 'export DBTEST_DOCKER_NETWORK=dbtest-net\nexport DBTEST_PROBE_IMAGE=$(PROBE_IMAGE)\nexport DBTEST_BENCH_IMAGE=$(BENCH_IMAGE)\n' >> .env
