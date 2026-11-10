@@ -183,7 +183,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	disruptedAt := make([]time.Time, 0, cfg.Repetitions)
 
 	for i := 0; i < cfg.Repetitions; i++ {
-		if err = waitForCoolDown(ctx, prov, cfg, cluster); err != nil {
+		if err = waitForSwitchoverReadiness(ctx, prov, cfg, cluster); err != nil {
 			return err
 		}
 		octx := workflow.WithActivityOptions(ctx, onceOnly)
@@ -232,12 +232,12 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	}).Get(ctx, nil)
 }
 
-// waitForCoolDown checks every minute, for up to 30 minutes, until the cluster
+// waitForSwitchoverReadiness checks every minute, for up to 30 minutes, until the cluster
 // accepts the next disruption.
-func waitForCoolDown(ctx workflow.Context, prov *activities.ProviderActivities, cfg RecoveryWorkflowConfig, cluster provider.ClusterInfo) error {
+func waitForSwitchoverReadiness(ctx workflow.Context, prov *activities.ProviderActivities, cfg RecoveryWorkflowConfig, cluster provider.ClusterInfo) error {
 	for range 30 {
 		var ready bool
-		if err := workflow.ExecuteActivity(ctx, prov.CoolDown, activities.CoolDownInput{
+		if err := workflow.ExecuteActivity(ctx, prov.SwitchoverReadiness, activities.SwitchoverReadinessInput{
 			Cloud:    cfg.Cloud,
 			Provider: cfg.Provider,
 			Cluster:  cluster,
@@ -252,5 +252,5 @@ func waitForCoolDown(ctx workflow.Context, prov *activities.ProviderActivities, 
 		}
 	}
 	return temporal.NewNonRetryableApplicationError(
-		"cluster did not accept the next disruption within 30 minutes", "CoolDownTimeout", nil)
+		"cluster did not accept the next disruption within 30 minutes", "SwitchoverReadinessTimeout", nil)
 }

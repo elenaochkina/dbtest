@@ -22,8 +22,8 @@ type DBService interface {
 	// The returned ClusterInfo replaces the caller's copy.
 	Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error)
 
-	// CoolDown reports whether the cluster accepts the next disruption now.
-	CoolDown(ctx context.Context, cluster provider.ClusterInfo) (bool, error)
+	// SwitchoverReadiness reports whether the cluster accepts the next disruption now.
+	SwitchoverReadiness(ctx context.Context, cluster provider.ClusterInfo) (bool, error)
 }
 
 // Registration describes a database service and builds it. Each service

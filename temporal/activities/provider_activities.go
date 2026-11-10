@@ -41,8 +41,8 @@ type DisruptInput struct {
 	Disruption provider.Disruption
 }
 
-// CoolDownInput names the cluster to check.
-type CoolDownInput struct {
+// SwitchoverReadinessInput names the cluster to check.
+type SwitchoverReadinessInput struct {
 	Cloud    provider.CloudName
 	Provider provider.DBServiceName
 	Cluster  provider.ClusterInfo
@@ -111,13 +111,13 @@ func (a *ProviderActivities) Disrupt(ctx context.Context, input DisruptInput) (p
 	return cluster, nil
 }
 
-// CoolDown reports whether the cluster accepts the next disruption now.
-func (a *ProviderActivities) CoolDown(ctx context.Context, input CoolDownInput) (bool, error) {
+// SwitchoverReadiness reports whether the cluster accepts the next disruption now.
+func (a *ProviderActivities) SwitchoverReadiness(ctx context.Context, input SwitchoverReadinessInput) (bool, error) {
 	p, err := a.service(input.Cloud, input.Provider)
 	if err != nil {
 		return false, err
 	}
-	return p.CoolDown(ctx, input.Cluster)
+	return p.SwitchoverReadiness(ctx, input.Cluster)
 }
 
 // CheckSupported reports whether the service runs in the cloud and supports the

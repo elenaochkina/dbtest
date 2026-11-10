@@ -289,9 +289,9 @@ func (alloyDBRegistration) Disruptions(req provider.ProvisionRequest) []provider
 	return []provider.Disruption{provider.Restart, provider.Crash}
 }
 
-// CoolDown reports whether a regional instance accepts a failover now, from a
+// SwitchoverReadiness reports whether a regional instance accepts a failover now, from a
 // validate-only failover request. A zonal instance always reports true.
-func (p *alloydbservice) CoolDown(ctx context.Context, cluster provider.ClusterInfo) (bool, error) {
+func (p *alloydbservice) SwitchoverReadiness(ctx context.Context, cluster provider.ClusterInfo) (bool, error) {
 	name := p.instanceName(cluster.ID)
 	instances := p.client.Projects.Locations.Clusters.Instances
 	inst, err := instances.Get(name).Context(ctx).Do()

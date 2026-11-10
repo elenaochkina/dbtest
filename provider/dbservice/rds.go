@@ -313,8 +313,8 @@ func (rdsRegistration) Disruptions(req provider.ProvisionRequest) []provider.Dis
 	return []provider.Disruption{provider.Restart}
 }
 
-// CoolDown reports true: RDS accepts a reboot once the instance is available.
-func (p *rdsservice) CoolDown(context.Context, provider.ClusterInfo) (bool, error) {
+// SwitchoverReadiness reports true: RDS accepts a reboot once the instance is available.
+func (p *rdsservice) SwitchoverReadiness(context.Context, provider.ClusterInfo) (bool, error) {
 	return true, nil
 }
 

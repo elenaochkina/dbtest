@@ -293,10 +293,10 @@ func (cloudSQLRegistration) Disruptions(req provider.ProvisionRequest) []provide
 	return []provider.Disruption{provider.Restart}
 }
 
-// CoolDown reports whether a regional instance accepts a failover now: no
+// SwitchoverReadiness reports whether a regional instance accepts a failover now: no
 // operation is running and its last failover ended at least 3 minutes ago.
 // A zonal instance always reports true.
-func (p *cloudsqlservice) CoolDown(ctx context.Context, cluster provider.ClusterInfo) (bool, error) {
+func (p *cloudsqlservice) SwitchoverReadiness(ctx context.Context, cluster provider.ClusterInfo) (bool, error) {
 	inst, err := p.client.Instances.Get(p.project, cluster.ID).Context(ctx).Do()
 	if err != nil {
 		return false, fmt.Errorf("get instance %s: %w", cluster.ID, err)

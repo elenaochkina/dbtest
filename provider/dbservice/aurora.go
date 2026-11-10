@@ -337,8 +337,8 @@ func (auroraRegistration) Disruptions(req provider.ProvisionRequest) []provider.
 	return []provider.Disruption{provider.Restart, provider.Crash}
 }
 
-// CoolDown reports true: Aurora accepts a disruption once the cluster is available.
-func (p *auroraservice) CoolDown(context.Context, provider.ClusterInfo) (bool, error) {
+// SwitchoverReadiness reports true: Aurora accepts a disruption once the cluster is available.
+func (p *auroraservice) SwitchoverReadiness(context.Context, provider.ClusterInfo) (bool, error) {
 	return true, nil
 }
 

@@ -231,8 +231,8 @@ func (dockerRegistration) Disruptions(provider.ProvisionRequest) []provider.Disr
 	return []provider.Disruption{provider.Restart, provider.Crash}
 }
 
-// CoolDown reports true: a container accepts a disruption once it is running.
-func (p *dockerservice) CoolDown(context.Context, provider.ClusterInfo) (bool, error) {
+// SwitchoverReadiness reports true: a container accepts a disruption once it is running.
+func (p *dockerservice) SwitchoverReadiness(context.Context, provider.ClusterInfo) (bool, error) {
 	return true, nil
 }
 

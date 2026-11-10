@@ -35,7 +35,9 @@ func (testService) Deprovision(context.Context, string) error                { r
 func (testService) Disrupt(_ context.Context, cluster provider.ClusterInfo, _ provider.Disruption) (provider.ClusterInfo, error) {
 	return cluster, nil
 }
-func (testService) CoolDown(context.Context, provider.ClusterInfo) (bool, error) { return true, nil }
+func (testService) SwitchoverReadiness(context.Context, provider.ClusterInfo) (bool, error) {
+	return true, nil
+}
 
 // testRegistration is a service that runs in the given clouds and fails over
 // only with a standby.
