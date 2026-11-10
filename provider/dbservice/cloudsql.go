@@ -293,6 +293,11 @@ func (cloudSQLRegistration) Disruptions(req provider.ProvisionRequest) []provide
 	return []provider.Disruption{provider.Restart}
 }
 
+// CoolDown reports true: Cloud SQL accepts a disruption once the instance is runnable.
+func (p *cloudsqlservice) CoolDown(context.Context, provider.ClusterInfo) (bool, error) {
+	return true, nil
+}
+
 // Disrupt restarts or fails over the instance and returns once it is RUNNABLE again.
 // The public IP survives both, so the returned ClusterInfo is unchanged.
 func (p *cloudsqlservice) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {

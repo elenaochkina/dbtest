@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
@@ -17,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	alloydb "google.golang.org/api/alloydb/v1"
+	"google.golang.org/api/googleapi"
 )
 
 // alloydbservice provisions Postgres on AlloyDB: one cluster with one primary instance.
@@ -285,6 +287,41 @@ func (alloyDBRegistration) Disruptions(req provider.ProvisionRequest) []provider
 		return []provider.Disruption{provider.Restart, provider.Crash, provider.Failover}
 	}
 	return []provider.Disruption{provider.Restart, provider.Crash}
+}
+
+// CoolDown reports whether a regional instance accepts a failover now, from a
+// validate-only failover request. A zonal instance always reports true.
+func (p *alloydbservice) CoolDown(ctx context.Context, cluster provider.ClusterInfo) (bool, error) {
+	name := p.instanceName(cluster.ID)
+	instances := p.client.Projects.Locations.Clusters.Instances
+	inst, err := instances.Get(name).Context(ctx).Do()
+	if err != nil {
+		return false, fmt.Errorf("get instance %s: %w", name, err)
+	}
+	if inst.AvailabilityType != "REGIONAL" {
+		return true, nil
+	}
+	_, err = instances.Failover(name, &alloydb.FailoverInstanceRequest{ValidateOnly: true}).Context(ctx).Do()
+	switch {
+	case err == nil:
+		return true, nil
+	case isFailoverLease(err):
+		if p.tel != nil {
+			p.tel.Logger.Info("failover not accepted yet",
+				slog.String("cluster", cluster.ID),
+				slog.String("reason", err.Error()),
+			)
+		}
+		return false, nil
+	}
+	return false, fmt.Errorf("check failover on cluster %s: %w", cluster.ID, err)
+}
+
+// isFailoverLease reports whether err is AlloyDB refusing a failover during its lease.
+func isFailoverLease(err error) bool {
+	var apiErr *googleapi.Error
+	return errors.As(err, &apiErr) && apiErr.Code == http.StatusBadRequest &&
+		strings.Contains(apiErr.Message, "failover lease validation failed")
 }
 
 // Disrupt restarts, crashes or fails over the primary instance and returns once it is READY again.

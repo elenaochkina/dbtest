@@ -231,6 +231,11 @@ func (dockerRegistration) Disruptions(provider.ProvisionRequest) []provider.Disr
 	return []provider.Disruption{provider.Restart, provider.Crash}
 }
 
+// CoolDown reports true: a container accepts a disruption once it is running.
+func (p *dockerservice) CoolDown(context.Context, provider.ClusterInfo) (bool, error) {
+	return true, nil
+}
+
 // Disrupt stops the container and starts it again, gracefully for Restart and
 // with a SIGKILL for Crash, so that Crash comes back through WAL recovery rather
 // than a clean shutdown.

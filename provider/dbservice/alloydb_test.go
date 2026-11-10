@@ -1,12 +1,14 @@
 package dbservice
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	gcpcloud "github.com/elenaochkina/dbtest/provider/cloud/gcp"
+	"google.golang.org/api/googleapi"
 )
 
 func TestAlloyDBRegistersInGCP(t *testing.T) {
@@ -61,5 +63,15 @@ func TestAlloyDBCPUCount(t *testing.T) {
 		if got := alloyDBCPUCount(tc.req); got != tc.want {
 			t.Errorf("alloyDBCPUCount(%+v) = %d, want %d", tc.req, got, tc.want)
 		}
+	}
+}
+
+func TestIsFailoverLease(t *testing.T) {
+	lease := &googleapi.Error{Code: 400, Message: "validateFailoverRequest failed: failover lease validation failed: generic::failed_precondition: another failover operation was recently executed on this instance. Please try again after: Mon Nov  9 23:09:45 UTC 2026"}
+	if !isFailoverLease(lease) {
+		t.Error("lease rejection not recognized")
+	}
+	if isFailoverLease(&googleapi.Error{Code: 400, Message: "invalid instance"}) || isFailoverLease(errors.New("timeout")) {
+		t.Error("other errors recognized as a lease")
 	}
 }
