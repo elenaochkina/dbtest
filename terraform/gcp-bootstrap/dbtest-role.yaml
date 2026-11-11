@@ -1,5 +1,5 @@
 title: dbtest
-description: Create, disrupt and delete dbtest Cloud SQL instances
+description: Create, disrupt and delete dbtest Cloud SQL instances and AlloyDB clusters
 stage: GA
 includedPermissions:
   - cloudsql.instances.create
@@ -8,3 +8,13 @@ includedPermissions:
   - cloudsql.instances.delete
   - cloudsql.instances.restart
   - cloudsql.instances.failover
+  - alloydb.clusters.create
+  - alloydb.clusters.get
+  - alloydb.clusters.delete
+  - alloydb.instances.create
+  - alloydb.instances.get
+  - alloydb.instances.delete
+  - alloydb.instances.restart
+  - alloydb.instances.failover
+  - alloydb.instances.injectFault
+  - alloydb.operations.get

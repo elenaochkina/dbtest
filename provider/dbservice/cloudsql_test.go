@@ -67,13 +67,13 @@ func TestResolveCloudSQLTier(t *testing.T) {
 	}
 }
 
-func TestCloudSQLVersion(t *testing.T) {
+func TestGCPPostgresVersion(t *testing.T) {
 	for version, want := range map[string]string{"18": "POSTGRES_18", "16.4": "POSTGRES_16"} {
-		if got, err := cloudSQLVersion(version); err != nil || got != want {
-			t.Errorf("cloudSQLVersion(%q) = %q, %v, want %q", version, got, err, want)
+		if got, err := gcpPostgresVersion(version); err != nil || got != want {
+			t.Errorf("gcpPostgresVersion(%q) = %q, %v, want %q", version, got, err, want)
 		}
 	}
-	if _, err := cloudSQLVersion(""); err == nil {
-		t.Error("cloudSQLVersion(\"\") returned no error")
+	if _, err := gcpPostgresVersion(""); err == nil {
+		t.Error("gcpPostgresVersion(\"\") returned no error")
 	}
 }

@@ -47,6 +47,7 @@ const (
 	RDS      DBServiceName = "rds"
 	Aurora   DBServiceName = "aurora"
 	CloudSQL DBServiceName = "cloudsql"
+	AlloyDB  DBServiceName = "alloydb"
 )
 
 // CloudName identifies a cloud.
