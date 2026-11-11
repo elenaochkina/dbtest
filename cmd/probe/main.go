@@ -31,6 +31,7 @@ func main() {
 	flag.DurationVar(&cfg.WriteTimeout, "write-timeout", 200*time.Millisecond, "per-sample write timeout")
 	flag.DurationVar(&cfg.MaxDuration, "max-duration", time.Hour, "stop polling even if nothing stops the probe")
 	ready := flag.Duration("ready", 0, "connect once a second until the database answers or this long passes, then exit")
+	sampling := flag.Duration("sampling", 0, "read the probe counter once a second until it is above 0 or this long passes, then exit")
 	flag.Parse()
 
 	if cfg.DSN == "" {
@@ -43,7 +44,10 @@ func main() {
 	defer stop()
 
 	if *ready > 0 {
-		os.Exit(waitReady(ctx, cfg.DSN, *ready))
+		os.Exit(waitFor(ctx, cfg.DSN, *ready, "SELECT true", "database answered"))
+	}
+	if *sampling > 0 {
+		os.Exit(waitFor(ctx, cfg.DSN, *sampling, "SELECT seq > 0 FROM dbtest_probe WHERE id = 1", "probe is sampling"))
 	}
 
 	p := probe.New(cfg)
@@ -65,26 +69,27 @@ func main() {
 	fmt.Println(string(payload))
 }
 
-// waitReady connects and runs SELECT 1 once a second until it succeeds or the
-// limit passes. It returns 0 when the database answered and 1 when it did not.
-func waitReady(ctx context.Context, dsn string, limit time.Duration) int {
+// waitFor connects and runs query once a second until it returns true or the
+// limit passes. It returns 0 when the query returned true and 1 when it did not.
+func waitFor(ctx context.Context, dsn string, limit time.Duration, query, done string) int {
 	ctx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	for {
-		attempt, done := context.WithTimeout(ctx, 5*time.Second)
+		attempt, cancelAttempt := context.WithTimeout(ctx, 5*time.Second)
+		ok := false
 		conn, err := pgx.Connect(attempt, dsn)
 		if err == nil {
-			err = conn.QueryRow(attempt, "SELECT 1").Scan(new(int))
+			err = conn.QueryRow(attempt, query).Scan(&ok)
 			conn.Close(context.Background())
 		}
-		done()
-		if err == nil {
-			slog.Info("database answered")
+		cancelAttempt()
+		if err == nil && ok {
+			slog.Info(done)
 			return 0
 		}
 		select {
 		case <-ctx.Done():
-			slog.Error("database did not answer", "within", limit, "error", err)
+			slog.Error("gave up", "query", query, "within", limit, "error", err)
 			return 1
 		case <-time.After(time.Second):
 		}

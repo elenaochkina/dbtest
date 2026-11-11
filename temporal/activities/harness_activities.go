@@ -12,7 +12,6 @@ import (
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
-	"github.com/jackc/pgx/v5"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -36,10 +35,14 @@ type ProbeInput struct {
 	MaxDuration  time.Duration
 }
 
-// ProbeReadyInput describes where to watch the probe's counter row.
+// ProbeReadyInput describes the check that the measurement probe is writing:
+// the probe image in sampling mode against the cluster's internal address.
 type ProbeReadyInput struct {
-	// TargetDSN is the address the worker uses, not the container's.
-	TargetDSN string
+	Cloud  provider.CloudName
+	Runner harness.RunnerName
+	Image  string
+	Name   string
+	DSN    string
 }
 
 // BenchContainerInput describes the bench container to run.
@@ -197,45 +200,33 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 	return nil
 }
 
-// CheckProbeReadiness reports whether the probe has completed a sample.
+// CheckProbeReadiness runs the probe in sampling mode on the cloud's runner and
+// reports whether the measurement probe's counter rose above 0 within 30 seconds.
 func (a *HarnessActivities) CheckProbeReadiness(ctx context.Context, input ProbeReadyInput) (bool, error) {
-	// The container is already RUNNING, so only Prepare and one sample remain.
-	for attempt := range 10 {
-		if seq, err := probeSeq(ctx, input.TargetDSN); err == nil && seq > 0 {
-			if a.tel != nil {
-				a.tel.Logger.Info("probe is sampling",
-					slog.Int64("seq", seq),
-					slog.Int("attempt", attempt+1),
-				)
-			}
-			return true, nil
-		}
-		select {
-		case <-ctx.Done():
-			return false, ctx.Err()
-		case <-time.After(time.Second):
-		}
-	}
-	return false, nil
-}
-
-// probeSeq reads the counter the prober advances. Errors are expected until the
-// prober has created the table.
-func probeSeq(ctx context.Context, dsn string) (int64, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	conn, err := pgx.Connect(ctx, dsn)
+	r, err := a.runner(input.Cloud, input.Runner)
 	if err != nil {
-		return 0, err
+		return false, err
 	}
-	defer conn.Close(context.Background())
-
-	var seq int64
-	if err := conn.QueryRow(ctx, "SELECT seq FROM dbtest_probe WHERE id = 1").Scan(&seq); err != nil {
-		return 0, err
+	h, err := r.Run(ctx, harness.Spec{
+		Image:     input.Image,
+		Name:      input.Name,
+		Args:      []string{"-dsn", input.DSN, "-sampling", "30s"},
+		SelfExits: true,
+	})
+	if err != nil {
+		return false, fmt.Errorf("start sampling check: %w", err)
 	}
-	return seq, nil
+	out, err := r.Stop(ctx, h)
+	if err != nil {
+		if a.tel != nil {
+			a.tel.Logger.Warn("probe is not sampling", slog.Any("error", err), slog.String("output", harness.Tail(out)))
+		}
+		return false, nil
+	}
+	if a.tel != nil {
+		a.tel.Logger.Info("probe is sampling", slog.String("name", input.Name))
+	}
+	return true, nil
 }
 
 func probeSpec(in ProbeInput) harness.Spec {

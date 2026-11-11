@@ -163,7 +163,11 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 
 	var probing bool
 	if err = workflow.ExecuteActivity(ctx, harn.CheckProbeReadiness, activities.ProbeReadyInput{
-		TargetDSN: cluster.Target.URL(cluster.Password),
+		Cloud:  cfg.Cloud,
+		Runner: runner.Name,
+		Image:  runner.Images.Probe,
+		Name:   "dbtest-sampling-" + runID.String(),
+		DSN:    cluster.Internal.URL(cluster.Password),
 	}).Get(ctx, &probing); err != nil {
 		return err
 	}
