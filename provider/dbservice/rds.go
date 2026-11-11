@@ -18,13 +18,13 @@ import (
 	awscloud "github.com/elenaochkina/dbtest/provider/cloud/aws"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 )
 
 // rdsservice provisions Postgres on Amazon RDS.
 type rdsservice struct {
 	client *rds.Client
 	cfg    rdsConfig
+	cloud  cloud.Cloud
 	tel    *telemetry.Telemetry
 }
 
@@ -43,7 +43,7 @@ func (rdsRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBService
 	if !ok {
 		return nil, fmt.Errorf("rds needs the aws cloud, got %s", c.Name())
 	}
-	return &rdsservice{client: rds.NewFromConfig(awsCloud.Config()), cfg: loadRDSConfig(), tel: tel}, nil
+	return &rdsservice{client: rds.NewFromConfig(awsCloud.Config()), cfg: loadRDSConfig(), cloud: c, tel: tel}, nil
 }
 
 // rdsConfig holds the RDS settings from the AWS_RDS_* environment.
@@ -247,26 +247,9 @@ func allocatedStorageGiB(req provider.ProvisionRequest) int32 {
 	return int32(req.DiskGiB)
 }
 
-// WaitForReady verifies the instance is actually accepting Postgres connections.
+// WaitForReady waits until the instance answers the probe over its internal address.
 func (p *rdsservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
-	deadline := time.Now().Add(5 * time.Minute)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		connCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
-		cancel()
-		if err == nil {
-			conn.Close(context.Background())
-			if p.tel != nil {
-				p.tel.Logger.Info("cluster is ready", slog.String("instance_id", cluster.ID))
-			}
-			return nil
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return fmt.Errorf("cluster %s did not accept connections within 5m", cluster.ID)
+	return waitForConnection(ctx, p.cloud, p.tel, cluster)
 }
 
 func (p *rdsservice) Deprovision(ctx context.Context, clusterID string) error {

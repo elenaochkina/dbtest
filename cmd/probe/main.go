@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/elenaochkina/dbtest/probe"
+	"github.com/jackc/pgx/v5"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func main() {
 	flag.DurationVar(&cfg.Timeout, "timeout", 300*time.Millisecond, "per-sample connect + read timeout")
 	flag.DurationVar(&cfg.WriteTimeout, "write-timeout", 200*time.Millisecond, "per-sample write timeout")
 	flag.DurationVar(&cfg.MaxDuration, "max-duration", time.Hour, "stop polling even if nothing stops the probe")
+	ready := flag.Duration("ready", 0, "connect once a second until the database answers or this long passes, then exit")
 	flag.Parse()
 
 	if cfg.DSN == "" {
@@ -39,6 +41,10 @@ func main() {
 	// SIGTERM is how a container is asked to stop;
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if *ready > 0 {
+		os.Exit(waitReady(ctx, cfg.DSN, *ready))
+	}
 
 	p := probe.New(cfg)
 
@@ -57,4 +63,30 @@ func main() {
 	// The probe reports what it saw and exits. Whether that matches the
 	// disruptions applied is for the caller that applied them to judge.
 	fmt.Println(string(payload))
+}
+
+// waitReady connects and runs SELECT 1 once a second until it succeeds or the
+// limit passes. It returns 0 when the database answered and 1 when it did not.
+func waitReady(ctx context.Context, dsn string, limit time.Duration) int {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	for {
+		attempt, done := context.WithTimeout(ctx, 5*time.Second)
+		conn, err := pgx.Connect(attempt, dsn)
+		if err == nil {
+			err = conn.QueryRow(attempt, "SELECT 1").Scan(new(int))
+			conn.Close(context.Background())
+		}
+		done()
+		if err == nil {
+			slog.Info("database answered")
+			return 0
+		}
+		select {
+		case <-ctx.Done():
+			slog.Error("database did not answer", "within", limit, "error", err)
+			return 1
+		case <-time.After(time.Second):
+		}
+	}
 }

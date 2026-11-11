@@ -4,12 +4,15 @@ package dbservice
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 
+	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
+	"github.com/google/uuid"
 )
 
 // DBService provisions, disrupts and deletes one kind of database.
@@ -86,4 +89,30 @@ func NewDBService(name provider.DBServiceName, c cloud.Cloud, tel *telemetry.Tel
 		return nil, fmt.Errorf("%s does not run in %s", name, c.Name())
 	}
 	return registration.Build(c, tel)
+}
+
+// waitForConnection runs the probe in ready mode on the cloud's default runner
+// against the cluster's internal address and returns once the database answers.
+func waitForConnection(ctx context.Context, c cloud.Cloud, tel *telemetry.Telemetry, cluster provider.ClusterInfo) error {
+	name := c.Runners()[0]
+	r, err := c.NewRunner(name, tel)
+	if err != nil {
+		return fmt.Errorf("runner %q: %w", name, err)
+	}
+	h, err := r.Run(ctx, harness.Spec{
+		Image:     c.Images(name).Probe,
+		Name:      "dbtest-ready-" + uuid.NewString(),
+		Args:      []string{"-dsn", cluster.Internal.URL(cluster.Password), "-ready", "5m"},
+		SelfExits: true,
+	})
+	if err != nil {
+		return fmt.Errorf("start readiness check for %s: %w", cluster.ID, err)
+	}
+	if out, err := r.Stop(ctx, h); err != nil {
+		return fmt.Errorf("cluster %s did not answer within 5m: %w: %s", cluster.ID, err, harness.Tail(out))
+	}
+	if tel != nil {
+		tel.Logger.Info("cluster is ready", slog.String("cluster", cluster.ID))
+	}
+	return nil
 }

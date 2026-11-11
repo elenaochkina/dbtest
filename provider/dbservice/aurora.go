@@ -25,6 +25,7 @@ import (
 type auroraservice struct {
 	client *rds.Client
 	cfg    auroraConfig
+	cloud  cloud.Cloud
 	tel    *telemetry.Telemetry
 }
 
@@ -43,7 +44,7 @@ func (auroraRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBServ
 	if !ok {
 		return nil, fmt.Errorf("aurora needs the aws cloud, got %s", c.Name())
 	}
-	return &auroraservice{client: rds.NewFromConfig(awsCloud.Config()), cfg: loadAuroraConfig(), tel: tel}, nil
+	return &auroraservice{client: rds.NewFromConfig(awsCloud.Config()), cfg: loadAuroraConfig(), cloud: c, tel: tel}, nil
 }
 
 // auroraConfig holds the RDS settings Aurora shares and its own instance class.
@@ -253,26 +254,10 @@ func resolveAuroraClass(req provider.ProvisionRequest, override string) string {
 	return table[len(table)-1].name
 }
 
-// WaitForReady verifies the writer endpoint is accepting Postgres connections.
+// WaitForReady waits until the writer endpoint answers the probe over its internal
+// address.
 func (p *auroraservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
-	deadline := time.Now().Add(5 * time.Minute)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		connCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
-		cancel()
-		if err == nil {
-			conn.Close(context.Background())
-			if p.tel != nil {
-				p.tel.Logger.Info("cluster is ready", slog.String("cluster_id", cluster.ID))
-			}
-			return nil
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return fmt.Errorf("cluster %s did not accept connections within 5m", cluster.ID)
+	return waitForConnection(ctx, p.cloud, p.tel, cluster)
 }
 
 // Deprovision deletes the cluster's instances, then the cluster. A missing
