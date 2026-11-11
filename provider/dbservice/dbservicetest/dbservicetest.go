@@ -117,9 +117,9 @@ func checkCluster(t *testing.T, cluster provider.ClusterInfo) {
 	if cluster.ID == "" || cluster.Password == "" {
 		t.Errorf("cluster %+v has no ID or password", cluster)
 	}
-	for label, target := range map[string]provider.PGTarget{"target": cluster.Target, "internal": cluster.Internal} {
-		if target.Host == "" || target.Port == 0 || target.User == "" || target.Database == "" {
-			t.Errorf("%s %+v is incomplete", label, target)
+	for label, connInfo := range map[string]provider.PGConnInfo{"public": cluster.PublicConnInfo, "private": cluster.PrivateConnInfo} {
+		if connInfo.Host == "" || connInfo.Port == 0 || connInfo.User == "" || connInfo.Database == "" {
+			t.Errorf("%s %+v is incomplete", label, connInfo)
 		}
 	}
 }
@@ -129,7 +129,7 @@ func connect(t *testing.T, cluster provider.ClusterInfo) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	conn, err := pgx.Connect(ctx, cluster.Target.URL(cluster.Password))
+	conn, err := pgx.Connect(ctx, cluster.PublicConnInfo.URL(cluster.Password))
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

@@ -19,13 +19,13 @@ import (
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	localcloud "github.com/elenaochkina/dbtest/provider/cloud/local"
 	"github.com/elenaochkina/dbtest/telemetry"
-	"github.com/jackc/pgx/v5"
 )
 
 // dockerservice runs Postgres in a local Docker container.
 type dockerservice struct {
 	client *dockerclient.Client
 	image  string
+	cloud  cloud.Cloud
 	tel    *telemetry.Telemetry
 }
 
@@ -48,7 +48,7 @@ func (dockerRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBServ
 	if img == "" {
 		img = "postgres:16"
 	}
-	return &dockerservice{client: local.Client(), image: img, tel: tel}, nil
+	return &dockerservice{client: local.Client(), image: img, cloud: c, tel: tel}, nil
 }
 
 // The password parameter is ignored by Docker — it is fixed at "test". The
@@ -130,10 +130,10 @@ func (p *dockerservice) Provision(ctx context.Context, req provider.ProvisionReq
 	}
 
 	return provider.ClusterInfo{
-		ID:       id,
-		Target:   targetForPort(hostPort),
-		Internal: targetForContainer(name),
-		Password: "test",
+		ID:              id,
+		PublicConnInfo:  publicConnInfo(hostPort),
+		PrivateConnInfo: privateConnInfo(name),
+		Password:        "test",
 	}, nil
 }
 
@@ -171,27 +171,9 @@ func dockerResources(req provider.ProvisionRequest) container.Resources {
 	return res
 }
 
+// WaitForReady waits until the container answers the probe over the Docker network.
 func (p *dockerservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		connCtx, cancel := context.WithTimeout(ctx, time.Second)
-		conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
-		cancel()
-		if err == nil {
-			conn.Close(context.Background())
-			if p.tel != nil {
-				p.tel.Logger.Info("cluster is ready",
-					slog.String("container_id", cluster.ID),
-				)
-			}
-			return nil
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return fmt.Errorf("cluster %s did not become ready within 30s", cluster.ID)
+	return waitForConnection(ctx, p.cloud, p.tel, cluster)
 }
 
 func (p *dockerservice) Deprovision(ctx context.Context, clusterID string) error {
@@ -263,7 +245,7 @@ func (p *dockerservice) Disrupt(ctx context.Context, cluster provider.ClusterInf
 	}
 
 	// PublishAllPorts reassigns the host port on every start, so the caller's
-	// copy of the target is stale.
+	// copy of the connection info is stale.
 	hostPort, err := p.hostPort(ctx, cluster.ID)
 	if err != nil {
 		return provider.ClusterInfo{}, err
@@ -279,10 +261,10 @@ func (p *dockerservice) Disrupt(ctx context.Context, cluster provider.ClusterInf
 	}
 
 	return provider.ClusterInfo{
-		ID:       cluster.ID,
-		Target:   targetForPort(hostPort),
-		Internal: cluster.Internal,
-		Password: cluster.Password,
+		ID:              cluster.ID,
+		PublicConnInfo:  publicConnInfo(hostPort),
+		PrivateConnInfo: cluster.PrivateConnInfo,
+		Password:        cluster.Password,
 	}, nil
 }
 
@@ -321,12 +303,12 @@ func (p *dockerservice) hostPort(ctx context.Context, containerID string) (strin
 	return bindings[0].HostPort, nil
 }
 
-// targetForPort builds the provider-agnostic PGTarget for a container whose
+// publicConnInfo builds the connection info for a container whose
 // Postgres is published on hostPort. This is the worker's route, from outside
 // Docker.
-func targetForPort(hostPort string) provider.PGTarget {
+func publicConnInfo(hostPort string) provider.PGConnInfo {
 	port, _ := strconv.Atoi(hostPort)
-	return provider.PGTarget{
+	return provider.PGConnInfo{
 		Host:     "localhost",
 		Port:     port,
 		Database: "postgres",
@@ -334,9 +316,9 @@ func targetForPort(hostPort string) provider.PGTarget {
 	}
 }
 
-// targetForContainer builds the route a sibling container usesa
-func targetForContainer(name string) provider.PGTarget {
-	return provider.PGTarget{
+// privateConnInfo builds the connection info a sibling container uses
+func privateConnInfo(name string) provider.PGConnInfo {
+	return provider.PGConnInfo{
 		Host:     name,
 		Port:     5432,
 		Database: "postgres",

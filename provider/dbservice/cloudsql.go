@@ -16,7 +16,6 @@ import (
 	gcpcloud "github.com/elenaochkina/dbtest/provider/cloud/gcp"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"google.golang.org/api/googleapi"
 	sqladmin "google.golang.org/api/sqladmin/v1"
 )
@@ -27,6 +26,7 @@ type cloudsqlservice struct {
 	project string
 	region  string
 	cfg     cloudSQLConfig
+	cloud   cloud.Cloud
 	tel     *telemetry.Telemetry
 }
 
@@ -56,7 +56,7 @@ func (cloudSQLRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBSe
 	if err != nil {
 		return nil, fmt.Errorf("create cloud sql admin client: %w", err)
 	}
-	return &cloudsqlservice{client: client, project: gcpCloud.Project(), region: gcpCloud.Region(), cfg: cfg, tel: tel}, nil
+	return &cloudsqlservice{client: client, project: gcpCloud.Project(), region: gcpCloud.Region(), cfg: cfg, cloud: c, tel: tel}, nil
 }
 
 // cloudSQLConfig holds the Cloud SQL settings from the GCP_* environment.
@@ -75,8 +75,8 @@ func loadCloudSQLConfig() cloudSQLConfig {
 	}
 }
 
-// Provision creates a Cloud SQL instance sized from req. Target is its public IP and
-// Internal its private IP in the GCP_NETWORK VPC.
+// Provision creates a Cloud SQL instance sized from req. PublicConnInfo holds its public IP and
+// PrivateConnInfo its private IP in the GCP_NETWORK VPC.
 func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -120,14 +120,14 @@ func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionR
 		)
 	}
 
-	target := provider.PGTarget{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
-	internal := target
-	internal.Host = privateIP
+	public := provider.PGConnInfo{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
+	private := public
+	private.Host = privateIP
 	return provider.ClusterInfo{
-		ID:       instanceName,
-		Target:   target,
-		Internal: internal,
-		Password: password,
+		ID:              instanceName,
+		PublicConnInfo:  public,
+		PrivateConnInfo: private,
+		Password:        password,
 	}, nil
 }
 
@@ -247,29 +247,13 @@ func cloudSQLDiskGiB(req provider.ProvisionRequest) int64 {
 	return int64(max(req.DiskGiB, 20))
 }
 
-// WaitForReady waits for the instance to be RUNNABLE and accept Postgres connections.
+// WaitForReady waits for the instance to be RUNNABLE and to answer the probe over
+// its private address.
 func (p *cloudsqlservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	if _, err := p.waitForState(ctx, cluster.ID, "RUNNABLE", 5*time.Minute); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(5 * time.Minute)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		connCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
-		cancel()
-		if err == nil {
-			conn.Close(context.Background())
-			if p.tel != nil {
-				p.tel.Logger.Info("cluster is ready", slog.String("instance", cluster.ID))
-			}
-			return nil
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return fmt.Errorf("cluster %s did not accept connections within 5m", cluster.ID)
+	return waitForConnection(ctx, p.cloud, p.tel, cluster)
 }
 
 // Deprovision deletes the instance. An instance that is already gone counts as deleted.

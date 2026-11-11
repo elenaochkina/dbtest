@@ -28,7 +28,7 @@ func NewDurabilityActivities(tel *telemetry.Telemetry) *DurabilityActivities {
 
 // Fingerprint returns a content digest per table, keyed by table name.
 func (a *DurabilityActivities) Fingerprint(ctx context.Context, input FingerprintInput) (map[string]string, error) {
-	pool, err := pgadapter.Connect(input.Cluster.Target.URL(input.Cluster.Password), a.tel)
+	pool, err := pgadapter.Connect(input.Cluster.PublicConnInfo.URL(input.Cluster.Password), a.tel)
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}

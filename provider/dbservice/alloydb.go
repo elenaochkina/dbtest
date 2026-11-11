@@ -16,7 +16,6 @@ import (
 	gcpcloud "github.com/elenaochkina/dbtest/provider/cloud/gcp"
 	"github.com/elenaochkina/dbtest/telemetry"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	alloydb "google.golang.org/api/alloydb/v1"
 	"google.golang.org/api/googleapi"
 )
@@ -27,6 +26,7 @@ type alloydbservice struct {
 	project string
 	region  string
 	cfg     alloyDBConfig
+	cloud   cloud.Cloud
 	tel     *telemetry.Telemetry
 }
 
@@ -56,7 +56,7 @@ func (alloyDBRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBSer
 	if err != nil {
 		return nil, fmt.Errorf("create alloydb client: %w", err)
 	}
-	return &alloydbservice{client: client, project: gcpCloud.Project(), region: gcpCloud.Region(), cfg: cfg, tel: tel}, nil
+	return &alloydbservice{client: client, project: gcpCloud.Project(), region: gcpCloud.Region(), cfg: cfg, cloud: c, tel: tel}, nil
 }
 
 // alloyDBConfig holds the AlloyDB settings from the GCP_* environment.
@@ -73,8 +73,8 @@ func loadAlloyDBConfig() alloyDBConfig {
 	}
 }
 
-// Provision creates a cluster and its primary instance sized from req. Target is the instance's
-// public IP and Internal its private IP in the GCP_NETWORK VPC.
+// Provision creates a cluster and its primary instance sized from req. PublicConnInfo holds the instance's
+// public IP and PrivateConnInfo its private IP in the GCP_NETWORK VPC.
 func (p *alloydbservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -118,14 +118,14 @@ func (p *alloydbservice) Provision(ctx context.Context, req provider.ProvisionRe
 		)
 	}
 
-	target := provider.PGTarget{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
-	internal := target
-	internal.Host = privateIP
+	public := provider.PGConnInfo{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
+	private := public
+	private.Host = privateIP
 	return provider.ClusterInfo{
-		ID:       clusterID,
-		Target:   target,
-		Internal: internal,
-		Password: password,
+		ID:              clusterID,
+		PublicConnInfo:  public,
+		PrivateConnInfo: private,
+		Password:        password,
 	}, nil
 }
 
@@ -224,29 +224,13 @@ func (p *alloydbservice) instanceName(clusterID string) string {
 	return p.clusterName(clusterID) + "/instances/primary"
 }
 
-// WaitForReady waits for the primary instance to be READY and accept Postgres connections.
+// WaitForReady waits for the primary instance to be READY and to answer the probe
+// over its private address.
 func (p *alloydbservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	if _, err := p.waitForState(ctx, p.instanceName(cluster.ID), "READY", 5*time.Minute); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(5 * time.Minute)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		connCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
-		cancel()
-		if err == nil {
-			conn.Close(context.Background())
-			if p.tel != nil {
-				p.tel.Logger.Info("cluster is ready", slog.String("cluster", cluster.ID))
-			}
-			return nil
-		}
-		time.Sleep(2 * time.Second)
-	}
-	return fmt.Errorf("cluster %s did not accept connections within 5m", cluster.ID)
+	return waitForConnection(ctx, p.cloud, p.tel, cluster)
 }
 
 // Deprovision deletes the cluster with its instances and waits until it is gone.

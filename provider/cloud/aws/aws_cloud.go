@@ -69,8 +69,8 @@ func (c *AWSCloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) 
 // the families terraform/aws creates.
 func (c *AWSCloud) Images(harness.RunnerName) harness.Images {
 	return harness.Images{
-		Probe: cloud.EnvOr("AWS_ECS_PROBE_TASK_DEFINITION", "dbtest-probe"),
-		Bench: cloud.EnvOr("AWS_ECS_BENCH_TASK_DEFINITION", "dbtest-bench"),
+		Probe: cloud.EnvOr("AWS_ECS_PROBE_TASK_DEFINITION", harness.ProbeName),
+		Bench: cloud.EnvOr("AWS_ECS_BENCH_TASK_DEFINITION", harness.BenchName),
 	}
 }
 
