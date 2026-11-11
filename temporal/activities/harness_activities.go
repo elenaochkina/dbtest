@@ -36,7 +36,7 @@ type ProbeInput struct {
 }
 
 // ProbeReadyInput describes the check that the measurement probe is writing:
-// the probe image in sampling mode against the cluster's internal address.
+// the probe image in sampling mode against the cluster's private address.
 type ProbeReadyInput struct {
 	Cloud  provider.CloudName
 	Runner harness.RunnerName

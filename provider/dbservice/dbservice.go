@@ -92,7 +92,7 @@ func NewDBService(name provider.DBServiceName, c cloud.Cloud, tel *telemetry.Tel
 }
 
 // waitForConnection runs the probe in ready mode on the cloud's default runner
-// against the cluster's internal address and returns once the database answers.
+// against the cluster's private address and returns once the database answers.
 func waitForConnection(ctx context.Context, c cloud.Cloud, tel *telemetry.Telemetry, cluster provider.ClusterInfo) error {
 	name := c.Runners()[0]
 	r, err := c.NewRunner(name, tel)
@@ -102,7 +102,7 @@ func waitForConnection(ctx context.Context, c cloud.Cloud, tel *telemetry.Teleme
 	h, err := r.Run(ctx, harness.Spec{
 		Image:     c.Images(name).Probe,
 		Name:      "dbtest-ready-" + uuid.NewString(),
-		Args:      []string{"-dsn", cluster.Internal.URL(cluster.Password), "-ready", "5m"},
+		Args:      []string{"-dsn", cluster.PrivateConnInfo.URL(cluster.Password), "-ready", "5m"},
 		SelfExits: true,
 	})
 	if err != nil {

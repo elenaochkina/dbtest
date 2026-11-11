@@ -75,8 +75,8 @@ func loadCloudSQLConfig() cloudSQLConfig {
 	}
 }
 
-// Provision creates a Cloud SQL instance sized from req. Target is its public IP and
-// Internal its private IP in the GCP_NETWORK VPC.
+// Provision creates a Cloud SQL instance sized from req. PublicConnInfo holds its public IP and
+// PrivateConnInfo its private IP in the GCP_NETWORK VPC.
 func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -120,14 +120,14 @@ func (p *cloudsqlservice) Provision(ctx context.Context, req provider.ProvisionR
 		)
 	}
 
-	target := provider.PGTarget{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
-	internal := target
-	internal.Host = privateIP
+	public := provider.PGConnInfo{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
+	private := public
+	private.Host = privateIP
 	return provider.ClusterInfo{
-		ID:       instanceName,
-		Target:   target,
-		Internal: internal,
-		Password: password,
+		ID:              instanceName,
+		PublicConnInfo:  public,
+		PrivateConnInfo: private,
+		Password:        password,
 	}, nil
 }
 
@@ -248,7 +248,7 @@ func cloudSQLDiskGiB(req provider.ProvisionRequest) int64 {
 }
 
 // WaitForReady waits for the instance to be RUNNABLE and to answer the probe over
-// its internal address.
+// its private address.
 func (p *cloudsqlservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	if _, err := p.waitForState(ctx, cluster.ID, "RUNNABLE", 5*time.Minute); err != nil {
 		return err

@@ -59,7 +59,7 @@ func (a *WorkloadActivities) runWorkload(ctx context.Context, name workload.Work
 	if err != nil {
 		return nil, fmt.Errorf("workload %q: %w", name, err)
 	}
-	dsn := input.Cluster.Target.URL(input.Cluster.Password)
+	dsn := input.Cluster.PublicConnInfo.URL(input.Cluster.Password)
 	if init, ok := w.(workload.Initializer); ok {
 		if err := init.Initialize(ctx, dsn, a.tel); err != nil {
 			return nil, fmt.Errorf("workload %q initialize: %w", name, err)

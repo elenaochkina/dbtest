@@ -58,7 +58,7 @@ func (s workloadStep) Run(ctx context.Context, rc *RunContext) error {
 	if err != nil {
 		return fmt.Errorf("workload: %w", err)
 	}
-	result, err := w.Run(ctx, rc.Cluster.Target.URL(rc.Cluster.Password), rc.Tel)
+	result, err := w.Run(ctx, rc.Cluster.PublicConnInfo.URL(rc.Cluster.Password), rc.Tel)
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ type snapshotStep struct {
 func (snapshotStep) Name() string { return "snapshot" }
 
 func (s snapshotStep) Run(ctx context.Context, rc *RunContext) error {
-	pool, err := pgadapter.Connect(rc.Cluster.Target.URL(rc.Cluster.Password), rc.Tel)
+	pool, err := pgadapter.Connect(rc.Cluster.PublicConnInfo.URL(rc.Cluster.Password), rc.Tel)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
@@ -155,7 +155,7 @@ type verifyStep struct {
 func (verifyStep) Name() string { return "verify" }
 
 func (s verifyStep) Run(ctx context.Context, rc *RunContext) error {
-	pool, err := pgadapter.Connect(rc.Cluster.Target.URL(rc.Cluster.Password), rc.Tel)
+	pool, err := pgadapter.Connect(rc.Cluster.PublicConnInfo.URL(rc.Cluster.Password), rc.Tel)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}

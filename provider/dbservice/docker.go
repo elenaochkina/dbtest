@@ -130,10 +130,10 @@ func (p *dockerservice) Provision(ctx context.Context, req provider.ProvisionReq
 	}
 
 	return provider.ClusterInfo{
-		ID:       id,
-		Target:   targetForPort(hostPort),
-		Internal: targetForContainer(name),
-		Password: "test",
+		ID:              id,
+		PublicConnInfo:  publicConnInfo(hostPort),
+		PrivateConnInfo: privateConnInfo(name),
+		Password:        "test",
 	}, nil
 }
 
@@ -245,7 +245,7 @@ func (p *dockerservice) Disrupt(ctx context.Context, cluster provider.ClusterInf
 	}
 
 	// PublishAllPorts reassigns the host port on every start, so the caller's
-	// copy of the target is stale.
+	// copy of the connection info is stale.
 	hostPort, err := p.hostPort(ctx, cluster.ID)
 	if err != nil {
 		return provider.ClusterInfo{}, err
@@ -261,10 +261,10 @@ func (p *dockerservice) Disrupt(ctx context.Context, cluster provider.ClusterInf
 	}
 
 	return provider.ClusterInfo{
-		ID:       cluster.ID,
-		Target:   targetForPort(hostPort),
-		Internal: cluster.Internal,
-		Password: cluster.Password,
+		ID:              cluster.ID,
+		PublicConnInfo:  publicConnInfo(hostPort),
+		PrivateConnInfo: cluster.PrivateConnInfo,
+		Password:        cluster.Password,
 	}, nil
 }
 
@@ -303,12 +303,12 @@ func (p *dockerservice) hostPort(ctx context.Context, containerID string) (strin
 	return bindings[0].HostPort, nil
 }
 
-// targetForPort builds the provider-agnostic PGTarget for a container whose
+// publicConnInfo builds the connection info for a container whose
 // Postgres is published on hostPort. This is the worker's route, from outside
 // Docker.
-func targetForPort(hostPort string) provider.PGTarget {
+func publicConnInfo(hostPort string) provider.PGConnInfo {
 	port, _ := strconv.Atoi(hostPort)
-	return provider.PGTarget{
+	return provider.PGConnInfo{
 		Host:     "localhost",
 		Port:     port,
 		Database: "postgres",
@@ -316,9 +316,9 @@ func targetForPort(hostPort string) provider.PGTarget {
 	}
 }
 
-// targetForContainer builds the route a sibling container usesa
-func targetForContainer(name string) provider.PGTarget {
-	return provider.PGTarget{
+// privateConnInfo builds the connection info a sibling container uses
+func privateConnInfo(name string) provider.PGConnInfo {
+	return provider.PGConnInfo{
 		Host:     name,
 		Port:     5432,
 		Database: "postgres",

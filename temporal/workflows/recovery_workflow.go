@@ -126,7 +126,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		Runner:   runner.Name,
 		Image:    runner.Images.Bench,
 		Name:     "dbtest-seed-" + runID.String(),
-		DSN:      cluster.Internal.URL(cluster.Password),
+		DSN:      cluster.PrivateConnInfo.URL(cluster.Password),
 		Workload: "pgbench",
 		Scale:    cfg.Scale,
 	}).Get(ctx, nil); err != nil {
@@ -139,7 +139,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		Runner:       runner.Name,
 		Image:        runner.Images.Probe,
 		Name:         "dbtest-probe-" + runID.String(),
-		DSN:          cluster.Internal.URL(cluster.Password),
+		DSN:          cluster.PrivateConnInfo.URL(cluster.Password),
 		Interval:     cfg.ProbeInterval,
 		Timeout:      cfg.ProbeTimeout,
 		WriteTimeout: cfg.ProbeWriteTimeout,
@@ -167,7 +167,7 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		Runner: runner.Name,
 		Image:  runner.Images.Probe,
 		Name:   "dbtest-sampling-" + runID.String(),
-		DSN:    cluster.Internal.URL(cluster.Password),
+		DSN:    cluster.PrivateConnInfo.URL(cluster.Password),
 	}).Get(ctx, &probing); err != nil {
 		return err
 	}

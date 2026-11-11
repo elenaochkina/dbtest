@@ -73,8 +73,8 @@ func loadAlloyDBConfig() alloyDBConfig {
 	}
 }
 
-// Provision creates a cluster and its primary instance sized from req. Target is the instance's
-// public IP and Internal its private IP in the GCP_NETWORK VPC.
+// Provision creates a cluster and its primary instance sized from req. PublicConnInfo holds the instance's
+// public IP and PrivateConnInfo its private IP in the GCP_NETWORK VPC.
 func (p *alloydbservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -118,14 +118,14 @@ func (p *alloydbservice) Provision(ctx context.Context, req provider.ProvisionRe
 		)
 	}
 
-	target := provider.PGTarget{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
-	internal := target
-	internal.Host = privateIP
+	public := provider.PGConnInfo{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
+	private := public
+	private.Host = privateIP
 	return provider.ClusterInfo{
-		ID:       clusterID,
-		Target:   target,
-		Internal: internal,
-		Password: password,
+		ID:              clusterID,
+		PublicConnInfo:  public,
+		PrivateConnInfo: private,
+		Password:        password,
 	}, nil
 }
 
@@ -225,7 +225,7 @@ func (p *alloydbservice) instanceName(clusterID string) string {
 }
 
 // WaitForReady waits for the primary instance to be READY and to answer the probe
-// over its internal address.
+// over its private address.
 func (p *alloydbservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	if _, err := p.waitForState(ctx, p.instanceName(cluster.ID), "READY", 5*time.Minute); err != nil {
 		return err

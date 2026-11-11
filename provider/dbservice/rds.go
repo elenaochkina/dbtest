@@ -181,14 +181,14 @@ func (p *rdsservice) Provision(ctx context.Context, req provider.ProvisionReques
 		)
 	}
 
-	target := provider.PGTarget{Host: host, Port: port, Database: p.cfg.Database, User: p.cfg.Username}
+	connInfo := provider.PGConnInfo{Host: host, Port: port, Database: p.cfg.Database, User: p.cfg.Username}
 	return provider.ClusterInfo{
-		ID:     instanceID,
-		Target: target,
+		ID:             instanceID,
+		PublicConnInfo: connInfo,
 		// The RDS endpoint resolves the same from the worker and from a task in
 		// the VPC, so there is no second address to hand out.
-		Internal: target,
-		Password: password,
+		PrivateConnInfo: connInfo,
+		Password:        password,
 	}, nil
 }
 
@@ -247,7 +247,7 @@ func allocatedStorageGiB(req provider.ProvisionRequest) int32 {
 	return int32(req.DiskGiB)
 }
 
-// WaitForReady waits until the instance answers the probe over its internal address.
+// WaitForReady waits until the instance answers the probe over its private address.
 func (p *rdsservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	return waitForConnection(ctx, p.cloud, p.tel, cluster)
 }

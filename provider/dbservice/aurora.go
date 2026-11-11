@@ -104,12 +104,12 @@ func (p *auroraservice) Provision(ctx context.Context, req provider.ProvisionReq
 		)
 	}
 
-	target := provider.PGTarget{Host: host, Port: port, Database: p.cfg.Database, User: p.cfg.Username}
+	connInfo := provider.PGConnInfo{Host: host, Port: port, Database: p.cfg.Database, User: p.cfg.Username}
 	return provider.ClusterInfo{
-		ID:       clusterID,
-		Target:   target,
-		Internal: target,
-		Password: password,
+		ID:              clusterID,
+		PublicConnInfo:  connInfo,
+		PrivateConnInfo: connInfo,
+		Password:        password,
 	}, nil
 }
 
@@ -254,7 +254,7 @@ func resolveAuroraClass(req provider.ProvisionRequest, override string) string {
 	return table[len(table)-1].name
 }
 
-// WaitForReady waits until the writer endpoint answers the probe over its internal
+// WaitForReady waits until the writer endpoint answers the probe over its private
 // address.
 func (p *auroraservice) WaitForReady(ctx context.Context, cluster provider.ClusterInfo) error {
 	return waitForConnection(ctx, p.cloud, p.tel, cluster)
@@ -416,7 +416,7 @@ func (p *auroraservice) Disrupt(ctx context.Context, cluster provider.ClusterInf
 func injectCrash(ctx context.Context, cluster provider.ClusterInfo) error {
 	connCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	conn, err := pgx.Connect(connCtx, cluster.Target.URL(cluster.Password))
+	conn, err := pgx.Connect(connCtx, cluster.PublicConnInfo.URL(cluster.Password))
 	if err != nil {
 		return fmt.Errorf("connect to writer of %s: %w", cluster.ID, err)
 	}
