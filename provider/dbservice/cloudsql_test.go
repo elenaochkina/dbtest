@@ -71,6 +71,17 @@ func TestResolveCloudSQLTier(t *testing.T) {
 	}
 }
 
+func TestCloudSQLAddresses(t *testing.T) {
+	inst := &sqladmin.DatabaseInstance{IpAddresses: []*sqladmin.IpMapping{
+		{Type: "PRIMARY", IpAddress: "34.82.1.2"},
+		{Type: "OUTGOING", IpAddress: "34.82.9.9"},
+		{Type: "PRIVATE", IpAddress: "10.0.80.5"},
+	}}
+	if publicIP, privateIP := cloudSQLAddresses(inst); publicIP != "34.82.1.2" || privateIP != "10.0.80.5" {
+		t.Errorf("cloudSQLAddresses() = %q, %q; want 34.82.1.2, 10.0.80.5", publicIP, privateIP)
+	}
+}
+
 func TestGCPPostgresVersion(t *testing.T) {
 	for version, want := range map[string]string{"18": "POSTGRES_18", "16.4": "POSTGRES_16"} {
 		if got, err := gcpPostgresVersion(version); err != nil || got != want {

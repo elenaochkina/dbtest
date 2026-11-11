@@ -65,15 +65,16 @@ type alloyDBConfig struct {
 	authorizedNetworks []string
 }
 
-// loadAlloyDBConfig reads GCP_ALLOYDB_NETWORK (default dbtest) and GCP_AUTHORIZED_NETWORKS into an alloyDBConfig.
+// loadAlloyDBConfig reads GCP_NETWORK (default dbtest) and GCP_AUTHORIZED_NETWORKS into an alloyDBConfig.
 func loadAlloyDBConfig() alloyDBConfig {
 	return alloyDBConfig{
-		network:            cloud.EnvOr("GCP_ALLOYDB_NETWORK", "dbtest"),
+		network:            cloud.EnvOr("GCP_NETWORK", "dbtest"),
 		authorizedNetworks: splitNonEmpty(os.Getenv("GCP_AUTHORIZED_NETWORKS"), ","),
 	}
 }
 
-// Provision creates a cluster and its primary instance sized from req and returns the instance's public IP.
+// Provision creates a cluster and its primary instance sized from req. Target is the instance's
+// public IP and Internal its private IP in the GCP_NETWORK VPC.
 func (p *alloydbservice) Provision(ctx context.Context, req provider.ProvisionRequest, token, password string) (provider.ClusterInfo, error) {
 	start := time.Now()
 
@@ -90,7 +91,7 @@ func (p *alloydbservice) Provision(ctx context.Context, req provider.ProvisionRe
 	clusterID := token
 	cpuCount := alloyDBCPUCount(req)
 
-	host, err := p.create(ctx, req, clusterID, cpuCount, password)
+	publicIP, privateIP, err := p.create(ctx, req, clusterID, cpuCount, password)
 	if err != nil {
 		// The cluster may already be billing; delete it on a fresh ctx.
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
@@ -110,27 +111,30 @@ func (p *alloydbservice) Provision(ctx context.Context, req provider.ProvisionRe
 		p.tel.Logger.Info("provisioned cluster",
 			slog.String("cluster", clusterID),
 			slog.Int64("cpu_count", cpuCount),
-			slog.String("endpoint", host),
+			slog.String("endpoint", publicIP),
+			slog.String("internal_endpoint", privateIP),
 			slog.Float64("vcpu", req.VCPU),
 			slog.Int("memory_mib", req.MemoryMiB),
 		)
 	}
 
-	target := provider.PGTarget{Host: host, Port: 5432, Database: "postgres", User: "postgres"}
+	target := provider.PGTarget{Host: publicIP, Port: 5432, Database: "postgres", User: "postgres"}
+	internal := target
+	internal.Host = privateIP
 	return provider.ClusterInfo{
 		ID:       clusterID,
 		Target:   target,
-		Internal: target,
+		Internal: internal,
 		Password: password,
 	}, nil
 }
 
 // create creates the cluster, then its primary instance, waits until the instance is READY,
-// and returns its public IP. A retried attempt finds what a prior attempt created.
-func (p *alloydbservice) create(ctx context.Context, req provider.ProvisionRequest, clusterID string, cpuCount int64, password string) (string, error) {
+// and returns its public and private IPs. A retried attempt finds what a prior attempt created.
+func (p *alloydbservice) create(ctx context.Context, req provider.ProvisionRequest, clusterID string, cpuCount int64, password string) (string, string, error) {
 	version, err := gcpPostgresVersion(req.PostgresVersion)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	cluster := &alloydb.Cluster{
@@ -143,12 +147,12 @@ func (p *alloydbservice) create(ctx context.Context, req provider.ProvisionReque
 	switch {
 	case err == nil:
 		if err := p.waitForOperation(ctx, op.Name, 30*time.Minute); err != nil {
-			return "", fmt.Errorf("create cluster %s: %w", clusterID, err)
+			return "", "", fmt.Errorf("create cluster %s: %w", clusterID, err)
 		}
 	case hasCode(err, http.StatusConflict):
 		// A prior attempt already created the cluster.
 	default:
-		return "", fmt.Errorf("create cluster %s: %w", clusterID, err)
+		return "", "", fmt.Errorf("create cluster %s: %w", clusterID, err)
 	}
 
 	availability := "ZONAL"
@@ -175,22 +179,22 @@ func (p *alloydbservice) create(ctx context.Context, req provider.ProvisionReque
 	switch {
 	case err == nil:
 		if err := p.waitForOperation(ctx, op.Name, 30*time.Minute); err != nil {
-			return "", fmt.Errorf("create instance in %s: %w", clusterID, err)
+			return "", "", fmt.Errorf("create instance in %s: %w", clusterID, err)
 		}
 	case hasCode(err, http.StatusConflict):
 		// A prior attempt already created the instance.
 	default:
-		return "", fmt.Errorf("create instance in %s: %w", clusterID, err)
+		return "", "", fmt.Errorf("create instance in %s: %w", clusterID, err)
 	}
 
 	inst, err := p.waitForState(ctx, p.instanceName(clusterID), "READY", 30*time.Minute)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if inst.PublicIpAddress == "" {
-		return "", fmt.Errorf("cluster %s has no public IP", clusterID)
+	if inst.PublicIpAddress == "" || inst.IpAddress == "" {
+		return "", "", fmt.Errorf("cluster %s has no public or no private IP", clusterID)
 	}
-	return inst.PublicIpAddress, nil
+	return inst.PublicIpAddress, inst.IpAddress, nil
 }
 
 // alloyDBCPUCount returns the smallest machine with req's vCPUs and memory.

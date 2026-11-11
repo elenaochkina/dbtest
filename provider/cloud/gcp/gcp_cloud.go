@@ -1,4 +1,4 @@
-// Package gcp is Google Cloud: its project, region and readiness check.
+// Package gcp is Google Cloud: its project, region, readiness check and Cloud Run runner.
 package gcp
 
 import (
@@ -12,7 +12,6 @@ import (
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
-	"github.com/elenaochkina/dbtest/provider/cloud/local"
 	"github.com/elenaochkina/dbtest/telemetry"
 )
 
@@ -51,22 +50,24 @@ func (c *GCPCloud) Check(ctx context.Context) provider.Status {
 	return provider.Status{State: provider.StateReady, Detail: "project " + c.project}
 }
 
-// Runners lists Docker on this machine until a Cloud Run runner exists.
-func (c *GCPCloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.Docker} }
+// Runners lists Cloud Run.
+func (c *GCPCloud) Runners() []harness.RunnerName { return []harness.RunnerName{harness.CloudRun} }
 
-// NewRunner builds the local cloud's Docker runner.
+// NewRunner builds the Cloud Run runner in the cloud's project and region.
 func (c *GCPCloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) (harness.Runner, error) {
-	if name != harness.Docker {
+	if name != harness.CloudRun {
 		return nil, cloud.UnknownRunner(c, name)
 	}
-	machine, err := local.New()
-	if err != nil {
-		return nil, err
-	}
-	return machine.NewRunner(name, tel)
+	return newCloudRunRunner(c.project, c.region, tel)
 }
 
-func (c *GCPCloud) Images(harness.RunnerName) harness.Images { return local.DockerImages() }
+// Images returns the probe and bench jobs from .env, defaulting to the jobs terraform/gcp creates.
+func (c *GCPCloud) Images(harness.RunnerName) harness.Images {
+	return harness.Images{
+		Probe: cloud.EnvOr("GCP_CLOUDRUN_PROBE_JOB", "dbtest-probe"),
+		Bench: cloud.EnvOr("GCP_CLOUDRUN_BENCH_JOB", "dbtest-bench"),
+	}
+}
 
 func (c *GCPCloud) Supports(service provider.DBServiceName) bool {
 	return cloud.Supports(provider.GCP, service)
