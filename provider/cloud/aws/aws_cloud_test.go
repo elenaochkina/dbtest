@@ -56,7 +56,7 @@ func TestImagesReadTaskDefinitions(t *testing.T) {
 	t.Setenv("AWS_ECS_PROBE_TASK_DEFINITION", "other-probe")
 	t.Setenv("AWS_ECS_BENCH_TASK_DEFINITION", "")
 
-	want := harness.Images{Probe: "other-probe", Bench: "dbtest-bench"}
+	want := harness.Images{Probe: "other-probe", Bench: harness.BenchName}
 	if got := (&AWSCloud{}).Images(harness.Fargate); got != want {
 		t.Errorf("Images() = %+v, want %+v", got, want)
 	}

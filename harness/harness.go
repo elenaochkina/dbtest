@@ -46,6 +46,13 @@ type Images struct {
 	Bench string
 }
 
+// ProbeName and BenchName name the probe and bench Cloud Run jobs and ECS task
+// definitions that terraform/gcp and terraform/aws create.
+const (
+	ProbeName = "dbtest-probe"
+	BenchName = "dbtest-bench"
+)
+
 // RunnerName names a Runner implementation. A cloud lists the ones it can build.
 type RunnerName string
 

@@ -64,8 +64,8 @@ func (c *GCPCloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) 
 // Images returns the probe and bench jobs from .env, defaulting to the jobs terraform/gcp creates.
 func (c *GCPCloud) Images(harness.RunnerName) harness.Images {
 	return harness.Images{
-		Probe: cloud.EnvOr("GCP_CLOUDRUN_PROBE_JOB", "dbtest-probe"),
-		Bench: cloud.EnvOr("GCP_CLOUDRUN_BENCH_JOB", "dbtest-bench"),
+		Probe: cloud.EnvOr("GCP_CLOUDRUN_PROBE_JOB", harness.ProbeName),
+		Bench: cloud.EnvOr("GCP_CLOUDRUN_BENCH_JOB", harness.BenchName),
 	}
 }
 
