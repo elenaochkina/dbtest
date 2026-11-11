@@ -183,6 +183,9 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 	disruptedAt := make([]time.Time, 0, cfg.Repetitions)
 
 	for i := 0; i < cfg.Repetitions; i++ {
+		if err = waitForSwitchoverReadiness(ctx, prov, cfg, cluster); err != nil {
+			return err
+		}
 		octx := workflow.WithActivityOptions(ctx, onceOnly)
 		disruptedAt = append(disruptedAt, workflow.Now(ctx))
 		if err = workflow.ExecuteActivity(octx, prov.Disrupt, activities.DisruptInput{
@@ -227,4 +230,27 @@ func RecoveryWorkflow(ctx workflow.Context, cfg RecoveryWorkflowConfig) (err err
 		Result:      result,
 		DisruptedAt: disruptedAt,
 	}).Get(ctx, nil)
+}
+
+// waitForSwitchoverReadiness checks every minute, for up to 30 minutes, until the cluster
+// accepts the next disruption.
+func waitForSwitchoverReadiness(ctx workflow.Context, prov *activities.ProviderActivities, cfg RecoveryWorkflowConfig, cluster provider.ClusterInfo) error {
+	for range 30 {
+		var ready bool
+		if err := workflow.ExecuteActivity(ctx, prov.SwitchoverReadiness, activities.SwitchoverReadinessInput{
+			Cloud:    cfg.Cloud,
+			Provider: cfg.Provider,
+			Cluster:  cluster,
+		}).Get(ctx, &ready); err != nil {
+			return err
+		}
+		if ready {
+			return nil
+		}
+		if err := workflow.Sleep(ctx, time.Minute); err != nil {
+			return err
+		}
+	}
+	return temporal.NewNonRetryableApplicationError(
+		"cluster did not accept the next disruption within 30 minutes", "SwitchoverReadinessTimeout", nil)
 }

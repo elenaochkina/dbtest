@@ -1,12 +1,15 @@
 package dbservice
 
 import (
+	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	gcpcloud "github.com/elenaochkina/dbtest/provider/cloud/gcp"
+	"google.golang.org/api/googleapi"
 	sqladmin "google.golang.org/api/sqladmin/v1"
 )
 
@@ -87,5 +90,44 @@ func TestGCPPostgresVersion(t *testing.T) {
 	}
 	if _, err := gcpPostgresVersion(""); err == nil {
 		t.Error("gcpPostgresVersion(\"\") returned no error")
+	}
+}
+
+func TestStandbyRecovered(t *testing.T) {
+	now := time.Date(2026, 11, 10, 4, 30, 0, 0, time.UTC)
+	done := func(kind string, ago time.Duration) *sqladmin.Operation {
+		return &sqladmin.Operation{OperationType: kind, Status: "DONE", EndTime: now.Add(-ago).Format(time.RFC3339)}
+	}
+	for _, tc := range []struct {
+		name string
+		ops  []*sqladmin.Operation
+		want bool
+	}{
+		{"no operations", nil, true},
+		{"running operation", []*sqladmin.Operation{{OperationType: "BACKUP_VOLUME", Status: "RUNNING"}}, false},
+		{"failover 2m ago", []*sqladmin.Operation{done("FAILOVER", 2*time.Minute)}, false},
+		{"failover 4m ago", []*sqladmin.Operation{done("FAILOVER", 4*time.Minute), done("CREATE", 10*time.Minute)}, true},
+		{"backup 1m ago", []*sqladmin.Operation{done("BACKUP_VOLUME", time.Minute)}, true},
+	} {
+		if got := standbyRecovered(tc.ops, now); got != tc.want {
+			t.Errorf("%s: standbyRecovered() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestIsInvalidState(t *testing.T) {
+	invalid := &googleapi.Error{Code: 409, Message: "The instance or operation is not in an appropriate state to handle the request.", Errors: []googleapi.ErrorItem{{Reason: "invalidState"}}}
+	if !isInvalidState(invalid) {
+		t.Error("409 invalidState not recognized")
+	}
+	for _, err := range []error{
+		&googleapi.Error{Code: 409, Errors: []googleapi.ErrorItem{{Reason: "operationInProgress"}}},
+		&googleapi.Error{Code: 400, Errors: []googleapi.ErrorItem{{Reason: "invalidState"}}},
+		errors.New("timeout"),
+		nil,
+	} {
+		if isInvalidState(err) {
+			t.Errorf("isInvalidState(%v) = true", err)
+		}
 	}
 }

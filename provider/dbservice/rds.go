@@ -313,6 +313,11 @@ func (rdsRegistration) Disruptions(req provider.ProvisionRequest) []provider.Dis
 	return []provider.Disruption{provider.Restart}
 }
 
+// SwitchoverReadiness reports true: RDS accepts a reboot once the instance is available.
+func (p *rdsservice) SwitchoverReadiness(context.Context, provider.ClusterInfo) (bool, error) {
+	return true, nil
+}
+
 // Disrupt reboots the instance and returns once it is available again, promoting
 // the standby when asked for a failover.
 func (p *rdsservice) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {

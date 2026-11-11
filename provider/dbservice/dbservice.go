@@ -21,6 +21,9 @@ type DBService interface {
 	// Disrupt applies the disruption and returns once the cluster has settled.
 	// The returned ClusterInfo replaces the caller's copy.
 	Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error)
+
+	// SwitchoverReadiness reports whether the cluster accepts the next disruption now.
+	SwitchoverReadiness(ctx context.Context, cluster provider.ClusterInfo) (bool, error)
 }
 
 // Registration describes a database service and builds it. Each service

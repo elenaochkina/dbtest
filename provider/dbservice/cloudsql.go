@@ -312,6 +312,87 @@ func (cloudSQLRegistration) Disruptions(req provider.ProvisionRequest) []provide
 	return []provider.Disruption{provider.Restart}
 }
 
+// SwitchoverReadiness reports whether a regional instance accepts a failover now: no
+// operation is running and its last failover ended at least 3 minutes ago.
+// A zonal instance always reports true.
+func (p *cloudsqlservice) SwitchoverReadiness(ctx context.Context, cluster provider.ClusterInfo) (bool, error) {
+	inst, err := p.client.Instances.Get(p.project, cluster.ID).Context(ctx).Do()
+	if err != nil {
+		return false, fmt.Errorf("get instance %s: %w", cluster.ID, err)
+	}
+	if inst.Settings.AvailabilityType != "REGIONAL" {
+		return true, nil
+	}
+	ops, err := p.client.Operations.List(p.project).Instance(cluster.ID).MaxResults(10).Context(ctx).Do()
+	if err != nil {
+		return false, fmt.Errorf("list operations of %s: %w", cluster.ID, err)
+	}
+	return standbyRecovered(ops.Items, time.Now()), nil
+}
+
+// standbyRecovered reports whether no operation is running and the last
+// failover ended at least 3 minutes before now.
+func standbyRecovered(ops []*sqladmin.Operation, now time.Time) bool {
+	for _, op := range ops {
+		if op.Status != "DONE" {
+			return false
+		}
+		if op.OperationType == "FAILOVER" {
+			end, err := time.Parse(time.RFC3339, op.EndTime)
+			if err == nil && now.Sub(end) < 3*time.Minute {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// failover requests a failover. While Cloud SQL answers 409 invalidState, it
+// logs a warning and requests it again every 20 seconds for up to 10 minutes.
+func (p *cloudsqlservice) failover(ctx context.Context, instance string) (*sqladmin.Operation, error) {
+	deadline := time.Now().Add(10 * time.Minute)
+	for attempt := 1; ; attempt++ {
+		inst, err := p.client.Instances.Get(p.project, instance).Context(ctx).Do()
+		if err != nil {
+			return nil, fmt.Errorf("get instance %s: %w", instance, err)
+		}
+		op, err := p.client.Instances.Failover(p.project, instance, &sqladmin.InstancesFailoverRequest{
+			FailoverContext: &sqladmin.FailoverContext{SettingsVersion: inst.Settings.SettingsVersion},
+		}).Context(ctx).Do()
+		if !isInvalidState(err) {
+			return op, err
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("failover still rejected after %d attempts; see the instance's audit log for the reason: %w", attempt, err)
+		}
+		if p.tel != nil {
+			p.tel.Logger.Warn("failover rejected, retrying",
+				slog.String("instance", instance),
+				slog.Int("attempt", attempt),
+			)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(20 * time.Second):
+		}
+	}
+}
+
+// isInvalidState reports whether err is Cloud SQL's 409 invalidState.
+func isInvalidState(err error) bool {
+	var apiErr *googleapi.Error
+	if !errors.As(err, &apiErr) || apiErr.Code != http.StatusConflict {
+		return false
+	}
+	for _, item := range apiErr.Errors {
+		if item.Reason == "invalidState" {
+			return true
+		}
+	}
+	return false
+}
+
 // Disrupt restarts or fails over the instance and returns once it is RUNNABLE again.
 // The public IP survives both, so the returned ClusterInfo is unchanged.
 func (p *cloudsqlservice) Disrupt(ctx context.Context, cluster provider.ClusterInfo, disruption provider.Disruption) (provider.ClusterInfo, error) {
@@ -323,13 +404,7 @@ func (p *cloudsqlservice) Disrupt(ctx context.Context, cluster provider.ClusterI
 	case provider.Restart:
 		op, err = p.client.Instances.Restart(p.project, cluster.ID).Context(ctx).Do()
 	case provider.Failover:
-		inst, getErr := p.client.Instances.Get(p.project, cluster.ID).Context(ctx).Do()
-		if getErr != nil {
-			return provider.ClusterInfo{}, fmt.Errorf("get instance %s: %w", cluster.ID, getErr)
-		}
-		op, err = p.client.Instances.Failover(p.project, cluster.ID, &sqladmin.InstancesFailoverRequest{
-			FailoverContext: &sqladmin.FailoverContext{SettingsVersion: inst.Settings.SettingsVersion},
-		}).Context(ctx).Do()
+		op, err = p.failover(ctx, cluster.ID)
 	default:
 		return provider.ClusterInfo{}, fmt.Errorf("cloud sql cannot %s an instance", disruption)
 	}
