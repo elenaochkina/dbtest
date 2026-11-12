@@ -24,7 +24,7 @@ docker run -d \
   --name dbtest-postgres \
   -e POSTGRES_PASSWORD=test \
   -p 5432:5432 \
-  postgres:16
+  postgres:18
 
 # Already created? Just start it:
 docker start dbtest-postgres

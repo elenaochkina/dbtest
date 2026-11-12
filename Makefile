@@ -18,7 +18,7 @@ GCP_REGISTRY  = $(shell $(GCP_TF) output -raw registry 2>/dev/null)
 
 STATE_DSN ?= postgres://postgres:test@localhost:5433/postgres
 
-.PHONY: build test images bench-image probe-image registry-login push push-bench push-probe aws-cidr aws-apply gcp-push gcp-apply env run-worker refresh
+.PHONY: build test images bench-image probe-image registry-login aws-push push-bench push-probe aws-cidr aws-apply gcp-push gcp-apply env run-worker refresh
 
 build:
 	go build ./...
@@ -36,12 +36,12 @@ probe-image:
 	docker build -f build/probe.Dockerfile -t $(PROBE_IMAGE) .
 
 # Push to whichever registry config.mk names. The login token is short-lived,
-# so push depends on it rather than assuming a prior login.
+# so aws-push depends on it rather than assuming a prior login.
 registry-login:
 	@$(if $(REGISTRY_LOGIN),,$(error REGISTRY_LOGIN is unset - see config.mk.example))
 	$(REGISTRY_LOGIN)
 
-push: registry-login push-bench push-probe
+aws-push: registry-login push-bench push-probe
 
 push-bench:
 	@$(if $(REGISTRY),,$(error REGISTRY is unset - see config.mk.example))
