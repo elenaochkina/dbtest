@@ -7,6 +7,6 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/bench ./cmd/bench
 
-FROM postgres:16
+FROM postgres:18
 COPY --from=build /out/bench /usr/local/bin/bench
 ENTRYPOINT ["bench"]
