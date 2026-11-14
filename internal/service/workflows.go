@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/client"
 
 	dbtemporal "github.com/elenaochkina/dbtest/temporal"
@@ -20,7 +20,7 @@ func (l *Launcher) StartRecovery(cfg workflows.RecoveryWorkflowConfig) (string, 
 	default:
 		return "", errors.New("the worker is not up yet")
 	}
-	id := "recovery-" + time.Now().Format("20060102-150405")
+	id := fmt.Sprintf("recovery-%s-%s-%s", uuid.NewString(), cfg.Cloud, cfg.Provider)
 	run, err := l.worker.temporalClient.ExecuteWorkflow(l.ctx, client.StartWorkflowOptions{
 		ID:        id,
 		TaskQueue: dbtemporal.TaskQueue,
