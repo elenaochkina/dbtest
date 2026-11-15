@@ -1,5 +1,4 @@
-// Package harness launches short-lived containers and reads back what they
-// printed.
+// Package harness launches short-lived containers and reads back what they printed.
 package harness
 
 import (
@@ -11,8 +10,10 @@ type Spec struct {
 	Image string
 	Args  []string // appended to the image's entrypoint
 	Name  string
-	// SelfExits marks a container that ends on its own, the way bench does when
-	// its run finishes. Stop waits for those rather than terminating them.
+	// Key tags the launch so Find can locate it after a lost Run result. It is
+	// the same on every retry of one activity.
+	Key string
+	// SelfExits marks a container that exits on its own; Stop waits for it.
 	SelfExits bool
 }
 
@@ -29,25 +30,30 @@ type Runner interface {
 	// Run creates and starts the container and returns once it is running.
 	Run(ctx context.Context, spec Spec) (Handle, error)
 
-	// Stop ends the container and returns everything it printed, stdout and
-	// stderr together. Fargate cannot separate the two, so nothing may depend on
-	// the split. Output is returned even when the error is non-nil, because a
-	// container that exits non-zero has usually still printed its result.
+	// Stop ends the container and returns its output, stdout and stderr mixed.
+	// The output is returned even with an error.
 	//
-	// Calling it twice is not an error, but only the first call returns output:
-	// the second finds the container already gone and discard an error.
+	// A second call returns the same output on Cloud Run and Fargate, and none
+	// on Docker.
 	Stop(ctx context.Context, h Handle) ([]byte, error)
+
+	// Find returns the container launched with spec.Key, running or exited, and
+	// whether there is one.
+	Find(ctx context.Context, spec Spec) (Handle, bool, error)
+
+	// Exited reports whether the container has ended. A container the runner no
+	// longer knows has ended.
+	Exited(ctx context.Context, h Handle) (bool, error)
 }
 
-// Images names what a runner starts for the probe and bench containers: image
-// tags for Docker, task definitions for Fargate, jobs for Cloud Run.
+// Images names the probe and bench containers: an image tag on Docker, a task
+// definition on Fargate, a job on Cloud Run.
 type Images struct {
 	Probe string
 	Bench string
 }
 
-// ProbeName and BenchName name the probe and bench Cloud Run jobs and ECS task
-// definitions that terraform/gcp and terraform/aws create.
+// Definitions that terraform/gcp and harnesterraform/aws create.
 const (
 	ProbeName = "dbtest-probe"
 	BenchName = "dbtest-bench"

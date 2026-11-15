@@ -46,10 +46,13 @@ func newCloudRunRunner(project, region string, tel *telemetry.Telemetry) (harnes
 
 // Run starts an execution of the job named spec.Image with spec.Args and returns once its task is running.
 func (r *cloudRunRunner) Run(ctx context.Context, spec harness.Spec) (harness.Handle, error) {
-	job := fmt.Sprintf("projects/%s/locations/%s/jobs/%s", r.project, r.region, spec.Image)
-	op, err := r.run.Projects.Locations.Jobs.Run(job, &runapi.GoogleCloudRunV2RunJobRequest{
+	override := &runapi.GoogleCloudRunV2ContainerOverride{Args: spec.Args}
+	if spec.Key != "" {
+		override.Env = []*runapi.GoogleCloudRunV2EnvVar{{Name: "DBTEST_RUN_KEY", Value: spec.Key}}
+	}
+	op, err := r.run.Projects.Locations.Jobs.Run(r.jobName(spec.Image), &runapi.GoogleCloudRunV2RunJobRequest{
 		Overrides: &runapi.GoogleCloudRunV2Overrides{
-			ContainerOverrides: []*runapi.GoogleCloudRunV2ContainerOverride{{Args: spec.Args}},
+			ContainerOverrides: []*runapi.GoogleCloudRunV2ContainerOverride{override},
 		},
 	}).Context(ctx).Do()
 	if err != nil {
@@ -90,6 +93,67 @@ func (r *cloudRunRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, er
 		return out, fmt.Errorf("execution %s %s: %s", path.Base(h.ID), failed, harness.Tail(out))
 	}
 	return out, collectErr
+}
+
+// Find returns the execution of the job named spec.Image whose DBTEST_RUN_KEY
+// is spec.Key, running or ended.
+func (r *cloudRunRunner) Find(ctx context.Context, spec harness.Spec) (harness.Handle, bool, error) {
+	if spec.Key == "" {
+		return harness.Handle{}, false, errors.New("find needs a key")
+	}
+	var name string
+	err := r.run.Projects.Locations.Jobs.Executions.List(r.jobName(spec.Image)).Pages(ctx,
+		func(page *runapi.GoogleCloudRunV2ListExecutionsResponse) error {
+			for _, execution := range page.Executions {
+				if hasKey(execution, spec.Key) {
+					name = execution.Name
+					return errFound
+				}
+			}
+			return nil
+		})
+	if err != nil && !errors.Is(err, errFound) {
+		return harness.Handle{}, false, fmt.Errorf("list executions of %q: %w", spec.Image, err)
+	}
+	if name == "" {
+		return harness.Handle{}, false, nil
+	}
+	return harness.Handle{ID: name, SelfExits: spec.SelfExits}, true, nil
+}
+
+// Exited reports whether the execution has a completion time. An execution
+// Cloud Run no longer has has ended.
+func (r *cloudRunRunner) Exited(ctx context.Context, h harness.Handle) (bool, error) {
+	execution, err := r.run.Projects.Locations.Jobs.Executions.Get(h.ID).Context(ctx).Do()
+	if err != nil {
+		if hasCode(err, http.StatusNotFound) {
+			return true, nil
+		}
+		return false, fmt.Errorf("get execution %s: %w", h.ID, err)
+	}
+	return execution.CompletionTime != "", nil
+}
+
+func (r *cloudRunRunner) jobName(job string) string {
+	return fmt.Sprintf("projects/%s/locations/%s/jobs/%s", r.project, r.region, job)
+}
+
+// errFound ends an executions listing at the first match.
+var errFound = errors.New("found")
+
+// hasKey reports whether the execution's container has DBTEST_RUN_KEY set to key.
+func hasKey(execution *runapi.GoogleCloudRunV2Execution, key string) bool {
+	if execution.Template == nil {
+		return false
+	}
+	for _, container := range execution.Template.Containers {
+		for _, env := range container.Env {
+			if env.Name == "DBTEST_RUN_KEY" && env.Value == key {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // waitRunning polls until the execution's task is running. A self-exiting execution may succeed before it is seen running.
