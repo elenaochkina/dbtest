@@ -18,6 +18,7 @@ func New(temporalClient client.Client, statePool *pgxpool.Pool, tel *telemetry.T
 	w := sdkworker.New(temporalClient, dbtemporal.TaskQueue, sdkworker.Options{})
 	w.RegisterWorkflow(workflows.PgBenchWorkflow)
 	w.RegisterWorkflow(workflows.RecoveryWorkflow)
+	w.RegisterWorkflow(workflows.HammerDBWorkflow)
 	w.RegisterActivity(activities.NewStateDBActivities(statePool, tel))
 	w.RegisterActivity(activities.NewProviderActivities(tel))
 	w.RegisterActivity(activities.NewWorkloadActivities(tel))

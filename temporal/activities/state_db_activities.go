@@ -39,6 +39,16 @@ type SaveResultInput struct {
 	Result pgbench.Result
 }
 
+// SaveTPCCInput persists one measured TPROC-C run.
+type SaveTPCCInput struct {
+	RunID      uuid.UUID
+	Provider   provider.DBServiceName
+	Repetition int
+	Bench      BenchContainerInput // warehouses, clients, ramp-up, duration
+	Build      BenchResult         // the build's elapsed_s
+	Run        BenchResult         // nopm, tpm, latencies
+}
+
 // EndRunInput closes a runs row, recording whether the run passed.
 type EndRunInput struct {
 	RunID  uuid.UUID
@@ -75,6 +85,22 @@ func (a *StateDBActivities) SaveResult(ctx context.Context, input SaveResultInpu
 func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error {
 	run := &state.Run{Pool: a.statePool, ID: input.RunID, Logger: a.tel.Logger}
 	return run.End(ctx, input.Passed)
+}
+
+// SaveTPCCResult writes one measured run.
+func (a *StateDBActivities) SaveTPCCResult(ctx context.Context, input SaveTPCCInput) error {
+	return state.SaveTPCCResult(ctx, a.statePool, input.RunID, state.TPCCRow{
+		Provider:        string(input.Provider),
+		Repetition:      input.Repetition,
+		Warehouses:      input.Bench.Warehouses,
+		VirtualUsers:    input.Bench.Clients,
+		RampUpSeconds:   int(input.Bench.RampUp.Seconds()),
+		DurationSeconds: int(input.Bench.Duration.Seconds()),
+		BuildSeconds:    input.Build.ElapsedS,
+		NOPM:            input.Run.Metrics["nopm"],
+		TPM:             input.Run.Metrics["tpm"],
+		Metrics:         input.Run.Metrics,
+	})
 }
 
 // SaveDowntimeResults writes one row per disruption.
