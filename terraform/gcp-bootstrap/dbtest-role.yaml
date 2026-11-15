@@ -21,6 +21,7 @@ includedPermissions:
   - run.jobs.run
   - run.jobs.runWithOverrides
   - run.executions.get
+  - run.executions.list
   - run.executions.cancel
   - run.operations.get
   - logging.logEntries.list
