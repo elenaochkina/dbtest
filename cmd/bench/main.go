@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/elenaochkina/dbtest/hammerdb"
 	"github.com/elenaochkina/dbtest/workload"
 )
 
@@ -30,13 +31,14 @@ type result struct {
 
 func main() {
 	dsn := flag.String("dsn", "", "target database DSN (required)")
-	name := flag.String("workload", "pgbench", "workload name (pgbench, warehouse)")
+	name := flag.String("workload", "pgbench", "workload name (pgbench, warehouse, tpcc)")
 	initOnly := flag.Bool("init", false, "run only the workload's setup phase, then exit")
 	scale := flag.Int("scale", 1, "pgbench scale factor")
-	clients := flag.Int("clients", 4, "pgbench client count")
+	clients := flag.Int("clients", 4, "client count (pgbench clients, tpcc virtual users)")
 	duration := flag.Duration("duration", 30*time.Second, "how long the measured phase runs")
+	rampUp := flag.Duration("rampup", 2*time.Minute, "tpcc ramp-up before the measured phase")
 	seed := flag.Int64("seed", 42, "random seed for warehouse data")
-	warehouses := flag.Int("warehouses", 5, "number of warehouses to seed")
+	warehouses := flag.Int("warehouses", 5, "number of warehouses (warehouse, tpcc)")
 	flag.Parse()
 
 	if *dsn == "" {
@@ -56,7 +58,20 @@ func main() {
 		Duration:    *duration,
 	}
 
-	res, err := run(ctx, *dsn, workload.WorkloadName(*name), *initOnly, cfg)
+	var (
+		res result
+		err error
+	)
+	if *name == "tpcc" {
+		res, err = runTPCC(ctx, *dsn, *initOnly, hammerdb.Config{
+			Warehouses: *warehouses,
+			Clients:    *clients,
+			RampUp:     *rampUp,
+			Duration:   *duration,
+		})
+	} else {
+		res, err = run(ctx, *dsn, workload.WorkloadName(*name), *initOnly, cfg)
+	}
 	// The result line is printed on every path, including failure.
 	if err != nil {
 		res.Aborted = true
@@ -102,6 +117,27 @@ func run(ctx context.Context, dsn string, name workload.WorkloadName, initOnly b
 	if out != nil {
 		res.Metrics = out.Metrics()
 	}
+	return res, nil
+}
+
+// runTPCC builds the TPROC-C schema, or runs the timed driver, with HammerDB.
+func runTPCC(ctx context.Context, dsn string, initOnly bool, cfg hammerdb.Config) (res result, err error) {
+	res = result{Workload: "tpcc", Phase: "run"}
+	if initOnly {
+		res.Phase = "init"
+	}
+
+	start := time.Now()
+	defer func() { res.ElapsedS = time.Since(start).Seconds() }()
+
+	if initOnly {
+		return res, hammerdb.Initialize(ctx, dsn, cfg)
+	}
+	out, err := hammerdb.Run(ctx, dsn, cfg)
+	if err != nil {
+		return res, err
+	}
+	res.Metrics = out.Metrics()
 	return res, nil
 }
 
