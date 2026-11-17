@@ -130,6 +130,11 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			build_seconds    FLOAT8      NOT NULL,
 			nopm             FLOAT8      NOT NULL,
 			tpm              FLOAT8      NOT NULL,
+			neword_p50_ms    FLOAT8      NOT NULL,
+			neword_p95_ms    FLOAT8      NOT NULL,
+			neword_p99_ms    FLOAT8      NOT NULL,
+			select1_p50_ms   FLOAT8,
+			select1_p95_ms   FLOAT8,
 			metrics          JSONB       NOT NULL,
 			created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
 			UNIQUE (run_id, repetition)

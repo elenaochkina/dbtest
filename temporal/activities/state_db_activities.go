@@ -99,8 +99,22 @@ func (a *StateDBActivities) SaveTPCCResult(ctx context.Context, input SaveTPCCIn
 		BuildSeconds:    input.Build.ElapsedS,
 		NOPM:            input.Run.Metrics["nopm"],
 		TPM:             input.Run.Metrics["tpm"],
+		NewOrderP50Ms:   input.Run.Metrics["neword_p50_ms"],
+		NewOrderP95Ms:   input.Run.Metrics["neword_p95_ms"],
+		NewOrderP99Ms:   input.Run.Metrics["neword_p99_ms"],
+		Select1P50Ms:    optionalMetric(input.Run.Metrics, "select1_p50_ms"),
+		Select1P95Ms:    optionalMetric(input.Run.Metrics, "select1_p95_ms"),
 		Metrics:         input.Run.Metrics,
 	})
+}
+
+// optionalMetric returns the named metric, or nil when the run did not report it.
+func optionalMetric(metrics map[string]float64, name string) *float64 {
+	value, ok := metrics[name]
+	if !ok {
+		return nil
+	}
+	return &value
 }
 
 // SaveDowntimeResults writes one row per disruption.
