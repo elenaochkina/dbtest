@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Config holds the parameters for a TPROC-C build and run.
@@ -29,6 +31,9 @@ func Initialize(ctx context.Context, dsn string, cfg Config) error {
 	connection, password, err := settings(dsn)
 	if err != nil {
 		return err
+	}
+	if err := prepare(ctx, dsn, password); err != nil {
+		return fmt.Errorf("prepare tpcc: %w", err)
 	}
 	dir, err := os.MkdirTemp("", "hammerdb")
 	if err != nil {
@@ -89,6 +94,54 @@ job $jobid timing
 		return Result{}, err
 	}
 	return parseResult(out)
+}
+
+// prepare creates the tpcc role and an empty tpcc database owned by it, and
+// grants tpcc CREATE on that database's public schema. hammerdbcli then builds
+// into the existing database.
+func prepare(ctx context.Context, dsn, password string) error {
+	admin, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer admin.Close(ctx)
+
+	var exists bool
+	if err := admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tpcc')`).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := admin.Exec(ctx, `CREATE ROLE tpcc LOGIN PASSWORD `+literal(password)); err != nil {
+			return err
+		}
+		if _, err := admin.Exec(ctx, `GRANT tpcc TO `+pgx.Identifier{admin.Config().User}.Sanitize()); err != nil {
+			return err
+		}
+	}
+
+	if err := admin.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'tpcc')`).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		if _, err := admin.Exec(ctx, `CREATE DATABASE tpcc OWNER tpcc`); err != nil {
+			return err
+		}
+	}
+
+	config := admin.Config().Copy()
+	config.Database = "tpcc"
+	conn, err := pgx.ConnectConfig(ctx, config)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	_, err = conn.Exec(ctx, `GRANT CREATE ON SCHEMA public TO tpcc`)
+	return err
+}
+
+// literal returns s as a single-quoted SQL string literal.
+func literal(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 // settings returns the hammerdbcli lines that select PostgreSQL TPROC-C with
