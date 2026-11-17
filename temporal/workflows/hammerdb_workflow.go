@@ -138,12 +138,13 @@ func HammerDBWorkflow(ctx workflow.Context, cfg HammerDBWorkflowConfig) (err err
 			return err
 		}
 		if err = workflow.ExecuteActivity(ctx, runs.SaveTPCCResult, activities.SaveTPCCInput{
-			RunID:      runID,
-			Provider:   cfg.Provider,
-			Repetition: repetition,
-			Bench:      run,
-			Build:      built,
-			Run:        result,
+			RunID:            runID,
+			Provider:         cfg.Provider,
+			HighAvailability: cfg.Request.HighAvailability,
+			Repetition:       repetition,
+			Bench:            run,
+			Build:            built,
+			Run:              result,
 		}).Get(ctx, nil); err != nil {
 			return err
 		}

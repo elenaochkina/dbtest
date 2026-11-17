@@ -121,7 +121,8 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		CREATE TABLE IF NOT EXISTS tpcc_results (
 			id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
 			run_id           UUID        NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-			provider         TEXT        NOT NULL,
+			provider          TEXT        NOT NULL,
+			high_availability BOOLEAN     NOT NULL,
 			repetition       INT         NOT NULL,
 			warehouses       INT         NOT NULL,
 			virtual_users    INT         NOT NULL,

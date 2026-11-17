@@ -41,12 +41,13 @@ type SaveResultInput struct {
 
 // SaveTPCCInput persists one measured TPROC-C run.
 type SaveTPCCInput struct {
-	RunID      uuid.UUID
-	Provider   provider.DBServiceName
-	Repetition int
-	Bench      BenchContainerInput // warehouses, clients, ramp-up, duration
-	Build      BenchResult         // the build's elapsed_s
-	Run        BenchResult         // nopm, tpm, latencies
+	RunID            uuid.UUID
+	Provider         provider.DBServiceName
+	HighAvailability bool
+	Repetition       int
+	Bench            BenchContainerInput // warehouses, clients, ramp-up, duration
+	Build            BenchResult         // the build's elapsed_s
+	Run              BenchResult         // nopm, tpm, latencies
 }
 
 // EndRunInput closes a runs row, recording whether the run passed.
@@ -90,21 +91,22 @@ func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error
 // SaveTPCCResult writes one measured run.
 func (a *StateDBActivities) SaveTPCCResult(ctx context.Context, input SaveTPCCInput) error {
 	return state.SaveTPCCResult(ctx, a.statePool, input.RunID, state.TPCCRow{
-		Provider:        string(input.Provider),
-		Repetition:      input.Repetition,
-		Warehouses:      input.Bench.Warehouses,
-		VirtualUsers:    input.Bench.Clients,
-		RampUpSeconds:   int(input.Bench.RampUp.Seconds()),
-		DurationSeconds: int(input.Bench.Duration.Seconds()),
-		BuildSeconds:    input.Build.ElapsedS,
-		NOPM:            input.Run.Metrics["nopm"],
-		TPM:             input.Run.Metrics["tpm"],
-		NewOrderP50Ms:   input.Run.Metrics["neword_p50_ms"],
-		NewOrderP95Ms:   input.Run.Metrics["neword_p95_ms"],
-		NewOrderP99Ms:   input.Run.Metrics["neword_p99_ms"],
-		Select1P50Ms:    optionalMetric(input.Run.Metrics, "select1_p50_ms"),
-		Select1P95Ms:    optionalMetric(input.Run.Metrics, "select1_p95_ms"),
-		Metrics:         input.Run.Metrics,
+		Provider:         string(input.Provider),
+		HighAvailability: input.HighAvailability,
+		Repetition:       input.Repetition,
+		Warehouses:       input.Bench.Warehouses,
+		VirtualUsers:     input.Bench.Clients,
+		RampUpSeconds:    int(input.Bench.RampUp.Seconds()),
+		DurationSeconds:  int(input.Bench.Duration.Seconds()),
+		BuildSeconds:     input.Build.ElapsedS,
+		NOPM:             input.Run.Metrics["nopm"],
+		TPM:              input.Run.Metrics["tpm"],
+		NewOrderP50Ms:    input.Run.Metrics["neword_p50_ms"],
+		NewOrderP95Ms:    input.Run.Metrics["neword_p95_ms"],
+		NewOrderP99Ms:    input.Run.Metrics["neword_p99_ms"],
+		Select1P50Ms:     optionalMetric(input.Run.Metrics, "select1_p50_ms"),
+		Select1P95Ms:     optionalMetric(input.Run.Metrics, "select1_p95_ms"),
+		Metrics:          input.Run.Metrics,
 	})
 }
 
