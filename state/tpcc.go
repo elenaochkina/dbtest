@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -31,25 +30,6 @@ type TPCCRow struct {
 	Metrics          map[string]float64
 }
 
-// TPCCSearchRow is the result of one tester client search.
-type TPCCSearchRow struct {
-	Provider          string
-	HighAvailability  bool
-	Warehouses        int
-	RampUpSeconds     int
-	DurationSeconds   int
-	BuildSeconds      float64
-	MinClients        int
-	MaxClients        int
-	Threshold         float64
-	PeakClients       int
-	PeakNOPM          float64
-	SaturationClients int
-	DeclineClients    *int // nil when throughput never fell below the threshold
-	Trials            int
-	Drift             float64
-}
-
 // execer is a pool or a transaction.
 type execer interface {
 	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
@@ -60,35 +40,6 @@ type execer interface {
 func SaveTPCCResult(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, row TPCCRow) error {
 	if err := insertTPCCResult(ctx, pool, runID, row); err != nil {
 		return fmt.Errorf("SaveTPCCResult: %w", err)
-	}
-	return nil
-}
-
-// SaveTPCCSearch writes a search's runs and its result in one transaction. A
-// repeated save is a no-op.
-func SaveTPCCSearch(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, search TPCCSearchRow, trials []TPCCRow) error {
-	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		for _, row := range trials {
-			if err := insertTPCCResult(ctx, tx, runID, row); err != nil {
-				return err
-			}
-		}
-		_, err := tx.Exec(ctx,
-			`INSERT INTO tpcc_searches
-				(run_id, provider, high_availability, warehouses, rampup_seconds, duration_seconds,
-				 build_seconds, min_clients, max_clients, threshold, peak_clients, peak_nopm,
-				 saturation_clients, decline_clients, trials, drift)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-			 ON CONFLICT (run_id) DO NOTHING`,
-			runID, search.Provider, search.HighAvailability, search.Warehouses, search.RampUpSeconds,
-			search.DurationSeconds, search.BuildSeconds, search.MinClients, search.MaxClients,
-			search.Threshold, search.PeakClients, search.PeakNOPM, search.SaturationClients,
-			search.DeclineClients, search.Trials, search.Drift,
-		)
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("SaveTPCCSearch: %w", err)
 	}
 	return nil
 }

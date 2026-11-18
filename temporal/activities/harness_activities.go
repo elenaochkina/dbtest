@@ -59,7 +59,9 @@ type BenchContainerInput struct {
 	// address the worker uses.
 	DSN      string
 	Workload string // pgbench, warehouse or tpcc
-	Init     bool   // runs only the setup phase
+	// Tool is the tester's benchmark tool: hammerdb or pgbench.
+	Tool string
+	Init bool // runs only the setup phase
 	// Scale sets how much data pgbench writes.
 	Scale      int
 	Warehouses int
@@ -417,21 +419,24 @@ func benchSpec(in BenchContainerInput) harness.Spec {
 // testerSpec runs the tester image's client search.
 func testerSpec(in BenchContainerInput) harness.Spec {
 	settings := in.Search
+	args := []string{"-dsn", in.DSN, "-tool", in.Tool}
+	if in.Tool == "hammerdb" {
+		args = append(args, "-warehouses", strconv.Itoa(in.Warehouses))
+	}
+	args = append(args,
+		"-min-clients", strconv.Itoa(settings.MinClients),
+		"-max-clients", strconv.Itoa(settings.MaxClients),
+		"-resolution", strconv.Itoa(settings.Resolution),
+		"-max-trials", strconv.Itoa(settings.MaxTrials),
+		"-tolerance", strconv.FormatFloat(settings.Tolerance, 'f', -1, 64),
+		"-threshold", strconv.FormatFloat(settings.Threshold, 'f', -1, 64),
+		"-rampup", in.RampUp.String(),
+		"-duration", in.Duration.String(),
+	)
 	return harness.Spec{
-		Image: in.Image,
-		Name:  in.Name,
-		Args: []string{
-			"-dsn", in.DSN,
-			"-warehouses", strconv.Itoa(in.Warehouses),
-			"-min-clients", strconv.Itoa(settings.MinClients),
-			"-max-clients", strconv.Itoa(settings.MaxClients),
-			"-resolution", strconv.Itoa(settings.Resolution),
-			"-max-trials", strconv.Itoa(settings.MaxTrials),
-			"-tolerance", strconv.FormatFloat(settings.Tolerance, 'f', -1, 64),
-			"-threshold", strconv.FormatFloat(settings.Threshold, 'f', -1, 64),
-			"-rampup", in.RampUp.String(),
-			"-duration", in.Duration.String(),
-		},
+		Image:     in.Image,
+		Name:      in.Name,
+		Args:      args,
 		SelfExits: true,
 	}
 }

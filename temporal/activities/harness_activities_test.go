@@ -47,6 +47,7 @@ func TestTesterSpec(t *testing.T) {
 	spec := benchSpec(BenchContainerInput{
 		Image:      "dbtest/tester:dev",
 		DSN:        "postgres://db",
+		Tool:       "hammerdb",
 		Warehouses: 32,
 		Duration:   3 * time.Minute,
 		RampUp:     time.Minute,
@@ -54,11 +55,16 @@ func TestTesterSpec(t *testing.T) {
 			MinClients: 8, MaxClients: 128, Resolution: 4, MaxTrials: 12, Tolerance: 0.03, Threshold: 0.95,
 		},
 	})
-	want := []string{"-dsn", "postgres://db", "-warehouses", "32", "-min-clients", "8", "-max-clients", "128",
+	want := []string{"-dsn", "postgres://db", "-tool", "hammerdb", "-warehouses", "32", "-min-clients", "8", "-max-clients", "128",
 		"-resolution", "4", "-max-trials", "12", "-tolerance", "0.03", "-threshold", "0.95",
 		"-rampup", "1m0s", "-duration", "3m0s"}
 	if !slices.Equal(spec.Args, want) || !spec.SelfExits || spec.Image != "dbtest/tester:dev" {
 		t.Errorf("spec = %+v", spec)
+	}
+
+	spec = benchSpec(BenchContainerInput{DSN: "postgres://db", Tool: "pgbench", Warehouses: 32, Search: &search.Config{}})
+	if slices.Contains(spec.Args, "-warehouses") || !slices.Contains(spec.Args, "pgbench") {
+		t.Errorf("pgbench args = %v, want -tool pgbench without -warehouses", spec.Args)
 	}
 }
 

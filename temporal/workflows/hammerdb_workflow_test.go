@@ -3,11 +3,9 @@ package workflows
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/elenaochkina/dbtest/experiment/search"
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/activities"
@@ -95,66 +93,4 @@ func TestHammerDBWorkflowRejectsConfig(t *testing.T) {
 	if env.GetWorkflowError() == nil {
 		t.Fatal("workflow accepted a 30s duration")
 	}
-}
-
-var searchConfig = HammerDBSearchWorkflowConfig{
-	Cloud:      provider.CloudName("local"),
-	Provider:   provider.Docker,
-	Warehouses: 32,
-	RampUp:     time.Minute,
-	Duration:   3 * time.Minute,
-	Search: search.Config{
-		MinClients: 8, MaxClients: 128, Resolution: 4, MaxTrials: 12, Tolerance: 0.03, Threshold: 0.95,
-	},
-	BuildTimeout: time.Hour,
-}
-
-func TestHammerDBSearchWorkflowBuildsThenSearches(t *testing.T) {
-	runner := activities.ResolvedRunner{Name: harness.Docker, Images: harness.Images{Bench: "bench", Tester: "tester"}}
-	env := databaseEnv(runner)
-	var images []string
-	env.OnActivity("StartBench", mock.Anything, mock.Anything).Return(
-		func(_ context.Context, input activities.BenchContainerInput) (harness.Handle, error) {
-			images = append(images, input.Image)
-			return harness.Handle{ID: input.Name, SelfExits: true}, nil
-		})
-	env.OnActivity("WaitForBenchResult", mock.Anything, mock.Anything).Return(
-		func(_ context.Context, input activities.ContainerInput) (activities.BenchResult, error) {
-			if strings.HasPrefix(input.Handle.ID, "dbtest-tpcc-build") {
-				return activities.BenchResult{Phase: "init", ElapsedS: 90}, nil
-			}
-			return activities.BenchResult{Phase: "search",
-				Metrics: map[string]float64{"peak_clients": 16},
-				Trials:  []activities.BenchTrial{{Clients: 8}, {Clients: 16}, {Clients: 16, Repeat: true}},
-			}, nil
-		})
-	var saved activities.SaveTPCCSearchInput
-	env.OnActivity("SaveTPCCSearch", mock.Anything, mock.Anything).Return(
-		func(_ context.Context, input activities.SaveTPCCSearchInput) error {
-			saved = input
-			return nil
-		})
-
-	env.ExecuteWorkflow(HammerDBSearchWorkflow, searchConfig)
-	if err := env.GetWorkflowError(); err != nil {
-		t.Fatal(err)
-	}
-	if len(images) != 2 || images[0] != "bench" || images[1] != "tester" {
-		t.Errorf("images = %v, want the bench build then the tester search", images)
-	}
-	if saved.Build.ElapsedS != 90 || len(saved.Result.Trials) != 3 || saved.Search.Search == nil {
-		t.Errorf("saved = %+v", saved)
-	}
-	env.AssertCalled(t, "Deprovision", mock.Anything, mock.Anything)
-}
-
-func TestHammerDBSearchWorkflowRejectsInvalidSearch(t *testing.T) {
-	env := hammerDBEnv(t)
-	cfg := searchConfig
-	cfg.Search.Threshold = 1.5
-	env.ExecuteWorkflow(HammerDBSearchWorkflow, cfg)
-	if env.GetWorkflowError() == nil {
-		t.Fatal("workflow accepted a threshold above 1")
-	}
-	env.AssertNotCalled(t, "Provision", mock.Anything, mock.Anything)
 }

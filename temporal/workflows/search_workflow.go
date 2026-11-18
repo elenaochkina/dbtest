@@ -10,11 +10,16 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-type HammerDBSearchWorkflowConfig struct {
-	Cloud      provider.CloudName
-	Provider   provider.DBServiceName
-	Request    provider.ProvisionRequest
+// SearchWorkflowConfig configures a client search with one benchmark tool.
+type SearchWorkflowConfig struct {
+	Cloud    provider.CloudName
+	Provider provider.DBServiceName
+	Request  provider.ProvisionRequest
+	// Tool is hammerdb or pgbench.
+	Tool string
+	// Warehouses sizes the hammerdb schema and Scale the pgbench tables.
 	Warehouses int
+	Scale      int
 	// RampUp and Duration apply to each timed run of the search.
 	RampUp       time.Duration
 	Duration     time.Duration
@@ -22,16 +27,18 @@ type HammerDBSearchWorkflowConfig struct {
 	BuildTimeout time.Duration
 }
 
-// HammerDBSearchWorkflow finds the client count with the most TPROC-C
-// throughput on one database. It builds the schema with the bench image, runs
-// the tester image's search, and records each timed run and the search result.
-func HammerDBSearchWorkflow(ctx workflow.Context, cfg HammerDBSearchWorkflowConfig) error {
+// SearchWorkflow finds the client count with the most throughput on one
+// database: TPROC-C NOPM with hammerdb, TPC-B-like TPS with pgbench. It builds
+// the tool's tables with the bench image, runs the tester image's search, and
+// records each timed run and the search result.
+func SearchWorkflow(ctx workflow.Context, cfg SearchWorkflowConfig) error {
 	if err := cfg.Search.Validate(); err != nil {
 		return temporal.NewNonRetryableApplicationError(err.Error(), "InvalidConfig", nil)
 	}
-	if cfg.Warehouses < 1 || cfg.Duration < time.Minute || cfg.BuildTimeout <= 0 {
+	sized := cfg.Tool == "hammerdb" && cfg.Warehouses >= 1 || cfg.Tool == "pgbench" && cfg.Scale >= 1
+	if !sized || cfg.Duration < time.Minute || cfg.BuildTimeout <= 0 {
 		return temporal.NewNonRetryableApplicationError(
-			"hammerdb search needs warehouses of at least 1, a duration of at least 1 minute, and a build timeout",
+			"search needs hammerdb with at least 1 warehouse or pgbench with a scale of at least 1, a duration of at least 1 minute, and a build timeout",
 			"InvalidConfig", nil)
 	}
 	ctx = workflow.WithActivityOptions(ctx, defaultActivityOptions)
@@ -39,17 +46,18 @@ func HammerDBSearchWorkflow(ctx workflow.Context, cfg HammerDBSearchWorkflowConf
 		runs *activities.StateDBActivities
 		harn *activities.HarnessActivities
 	)
-	return withDatabase(ctx, "hammerdb-search", cfg.Cloud, cfg.Provider, cfg.Request, func(db database) error {
+	return withDatabase(ctx, cfg.Tool+"-search", cfg.Cloud, cfg.Provider, cfg.Request, func(db database) error {
 		build := activities.BenchContainerInput{
 			Cloud:      cfg.Cloud,
 			Runner:     db.runner.Name,
 			Image:      db.runner.Images.Bench,
-			Name:       "dbtest-tpcc-build-" + db.runID.String(),
+			Name:       "dbtest-" + cfg.Tool + "-build-" + db.runID.String(),
 			DSN:        db.cluster.PrivateConnInfo.URL(db.cluster.Password),
-			Workload:   "tpcc",
+			Workload:   map[string]string{"hammerdb": "tpcc", "pgbench": "pgbench"}[cfg.Tool],
 			Init:       true,
 			Warehouses: cfg.Warehouses,
 			Clients:    cfg.Warehouses,
+			Scale:      cfg.Scale,
 		}
 		built, err := runBench(ctx, harn, build, cfg.BuildTimeout)
 		if err != nil {
@@ -60,16 +68,17 @@ func HammerDBSearchWorkflow(ctx workflow.Context, cfg HammerDBSearchWorkflowConf
 			Cloud:      cfg.Cloud,
 			Runner:     db.runner.Name,
 			Image:      db.runner.Images.Tester,
-			Name:       "dbtest-tpcc-search-" + db.runID.String(),
+			Name:       "dbtest-" + cfg.Tool + "-search-" + db.runID.String(),
 			DSN:        build.DSN,
-			Workload:   "tpcc",
+			Tool:       cfg.Tool,
 			Warehouses: cfg.Warehouses,
+			Scale:      cfg.Scale,
 			RampUp:     cfg.RampUp,
 			Duration:   cfg.Duration,
 			Search:     &cfg.Search,
 		}
 		// Each run, the final drift run included, takes maintenance, ramp-up,
-		// duration and HammerDB's start and stop.
+		// duration and the tool's start and stop.
 		perRun := cfg.RampUp + cfg.Duration + 8*time.Minute
 		timeout := time.Duration(cfg.Search.MaxTrials+1)*perRun + 15*time.Minute
 		result, err := runBench(ctx, harn, tester, timeout)
@@ -81,7 +90,7 @@ func HammerDBSearchWorkflow(ctx workflow.Context, cfg HammerDBSearchWorkflowConf
 				"tester ended without a search result", "BenchFailed", nil)
 		}
 
-		return workflow.ExecuteActivity(ctx, runs.SaveTPCCSearch, activities.SaveTPCCSearchInput{
+		return workflow.ExecuteActivity(ctx, runs.SaveSearch, activities.SaveSearchInput{
 			RunID:            db.runID,
 			Provider:         cfg.Provider,
 			HighAvailability: cfg.Request.HighAvailability,

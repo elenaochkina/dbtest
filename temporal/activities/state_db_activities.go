@@ -50,12 +50,12 @@ type SaveTPCCInput struct {
 	Run              BenchResult         // nopm, tpm, latencies
 }
 
-// SaveTPCCSearchInput persists a tester search: its runs and its result.
-type SaveTPCCSearchInput struct {
+// SaveSearchInput persists a tester search: its trials and its result.
+type SaveSearchInput struct {
 	RunID            uuid.UUID
 	Provider         provider.DBServiceName
 	HighAvailability bool
-	Search           BenchContainerInput // warehouses, ramp-up, duration, search bounds
+	Search           BenchContainerInput // tool, size, ramp-up, duration, search bounds
 	Build            BenchResult         // the build's elapsed_s
 	Result           BenchResult         // the tester's trials and peak, saturation, decline
 }
@@ -108,27 +108,28 @@ func (a *StateDBActivities) SaveTPCCResult(ctx context.Context, input SaveTPCCIn
 	return state.SaveTPCCResult(ctx, a.statePool, input.RunID, row)
 }
 
-// SaveTPCCSearch writes each trial of a search as a tpcc_results row, numbered
-// in run order, and the search result as a tpcc_searches row. The final drift
-// run is only in the result's drift.
-func (a *StateDBActivities) SaveTPCCSearch(ctx context.Context, input SaveTPCCSearchInput) error {
-	var trials []state.TPCCRow
+// SaveSearch writes each trial of a search as a search_trials row, in run
+// order, and the search result as a searches row.
+func (a *StateDBActivities) SaveSearch(ctx context.Context, input SaveSearchInput) error {
+	throughput := map[string]string{"hammerdb": "nopm", "pgbench": "tps"}[input.Search.Tool]
+	var trials []state.TrialRow
+	measured := 0
 	for _, trial := range input.Result.Trials {
-		if trial.Repeat {
-			continue
+		trials = append(trials, state.TrialRow{
+			Clients:    trial.Clients,
+			Repeat:     trial.Repeat,
+			Throughput: trial.Metrics[throughput],
+			Metrics:    trial.Metrics,
+		})
+		if !trial.Repeat {
+			measured++
 		}
-		row := tpccRow(input.Search, input.Build, trial.Metrics)
-		row.Provider = string(input.Provider)
-		row.HighAvailability = input.HighAvailability
-		row.Repetition = len(trials) + 1
-		row.VirtualUsers = trial.Clients
-		trials = append(trials, row)
 	}
 	metrics := input.Result.Metrics
-	search := state.TPCCSearchRow{
+	search := state.SearchRow{
+		Tool:              input.Search.Tool,
 		Provider:          string(input.Provider),
 		HighAvailability:  input.HighAvailability,
-		Warehouses:        input.Search.Warehouses,
 		RampUpSeconds:     int(input.Search.RampUp.Seconds()),
 		DurationSeconds:   int(input.Search.Duration.Seconds()),
 		BuildSeconds:      input.Build.ElapsedS,
@@ -136,15 +137,21 @@ func (a *StateDBActivities) SaveTPCCSearch(ctx context.Context, input SaveTPCCSe
 		MaxClients:        input.Search.Search.MaxClients,
 		Threshold:         input.Search.Search.Threshold,
 		PeakClients:       int(metrics["peak_clients"]),
-		PeakNOPM:          metrics["peak_nopm"],
+		PeakThroughput:    metrics["peak_"+throughput],
 		SaturationClients: int(metrics["saturation_clients"]),
-		Trials:            len(trials),
+		Trials:            measured,
 		Drift:             metrics["drift"],
+	}
+	if input.Search.Warehouses > 0 {
+		search.Warehouses = &input.Search.Warehouses
+	}
+	if input.Search.Scale > 0 {
+		search.Scale = &input.Search.Scale
 	}
 	if decline := int(metrics["decline_clients"]); decline > 0 {
 		search.DeclineClients = &decline
 	}
-	return state.SaveTPCCSearch(ctx, a.statePool, input.RunID, search, trials)
+	return state.SaveSearch(ctx, a.statePool, input.RunID, search, trials)
 }
 
 // tpccRow fills the run settings and measurements shared by every TPROC-C row.
