@@ -65,12 +65,13 @@ func (c *AWSCloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry) 
 	return newFargateRunner(c.config, tel)
 }
 
-// Images returns the probe and bench task definitions from .env, defaulting to
-// the families terraform/aws creates.
+// Images returns the probe, bench and tester task definitions from .env,
+// defaulting to the families terraform/aws creates.
 func (c *AWSCloud) Images(harness.RunnerName) harness.Images {
 	return harness.Images{
-		Probe: cloud.EnvOr("AWS_ECS_PROBE_TASK_DEFINITION", harness.ProbeName),
-		Bench: cloud.EnvOr("AWS_ECS_BENCH_TASK_DEFINITION", harness.BenchName),
+		Probe:  cloud.EnvOr("AWS_ECS_PROBE_TASK_DEFINITION", harness.ProbeName),
+		Bench:  cloud.EnvOr("AWS_ECS_BENCH_TASK_DEFINITION", harness.BenchName),
+		Tester: cloud.EnvOr("AWS_ECS_TESTER_TASK_DEFINITION", harness.TesterName),
 	}
 }
 

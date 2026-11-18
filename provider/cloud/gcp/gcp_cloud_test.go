@@ -43,7 +43,7 @@ func TestGCPRunsOnCloudRunOnly(t *testing.T) {
 	if _, err := c.NewRunner(harness.Docker, nil); err == nil {
 		t.Error("NewRunner(docker) returned no error")
 	}
-	want := harness.Images{Probe: harness.ProbeName, Bench: harness.BenchName}
+	want := harness.Images{Probe: harness.ProbeName, Bench: harness.BenchName, Tester: harness.TesterName}
 	if got := c.Images(harness.CloudRun); got != want {
 		t.Errorf("Images() = %+v, want %+v", got, want)
 	}

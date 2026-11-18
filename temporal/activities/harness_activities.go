@@ -65,6 +65,18 @@ type BenchContainerInput struct {
 	Clients    int
 	Duration   time.Duration
 	RampUp     time.Duration
+	// Search runs the tester image's client search instead of one bench run.
+	Search *SearchSettings
+}
+
+// SearchSettings are the tester's search bounds; see hammerdb.SearchConfig.
+type SearchSettings struct {
+	MinClients int
+	MaxClients int
+	Resolution int
+	MaxProbes  int
+	Tolerance  float64
+	Threshold  float64
 }
 
 // BenchResult is the JSON line bench prints when it exits.
@@ -75,6 +87,16 @@ type BenchResult struct {
 	ElapsedS float64            `json:"elapsed_s"`
 	Aborted  bool               `json:"aborted"`
 	Error    string             `json:"error,omitempty"`
+	// Probes holds the tester's timed runs.
+	Probes []BenchProbe `json:"probes,omitempty"`
+}
+
+// BenchProbe is one timed run of a tester search.
+type BenchProbe struct {
+	Clients  int                `json:"clients"`
+	Repeat   bool               `json:"repeat,omitempty"`
+	Metrics  map[string]float64 `json:"metrics"`
+	ElapsedS float64            `json:"elapsed_s"`
 }
 
 // ContainerInput is the input to a Stop activity.
@@ -368,6 +390,9 @@ func probeSpec(in ProbeInput) harness.Spec {
 }
 
 func benchSpec(in BenchContainerInput) harness.Spec {
+	if in.Search != nil {
+		return testerSpec(in)
+	}
 	args := []string{"-dsn", in.DSN}
 	if in.Init {
 		args = append(args, "-init")
@@ -394,6 +419,28 @@ func benchSpec(in BenchContainerInput) harness.Spec {
 		Image:     in.Image,
 		Name:      in.Name,
 		Args:      args,
+		SelfExits: true,
+	}
+}
+
+// testerSpec runs the tester image's client search.
+func testerSpec(in BenchContainerInput) harness.Spec {
+	search := in.Search
+	return harness.Spec{
+		Image: in.Image,
+		Name:  in.Name,
+		Args: []string{
+			"-dsn", in.DSN,
+			"-warehouses", strconv.Itoa(in.Warehouses),
+			"-min-clients", strconv.Itoa(search.MinClients),
+			"-max-clients", strconv.Itoa(search.MaxClients),
+			"-resolution", strconv.Itoa(search.Resolution),
+			"-max-probes", strconv.Itoa(search.MaxProbes),
+			"-tolerance", strconv.FormatFloat(search.Tolerance, 'f', -1, 64),
+			"-threshold", strconv.FormatFloat(search.Threshold, 'f', -1, 64),
+			"-rampup", in.RampUp.String(),
+			"-duration", in.Duration.String(),
+		},
 		SelfExits: true,
 	}
 }

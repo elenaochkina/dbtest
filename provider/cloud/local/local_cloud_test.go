@@ -32,7 +32,7 @@ func TestDockerImagesReadEnvironment(t *testing.T) {
 	t.Setenv("DBTEST_PROBE_IMAGE", "")
 	t.Setenv("DBTEST_BENCH_IMAGE", "dbtest/bench:test")
 
-	want := harness.Images{Probe: "dbtest/probe:dev", Bench: "dbtest/bench:test"}
+	want := harness.Images{Probe: "dbtest/probe:dev", Bench: "dbtest/bench:test", Tester: "dbtest/tester:dev"}
 	if got := DockerImages(); got != want {
 		t.Errorf("DockerImages() = %+v, want %+v", got, want)
 	}

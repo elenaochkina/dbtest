@@ -50,6 +50,16 @@ type SaveTPCCInput struct {
 	Run              BenchResult         // nopm, tpm, latencies
 }
 
+// SaveTPCCSearchInput persists a tester search: its runs and its result.
+type SaveTPCCSearchInput struct {
+	RunID            uuid.UUID
+	Provider         provider.DBServiceName
+	HighAvailability bool
+	Search           BenchContainerInput // warehouses, ramp-up, duration, search bounds
+	Build            BenchResult         // the build's elapsed_s
+	Result           BenchResult         // the tester's probes and peak, saturation, decline
+}
+
 // EndRunInput closes a runs row, recording whether the run passed.
 type EndRunInput struct {
 	RunID  uuid.UUID
@@ -90,24 +100,69 @@ func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error
 
 // SaveTPCCResult writes one measured run.
 func (a *StateDBActivities) SaveTPCCResult(ctx context.Context, input SaveTPCCInput) error {
-	return state.SaveTPCCResult(ctx, a.statePool, input.RunID, state.TPCCRow{
-		Provider:         string(input.Provider),
-		HighAvailability: input.HighAvailability,
-		Repetition:       input.Repetition,
-		Warehouses:       input.Bench.Warehouses,
-		VirtualUsers:     input.Bench.Clients,
-		RampUpSeconds:    int(input.Bench.RampUp.Seconds()),
-		DurationSeconds:  int(input.Bench.Duration.Seconds()),
-		BuildSeconds:     input.Build.ElapsedS,
-		NOPM:             input.Run.Metrics["nopm"],
-		TPM:              input.Run.Metrics["tpm"],
-		NewOrderP50Ms:    input.Run.Metrics["neword_p50_ms"],
-		NewOrderP95Ms:    input.Run.Metrics["neword_p95_ms"],
-		NewOrderP99Ms:    input.Run.Metrics["neword_p99_ms"],
-		Select1P50Ms:     optionalMetric(input.Run.Metrics, "select1_p50_ms"),
-		Select1P95Ms:     optionalMetric(input.Run.Metrics, "select1_p95_ms"),
-		Metrics:          input.Run.Metrics,
-	})
+	row := tpccRow(input.Bench, input.Build, input.Run.Metrics)
+	row.Provider = string(input.Provider)
+	row.HighAvailability = input.HighAvailability
+	row.Repetition = input.Repetition
+	row.VirtualUsers = input.Bench.Clients
+	return state.SaveTPCCResult(ctx, a.statePool, input.RunID, row)
+}
+
+// SaveTPCCSearch writes each probe of a search as a tpcc_results row, numbered
+// in run order, and the search result as a tpcc_searches row. The final drift
+// run is only in the result's drift.
+func (a *StateDBActivities) SaveTPCCSearch(ctx context.Context, input SaveTPCCSearchInput) error {
+	var probes []state.TPCCRow
+	for _, probe := range input.Result.Probes {
+		if probe.Repeat {
+			continue
+		}
+		row := tpccRow(input.Search, input.Build, probe.Metrics)
+		row.Provider = string(input.Provider)
+		row.HighAvailability = input.HighAvailability
+		row.Repetition = len(probes) + 1
+		row.VirtualUsers = probe.Clients
+		probes = append(probes, row)
+	}
+	metrics := input.Result.Metrics
+	search := state.TPCCSearchRow{
+		Provider:          string(input.Provider),
+		HighAvailability:  input.HighAvailability,
+		Warehouses:        input.Search.Warehouses,
+		RampUpSeconds:     int(input.Search.RampUp.Seconds()),
+		DurationSeconds:   int(input.Search.Duration.Seconds()),
+		BuildSeconds:      input.Build.ElapsedS,
+		MinClients:        input.Search.Search.MinClients,
+		MaxClients:        input.Search.Search.MaxClients,
+		Threshold:         input.Search.Search.Threshold,
+		PeakClients:       int(metrics["peak_clients"]),
+		PeakNOPM:          metrics["peak_nopm"],
+		SaturationClients: int(metrics["saturation_clients"]),
+		Probes:            len(probes),
+		Drift:             metrics["drift"],
+	}
+	if decline := int(metrics["decline_clients"]); decline > 0 {
+		search.DeclineClients = &decline
+	}
+	return state.SaveTPCCSearch(ctx, a.statePool, input.RunID, search, probes)
+}
+
+// tpccRow fills the run settings and measurements shared by every TPROC-C row.
+func tpccRow(bench BenchContainerInput, build BenchResult, metrics map[string]float64) state.TPCCRow {
+	return state.TPCCRow{
+		Warehouses:      bench.Warehouses,
+		RampUpSeconds:   int(bench.RampUp.Seconds()),
+		DurationSeconds: int(bench.Duration.Seconds()),
+		BuildSeconds:    build.ElapsedS,
+		NOPM:            metrics["nopm"],
+		TPM:             metrics["tpm"],
+		NewOrderP50Ms:   metrics["neword_p50_ms"],
+		NewOrderP95Ms:   metrics["neword_p95_ms"],
+		NewOrderP99Ms:   metrics["neword_p99_ms"],
+		Select1P50Ms:    optionalMetric(metrics, "select1_p50_ms"),
+		Select1P95Ms:    optionalMetric(metrics, "select1_p95_ms"),
+		Metrics:         metrics,
+	}
 }
 
 // optionalMetric returns the named metric, or nil when the run did not report it.

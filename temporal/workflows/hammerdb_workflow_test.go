@@ -3,6 +3,7 @@ package workflows
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,13 @@ import (
 )
 
 func hammerDBEnv(t *testing.T) *testsuite.TestWorkflowEnvironment {
+	env := databaseEnv(activities.ResolvedRunner{Name: harness.Docker})
+	env.OnActivity("StartBench", mock.Anything, mock.Anything).Return(harness.Handle{ID: "c1", SelfExits: true}, nil)
+	return env
+}
+
+// databaseEnv mocks every activity of withDatabase.
+func databaseEnv(runner activities.ResolvedRunner) *testsuite.TestWorkflowEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterActivity(&activities.StateDBActivities{})
@@ -22,13 +30,12 @@ func hammerDBEnv(t *testing.T) *testsuite.TestWorkflowEnvironment {
 	env.RegisterActivity(&activities.HarnessActivities{})
 
 	env.OnActivity("CheckSupported", mock.Anything, mock.Anything).Return(nil)
-	env.OnActivity("ResolveRunner", mock.Anything, mock.Anything).Return(activities.ResolvedRunner{Name: harness.Docker}, nil)
+	env.OnActivity("ResolveRunner", mock.Anything, mock.Anything).Return(runner, nil)
 	env.OnActivity("StartRun", mock.Anything, mock.Anything).Return(uuid.New(), nil)
 	env.OnActivity("EndRun", mock.Anything, mock.Anything).Return(nil)
 	env.OnActivity("Provision", mock.Anything, mock.Anything).Return(provider.ClusterInfo{}, nil)
 	env.OnActivity("WaitForReady", mock.Anything, mock.Anything).Return(nil)
 	env.OnActivity("Deprovision", mock.Anything, mock.Anything).Return(nil)
-	env.OnActivity("StartBench", mock.Anything, mock.Anything).Return(harness.Handle{ID: "c1", SelfExits: true}, nil)
 	return env
 }
 
@@ -87,4 +94,66 @@ func TestHammerDBWorkflowRejectsConfig(t *testing.T) {
 	if env.GetWorkflowError() == nil {
 		t.Fatal("workflow accepted a 30s duration")
 	}
+}
+
+var searchConfig = HammerDBSearchWorkflowConfig{
+	Cloud:      provider.CloudName("local"),
+	Provider:   provider.Docker,
+	Warehouses: 32,
+	RampUp:     time.Minute,
+	Duration:   3 * time.Minute,
+	Search: activities.SearchSettings{
+		MinClients: 8, MaxClients: 128, Resolution: 4, MaxProbes: 12, Tolerance: 0.03, Threshold: 0.95,
+	},
+	BuildTimeout: time.Hour,
+}
+
+func TestHammerDBSearchWorkflowBuildsThenSearches(t *testing.T) {
+	runner := activities.ResolvedRunner{Name: harness.Docker, Images: harness.Images{Bench: "bench", Tester: "tester"}}
+	env := databaseEnv(runner)
+	var images []string
+	env.OnActivity("StartBench", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, input activities.BenchContainerInput) (harness.Handle, error) {
+			images = append(images, input.Image)
+			return harness.Handle{ID: input.Name, SelfExits: true}, nil
+		})
+	env.OnActivity("WaitForBenchResult", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, input activities.ContainerInput) (activities.BenchResult, error) {
+			if strings.HasPrefix(input.Handle.ID, "dbtest-tpcc-build") {
+				return activities.BenchResult{Phase: "init", ElapsedS: 90}, nil
+			}
+			return activities.BenchResult{Phase: "search",
+				Metrics: map[string]float64{"peak_clients": 16},
+				Probes:  []activities.BenchProbe{{Clients: 8}, {Clients: 16}, {Clients: 16, Repeat: true}},
+			}, nil
+		})
+	var saved activities.SaveTPCCSearchInput
+	env.OnActivity("SaveTPCCSearch", mock.Anything, mock.Anything).Return(
+		func(_ context.Context, input activities.SaveTPCCSearchInput) error {
+			saved = input
+			return nil
+		})
+
+	env.ExecuteWorkflow(HammerDBSearchWorkflow, searchConfig)
+	if err := env.GetWorkflowError(); err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 2 || images[0] != "bench" || images[1] != "tester" {
+		t.Errorf("images = %v, want the bench build then the tester search", images)
+	}
+	if saved.Build.ElapsedS != 90 || len(saved.Result.Probes) != 3 || saved.Search.Search == nil {
+		t.Errorf("saved = %+v", saved)
+	}
+	env.AssertCalled(t, "Deprovision", mock.Anything, mock.Anything)
+}
+
+func TestHammerDBSearchWorkflowRejectsInvalidSearch(t *testing.T) {
+	env := hammerDBEnv(t)
+	cfg := searchConfig
+	cfg.Search.Threshold = 1.5
+	env.ExecuteWorkflow(HammerDBSearchWorkflow, cfg)
+	if env.GetWorkflowError() == nil {
+		t.Fatal("workflow accepted a threshold above 1")
+	}
+	env.AssertNotCalled(t, "Provision", mock.Anything, mock.Anything)
 }
