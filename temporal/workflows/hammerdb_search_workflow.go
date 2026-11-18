@@ -71,12 +71,12 @@ func HammerDBSearchWorkflow(ctx workflow.Context, cfg HammerDBSearchWorkflowConf
 		// Each run, the final drift run included, takes maintenance, ramp-up,
 		// duration and HammerDB's start and stop.
 		perRun := cfg.RampUp + cfg.Duration + 8*time.Minute
-		timeout := time.Duration(cfg.Search.MaxProbes+1)*perRun + 15*time.Minute
+		timeout := time.Duration(cfg.Search.MaxTrials+1)*perRun + 15*time.Minute
 		result, err := runBench(ctx, harn, tester, timeout)
 		if err != nil {
 			return err
 		}
-		if result.Phase != "search" || len(result.Probes) == 0 {
+		if result.Phase != "search" || len(result.Trials) == 0 {
 			return temporal.NewNonRetryableApplicationError(
 				"tester ended without a search result", "BenchFailed", nil)
 		}

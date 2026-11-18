@@ -51,11 +51,11 @@ func TestTesterSpec(t *testing.T) {
 		Duration:   3 * time.Minute,
 		RampUp:     time.Minute,
 		Search: &search.Config{
-			MinClients: 8, MaxClients: 128, Resolution: 4, MaxProbes: 12, Tolerance: 0.03, Threshold: 0.95,
+			MinClients: 8, MaxClients: 128, Resolution: 4, MaxTrials: 12, Tolerance: 0.03, Threshold: 0.95,
 		},
 	})
 	want := []string{"-dsn", "postgres://db", "-warehouses", "32", "-min-clients", "8", "-max-clients", "128",
-		"-resolution", "4", "-max-probes", "12", "-tolerance", "0.03", "-threshold", "0.95",
+		"-resolution", "4", "-max-trials", "12", "-tolerance", "0.03", "-threshold", "0.95",
 		"-rampup", "1m0s", "-duration", "3m0s"}
 	if !slices.Equal(spec.Args, want) || !spec.SelfExits || spec.Image != "dbtest/tester:dev" {
 		t.Errorf("spec = %+v", spec)
@@ -63,14 +63,14 @@ func TestTesterSpec(t *testing.T) {
 }
 
 func TestParseTesterResult(t *testing.T) {
-	out := []byte(`{"workload":"tpcc","phase":"probe","clients":8,"metrics":{"nopm":1000},"elapsed_s":240}
-{"workload":"tpcc","phase":"search","metrics":{"peak_clients":8},"probes":[{"clients":8,"metrics":{"nopm":1000},"elapsed_s":240},{"clients":8,"repeat":true,"metrics":{"nopm":990},"elapsed_s":240}],"elapsed_s":480,"aborted":false}
+	out := []byte(`{"workload":"tpcc","phase":"trial","clients":8,"metrics":{"nopm":1000},"elapsed_s":240}
+{"workload":"tpcc","phase":"search","metrics":{"peak_clients":8},"trials":[{"clients":8,"metrics":{"nopm":1000},"elapsed_s":240},{"clients":8,"repeat":true,"metrics":{"nopm":990},"elapsed_s":240}],"elapsed_s":480,"aborted":false}
 `)
 	res, err := parseBench(out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Phase != "search" || len(res.Probes) != 2 || !res.Probes[1].Repeat || res.Probes[0].Metrics["nopm"] != 1000 {
+	if res.Phase != "search" || len(res.Trials) != 2 || !res.Trials[1].Repeat || res.Trials[0].Metrics["nopm"] != 1000 {
 		t.Errorf("result = %+v", res)
 	}
 }

@@ -14,30 +14,30 @@ type Config struct {
 	MaxClients int
 	// Resolution is the client gap at which a bisection stops.
 	Resolution int
-	// MaxProbes caps the timed runs, not counting the final drift run.
-	MaxProbes int
+	// MaxTrials caps the timed runs, not counting the final drift run.
+	MaxTrials int
 	// Tolerance is the throughput fraction within which two runs count as equal.
 	Tolerance float64
 	// Threshold is the fraction of peak throughput that marks saturation and decline.
 	Threshold float64
 }
 
-// Probe is one timed run at a client count.
-type Probe struct {
+// Trial is one timed run at a client count.
+type Trial struct {
 	Clients    int
 	Throughput float64
 }
 
-// Result holds every probe and the client counts found from them.
+// Result holds every trial and the client counts found from them.
 type Result struct {
-	Probes []Probe
+	Trials []Trial
 	// PeakClients is the fewest clients within Tolerance of the highest throughput.
 	PeakClients    int
 	PeakThroughput float64
 	// SaturationClients is the fewest clients reaching Threshold of PeakThroughput.
 	SaturationClients int
 	// DeclineClients is the fewest clients above the peak below Threshold of
-	// PeakThroughput, or 0 when no probe up to MaxClients fell that far.
+	// PeakThroughput, or 0 when no trial up to MaxClients fell that far.
 	DeclineClients int
 	// Drift is the throughput change when PeakClients runs again at the end.
 	Drift float64
@@ -50,8 +50,8 @@ func (cfg Config) Validate() error {
 		return errors.New("search needs 1 <= min clients <= max clients")
 	case cfg.Resolution < 1:
 		return errors.New("search needs a resolution of at least 1 client")
-	case cfg.MaxProbes < 3:
-		return errors.New("search needs at least 3 probes")
+	case cfg.MaxTrials < 3:
+		return errors.New("search needs at least 3 trials")
 	case cfg.Tolerance < 0 || cfg.Tolerance >= 0.5:
 		return errors.New("search needs a tolerance from 0 to 0.5")
 	case cfg.Threshold <= 0 || cfg.Threshold >= 1:
@@ -60,18 +60,18 @@ func (cfg Config) Validate() error {
 	return nil
 }
 
-// Run runs probe at chosen client counts to find the peak, saturation and
+// Run runs trial at chosen client counts to find the peak, saturation and
 // decline points. It doubles clients from MinClients until throughput falls
 // below Threshold of the best run, bisects around the best run, then
 // bisects the rising side for saturation and the falling side for decline.
 // It runs no client count twice except the peak, once more at the end, to
-// measure drift. probe runs one client count and returns its throughput. On
-// an error Run returns the probes so far with it.
-func Run(ctx context.Context, cfg Config, probe func(context.Context, int) (float64, error)) (Result, error) {
+// measure drift. trial runs one client count and returns its throughput. On
+// an error Run returns the trials so far with it.
+func Run(ctx context.Context, cfg Config, trial func(context.Context, int) (float64, error)) (Result, error) {
 	if err := cfg.Validate(); err != nil {
 		return Result{}, err
 	}
-	s := &searcher{cfg: cfg, probe: probe, throughput: map[int]float64{}}
+	s := &searcher{cfg: cfg, trial: trial, throughput: map[int]float64{}}
 	if err := s.run(ctx); err != nil {
 		return s.result(), err
 	}
@@ -79,7 +79,7 @@ func Run(ctx context.Context, cfg Config, probe func(context.Context, int) (floa
 	if res.PeakThroughput == 0 {
 		return res, errors.New("search: no run had any throughput")
 	}
-	again, err := probe(ctx, res.PeakClients)
+	again, err := trial(ctx, res.PeakClients)
 	if err != nil {
 		return res, err
 	}
@@ -89,31 +89,31 @@ func Run(ctx context.Context, cfg Config, probe func(context.Context, int) (floa
 
 type searcher struct {
 	cfg        Config
-	probe      func(context.Context, int) (float64, error)
-	probes     []Probe
+	trial      func(context.Context, int) (float64, error)
+	trials     []Trial
 	throughput map[int]float64
 }
 
-var errBudget = errors.New("probe budget spent")
+var errBudget = errors.New("trial budget spent")
 
 // measure runs clients once and returns its throughput.
 func (s *searcher) measure(ctx context.Context, clients int) (float64, error) {
 	if throughput, ok := s.throughput[clients]; ok {
 		return throughput, nil
 	}
-	if len(s.probes) >= s.cfg.MaxProbes {
+	if len(s.trials) >= s.cfg.MaxTrials {
 		return 0, errBudget
 	}
-	throughput, err := s.probe(ctx, clients)
+	throughput, err := s.trial(ctx, clients)
 	if err != nil {
 		return 0, err
 	}
-	s.probes = append(s.probes, Probe{Clients: clients, Throughput: throughput})
+	s.trials = append(s.trials, Trial{Clients: clients, Throughput: throughput})
 	s.throughput[clients] = throughput
 	return throughput, nil
 }
 
-// run probes until every bisection reaches Resolution or the budget is spent.
+// run runs trials until every bisection reaches Resolution or the budget is spent.
 func (s *searcher) run(ctx context.Context) error {
 	err := s.bracket(ctx)
 	if err == nil {
@@ -265,9 +265,9 @@ func (s *searcher) neighbours(clients int) (int, int) {
 	return below, above
 }
 
-// result derives the peak, saturation and decline from every probe so far.
+// result derives the peak, saturation and decline from every trial so far.
 func (s *searcher) result() Result {
-	res := Result{Probes: s.probes}
+	res := Result{Trials: s.trials}
 	if len(s.throughput) == 0 {
 		return res
 	}

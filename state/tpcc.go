@@ -46,7 +46,7 @@ type TPCCSearchRow struct {
 	PeakNOPM          float64
 	SaturationClients int
 	DeclineClients    *int // nil when throughput never fell below the threshold
-	Probes            int
+	Trials            int
 	Drift             float64
 }
 
@@ -66,9 +66,9 @@ func SaveTPCCResult(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, ro
 
 // SaveTPCCSearch writes a search's runs and its result in one transaction. A
 // repeated save is a no-op.
-func SaveTPCCSearch(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, search TPCCSearchRow, probes []TPCCRow) error {
+func SaveTPCCSearch(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, search TPCCSearchRow, trials []TPCCRow) error {
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		for _, row := range probes {
+		for _, row := range trials {
 			if err := insertTPCCResult(ctx, tx, runID, row); err != nil {
 				return err
 			}
@@ -77,13 +77,13 @@ func SaveTPCCSearch(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, se
 			`INSERT INTO tpcc_searches
 				(run_id, provider, high_availability, warehouses, rampup_seconds, duration_seconds,
 				 build_seconds, min_clients, max_clients, threshold, peak_clients, peak_nopm,
-				 saturation_clients, decline_clients, probes, drift)
+				 saturation_clients, decline_clients, trials, drift)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 			 ON CONFLICT (run_id) DO NOTHING`,
 			runID, search.Provider, search.HighAvailability, search.Warehouses, search.RampUpSeconds,
 			search.DurationSeconds, search.BuildSeconds, search.MinClients, search.MaxClients,
 			search.Threshold, search.PeakClients, search.PeakNOPM, search.SaturationClients,
-			search.DeclineClients, search.Probes, search.Drift,
+			search.DeclineClients, search.Trials, search.Drift,
 		)
 		return err
 	})

@@ -162,7 +162,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			peak_nopm          FLOAT8      NOT NULL,
 			saturation_clients INT         NOT NULL,
 			decline_clients    INT,
-			probes             INT         NOT NULL,
+			trials             INT         NOT NULL,
 			drift              FLOAT8      NOT NULL,
 			created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 		)

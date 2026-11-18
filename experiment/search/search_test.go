@@ -8,7 +8,7 @@ import (
 )
 
 var defaultConfig = Config{
-	MinClients: 8, MaxClients: 128, Resolution: 4, MaxProbes: 12, Tolerance: 0.03, Threshold: 0.95,
+	MinClients: 8, MaxClients: 128, Resolution: 4, MaxTrials: 12, Tolerance: 0.03, Threshold: 0.95,
 }
 
 // hill rises linearly to peak throughput at top clients, stays flat to
@@ -26,7 +26,7 @@ func hill(top, flatEnd int, peak, fall float64) func(int) float64 {
 	}
 }
 
-// fixed returns a probe that reads throughput from curve and records each call.
+// fixed returns a trial that reads throughput from curve and records each call.
 func fixed(curve func(int) float64, calls *[]int) func(context.Context, int) (float64, error) {
 	return func(_ context.Context, clients int) (float64, error) {
 		*calls = append(*calls, clients)
@@ -51,16 +51,16 @@ func TestRunFindsPeakSaturationAndDecline(t *testing.T) {
 	if res.DeclineClients < 44 || res.DeclineClients > 44+defaultConfig.Resolution {
 		t.Errorf("decline = %d; want 44..48", res.DeclineClients)
 	}
-	if len(res.Probes) > defaultConfig.MaxProbes {
-		t.Errorf("%d probes; want at most %d", len(res.Probes), defaultConfig.MaxProbes)
+	if len(res.Trials) > defaultConfig.MaxTrials {
+		t.Errorf("%d trials; want at most %d", len(res.Trials), defaultConfig.MaxTrials)
 	}
 	if last := calls[len(calls)-1]; last != res.PeakClients || res.Drift != 0 {
 		t.Errorf("last call %d, drift %v; want the peak run again with no drift", last, res.Drift)
 	}
 	seen := map[int]bool{}
-	for _, p := range res.Probes {
+	for _, p := range res.Trials {
 		if seen[p.Clients] {
-			t.Errorf("clients %d probed twice", p.Clients)
+			t.Errorf("clients %d tried twice", p.Clients)
 		}
 		seen[p.Clients] = true
 	}
@@ -80,33 +80,33 @@ func TestRunWithoutDeclineReportsZero(t *testing.T) {
 	}
 }
 
-func TestRunStopsAtTheProbeBudget(t *testing.T) {
+func TestRunStopsAtTheTrialBudget(t *testing.T) {
 	var calls []int
 	cfg := defaultConfig
-	cfg.MaxProbes = 4
+	cfg.MaxTrials = 4
 	res, err := Run(context.Background(), cfg, fixed(hill(24, 40, 30000, 500), &calls))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Probes) != 4 || len(calls) != 5 {
-		t.Errorf("%d probes and %d calls; want 4 probes plus the drift run", len(res.Probes), len(calls))
+	if len(res.Trials) != 4 || len(calls) != 5 {
+		t.Errorf("%d trials and %d calls; want 4 trials plus the drift run", len(res.Trials), len(calls))
 	}
 }
 
-func TestRunReturnsProbesSoFarOnError(t *testing.T) {
-	failure := errors.New("probe failed")
-	probe := func(_ context.Context, clients int) (float64, error) {
+func TestRunReturnsTrialsSoFarOnError(t *testing.T) {
+	failure := errors.New("trial failed")
+	trial := func(_ context.Context, clients int) (float64, error) {
 		if clients == 32 {
 			return 0, failure
 		}
 		return float64(clients), nil
 	}
-	res, err := Run(context.Background(), defaultConfig, probe)
+	res, err := Run(context.Background(), defaultConfig, trial)
 	if !errors.Is(err, failure) {
-		t.Fatalf("err = %v; want the probe's error", err)
+		t.Fatalf("err = %v; want the trial's error", err)
 	}
-	if len(res.Probes) != 2 {
-		t.Errorf("%d probes; want the 8 and 16 runs", len(res.Probes))
+	if len(res.Trials) != 2 {
+		t.Errorf("%d trials; want the 8 and 16 runs", len(res.Trials))
 	}
 }
 

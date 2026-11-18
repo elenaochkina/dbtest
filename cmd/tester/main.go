@@ -24,10 +24,10 @@ import (
 	"github.com/elenaochkina/dbtest/hammerdb"
 )
 
-// probe is one timed run in tester's output.
-type probe struct {
+// trial is one timed run in tester's output.
+type trial struct {
 	Clients int `json:"clients"`
-	// Repeat marks the final drift run of a client count already probed.
+	// Repeat marks the final drift run of a client count already tried.
 	Repeat   bool               `json:"repeat,omitempty"`
 	Metrics  map[string]float64 `json:"metrics"`
 	ElapsedS float64            `json:"elapsed_s"`
@@ -38,7 +38,7 @@ type result struct {
 	Workload string             `json:"workload"`
 	Phase    string             `json:"phase"`
 	Metrics  map[string]float64 `json:"metrics,omitempty"`
-	Probes   []probe            `json:"probes"`
+	Trials   []trial            `json:"trials"`
 	ElapsedS float64            `json:"elapsed_s"`
 	Aborted  bool               `json:"aborted"`
 	Error    string             `json:"error,omitempty"`
@@ -50,7 +50,7 @@ func main() {
 	minClients := flag.Int("min-clients", 8, "fewest virtual users to try")
 	maxClients := flag.Int("max-clients", 128, "most virtual users to try")
 	resolution := flag.Int("resolution", 4, "client gap at which a bisection stops")
-	maxProbes := flag.Int("max-probes", 12, "most timed runs, not counting the drift run")
+	maxTrials := flag.Int("max-trials", 12, "most timed runs, not counting the drift run")
 	tolerance := flag.Float64("tolerance", 0.03, "NOPM fraction within which two runs count as equal")
 	threshold := flag.Float64("threshold", 0.95, "fraction of peak NOPM that marks saturation and decline")
 	rampUp := flag.Duration("rampup", time.Minute, "ramp-up before each measured run")
@@ -71,7 +71,7 @@ func main() {
 		MinClients: *minClients,
 		MaxClients: *maxClients,
 		Resolution: *resolution,
-		MaxProbes:  *maxProbes,
+		MaxTrials:  *maxTrials,
 		Tolerance:  *tolerance,
 		Threshold:  *threshold,
 	}
@@ -117,20 +117,20 @@ func main() {
 		if err != nil {
 			return 0, fmt.Errorf("%d clients: %w", clients, err)
 		}
-		p := probe{Clients: clients, Metrics: out.Metrics(), ElapsedS: time.Since(runStart).Seconds()}
+		p := trial{Clients: clients, Metrics: out.Metrics(), ElapsedS: time.Since(runStart).Seconds()}
 		maps.Copy(p.Metrics, baseline)
 		if *maintenance {
 			p.Metrics["maintenance_s"] = maintenanceSeconds
 		}
-		for _, earlier := range res.Probes {
+		for _, earlier := range res.Trials {
 			p.Repeat = p.Repeat || earlier.Clients == clients
 		}
-		res.Probes = append(res.Probes, p)
+		res.Trials = append(res.Trials, p)
 		emit(struct {
 			Workload string `json:"workload"`
 			Phase    string `json:"phase"`
-			probe
-		}{"tpcc", "probe", p})
+			trial
+		}{"tpcc", "trial", p})
 		return out.NOPM, nil
 	})
 	res.ElapsedS = time.Since(start).Seconds()

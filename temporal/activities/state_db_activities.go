@@ -57,7 +57,7 @@ type SaveTPCCSearchInput struct {
 	HighAvailability bool
 	Search           BenchContainerInput // warehouses, ramp-up, duration, search bounds
 	Build            BenchResult         // the build's elapsed_s
-	Result           BenchResult         // the tester's probes and peak, saturation, decline
+	Result           BenchResult         // the tester's trials and peak, saturation, decline
 }
 
 // EndRunInput closes a runs row, recording whether the run passed.
@@ -108,21 +108,21 @@ func (a *StateDBActivities) SaveTPCCResult(ctx context.Context, input SaveTPCCIn
 	return state.SaveTPCCResult(ctx, a.statePool, input.RunID, row)
 }
 
-// SaveTPCCSearch writes each probe of a search as a tpcc_results row, numbered
+// SaveTPCCSearch writes each trial of a search as a tpcc_results row, numbered
 // in run order, and the search result as a tpcc_searches row. The final drift
 // run is only in the result's drift.
 func (a *StateDBActivities) SaveTPCCSearch(ctx context.Context, input SaveTPCCSearchInput) error {
-	var probes []state.TPCCRow
-	for _, probe := range input.Result.Probes {
-		if probe.Repeat {
+	var trials []state.TPCCRow
+	for _, trial := range input.Result.Trials {
+		if trial.Repeat {
 			continue
 		}
-		row := tpccRow(input.Search, input.Build, probe.Metrics)
+		row := tpccRow(input.Search, input.Build, trial.Metrics)
 		row.Provider = string(input.Provider)
 		row.HighAvailability = input.HighAvailability
-		row.Repetition = len(probes) + 1
-		row.VirtualUsers = probe.Clients
-		probes = append(probes, row)
+		row.Repetition = len(trials) + 1
+		row.VirtualUsers = trial.Clients
+		trials = append(trials, row)
 	}
 	metrics := input.Result.Metrics
 	search := state.TPCCSearchRow{
@@ -138,13 +138,13 @@ func (a *StateDBActivities) SaveTPCCSearch(ctx context.Context, input SaveTPCCSe
 		PeakClients:       int(metrics["peak_clients"]),
 		PeakNOPM:          metrics["peak_nopm"],
 		SaturationClients: int(metrics["saturation_clients"]),
-		Probes:            len(probes),
+		Trials:            len(trials),
 		Drift:             metrics["drift"],
 	}
 	if decline := int(metrics["decline_clients"]); decline > 0 {
 		search.DeclineClients = &decline
 	}
-	return state.SaveTPCCSearch(ctx, a.statePool, input.RunID, search, probes)
+	return state.SaveTPCCSearch(ctx, a.statePool, input.RunID, search, trials)
 }
 
 // tpccRow fills the run settings and measurements shared by every TPROC-C row.

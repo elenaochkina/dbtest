@@ -104,7 +104,7 @@ var searchConfig = HammerDBSearchWorkflowConfig{
 	RampUp:     time.Minute,
 	Duration:   3 * time.Minute,
 	Search: search.Config{
-		MinClients: 8, MaxClients: 128, Resolution: 4, MaxProbes: 12, Tolerance: 0.03, Threshold: 0.95,
+		MinClients: 8, MaxClients: 128, Resolution: 4, MaxTrials: 12, Tolerance: 0.03, Threshold: 0.95,
 	},
 	BuildTimeout: time.Hour,
 }
@@ -125,7 +125,7 @@ func TestHammerDBSearchWorkflowBuildsThenSearches(t *testing.T) {
 			}
 			return activities.BenchResult{Phase: "search",
 				Metrics: map[string]float64{"peak_clients": 16},
-				Probes:  []activities.BenchProbe{{Clients: 8}, {Clients: 16}, {Clients: 16, Repeat: true}},
+				Trials:  []activities.BenchTrial{{Clients: 8}, {Clients: 16}, {Clients: 16, Repeat: true}},
 			}, nil
 		})
 	var saved activities.SaveTPCCSearchInput
@@ -142,7 +142,7 @@ func TestHammerDBSearchWorkflowBuildsThenSearches(t *testing.T) {
 	if len(images) != 2 || images[0] != "bench" || images[1] != "tester" {
 		t.Errorf("images = %v, want the bench build then the tester search", images)
 	}
-	if saved.Build.ElapsedS != 90 || len(saved.Result.Probes) != 3 || saved.Search.Search == nil {
+	if saved.Build.ElapsedS != 90 || len(saved.Result.Trials) != 3 || saved.Search.Search == nil {
 		t.Errorf("saved = %+v", saved)
 	}
 	env.AssertCalled(t, "Deprovision", mock.Anything, mock.Anything)

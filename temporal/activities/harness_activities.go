@@ -78,12 +78,12 @@ type BenchResult struct {
 	ElapsedS float64            `json:"elapsed_s"`
 	Aborted  bool               `json:"aborted"`
 	Error    string             `json:"error,omitempty"`
-	// Probes holds the tester's timed runs.
-	Probes []BenchProbe `json:"probes,omitempty"`
+	// Trials holds the tester's timed runs.
+	Trials []BenchTrial `json:"trials,omitempty"`
 }
 
-// BenchProbe is one timed run of a tester search.
-type BenchProbe struct {
+// BenchTrial is one timed run of a tester search.
+type BenchTrial struct {
 	Clients  int                `json:"clients"`
 	Repeat   bool               `json:"repeat,omitempty"`
 	Metrics  map[string]float64 `json:"metrics"`
@@ -426,7 +426,7 @@ func testerSpec(in BenchContainerInput) harness.Spec {
 			"-min-clients", strconv.Itoa(settings.MinClients),
 			"-max-clients", strconv.Itoa(settings.MaxClients),
 			"-resolution", strconv.Itoa(settings.Resolution),
-			"-max-probes", strconv.Itoa(settings.MaxProbes),
+			"-max-trials", strconv.Itoa(settings.MaxTrials),
 			"-tolerance", strconv.FormatFloat(settings.Tolerance, 'f', -1, 64),
 			"-threshold", strconv.FormatFloat(settings.Threshold, 'f', -1, 64),
 			"-rampup", in.RampUp.String(),
