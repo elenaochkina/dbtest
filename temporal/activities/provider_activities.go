@@ -121,7 +121,8 @@ func (a *ProviderActivities) SwitchoverReadiness(ctx context.Context, input Swit
 }
 
 // CheckSupported reports whether the service runs in the cloud and supports the
-// disruption, from the registries alone, before anything is provisioned.
+// disruption, from the registries alone, before anything is provisioned. An
+// empty disruption checks only the cloud.
 func (a *ProviderActivities) CheckSupported(ctx context.Context, input CheckSupportedInput) error {
 	// Retrying cannot change either answer.
 	if !cloud.Supports(input.Cloud, input.Provider) {
@@ -129,6 +130,9 @@ func (a *ProviderActivities) CheckSupported(ctx context.Context, input CheckSupp
 			fmt.Sprintf("%s does not run in %s", input.Provider, input.Cloud),
 			"UnsupportedCloud", nil,
 		)
+	}
+	if input.Disruption == "" {
+		return nil
 	}
 	if !slices.Contains(dbservice.Disruptions(input.Provider, input.Request), input.Disruption) {
 		return temporal.NewNonRetryableApplicationError(

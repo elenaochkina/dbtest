@@ -3,6 +3,7 @@ package local
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -45,9 +47,10 @@ func (r *dockerRunner) Run(ctx context.Context, spec harness.Spec) (harness.Hand
 
 	resp, err := r.client.ContainerCreate(ctx,
 		&container.Config{
-			Image: spec.Image,
-			Cmd:   spec.Args,
-			Tty:   false, // keeps stdout and stderr separately framed
+			Image:  spec.Image,
+			Cmd:    spec.Args,
+			Tty:    false, // keeps stdout and stderr separately framed
+			Labels: keyLabel(spec.Key),
 		},
 		&container.HostConfig{},
 		netConfig, nil, spec.Name,
@@ -120,6 +123,45 @@ func (r *dockerRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, erro
 		return out, removeErr
 	}
 	return out, nil
+}
+
+// Find returns the container labelled with spec.Key, running or exited.
+func (r *dockerRunner) Find(ctx context.Context, spec harness.Spec) (harness.Handle, bool, error) {
+	if spec.Key == "" {
+		return harness.Handle{}, false, errors.New("find needs a key")
+	}
+	containers, err := r.client.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("label", "dbtest.key="+spec.Key)),
+	})
+	if err != nil {
+		return harness.Handle{}, false, fmt.Errorf("container list: %w", err)
+	}
+	if len(containers) == 0 {
+		return harness.Handle{}, false, nil
+	}
+	return harness.Handle{ID: containers[0].ID, SelfExits: spec.SelfExits}, true, nil
+}
+
+// Exited reports whether the container is no longer running. A removed
+// container has exited.
+func (r *dockerRunner) Exited(ctx context.Context, h harness.Handle) (bool, error) {
+	info, err := r.client.ContainerInspect(ctx, h.ID)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return true, nil
+		}
+		return false, fmt.Errorf("container inspect: %w", err)
+	}
+	return !info.State.Running, nil
+}
+
+// keyLabel returns the label that tags a container with key, or nil without one.
+func keyLabel(key string) map[string]string {
+	if key == "" {
+		return nil
+	}
+	return map[string]string{"dbtest.key": key}
 }
 
 // terminate asks a still-running container to exit. The grace period has to

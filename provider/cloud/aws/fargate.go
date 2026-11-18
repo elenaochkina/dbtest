@@ -2,6 +2,8 @@ package aws
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -55,7 +57,7 @@ func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Han
 		return harness.Handle{}, err
 	}
 
-	out, err := r.ecs.RunTask(ctx, &ecs.RunTaskInput{
+	input := &ecs.RunTaskInput{
 		Cluster:        awssdk.String(r.cfg.cluster),
 		TaskDefinition: awssdk.String(spec.Image),
 		LaunchType:     ecstypes.LaunchTypeFargate,
@@ -72,7 +74,12 @@ func (r *fargateRunner) Run(ctx context.Context, spec harness.Spec) (harness.Han
 				Command: spec.Args,
 			}},
 		},
-	})
+	}
+	if spec.Key != "" {
+		input.StartedBy = awssdk.String(keyTag(spec.Key))
+		input.ClientToken = input.StartedBy
+	}
+	out, err := r.ecs.RunTask(ctx, input)
 	if err != nil {
 		return harness.Handle{}, fmt.Errorf("run task %q: %w", spec.Image, err)
 	}
@@ -117,8 +124,7 @@ func (r *fargateRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, err
 		return nil, err
 	}
 
-	// Both run on a fresh context, since the failure being handled here is
-	// often ctx expiring.
+	// Both run on a fresh context, since the failure being handled here is often ctx expiring.
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
 	defer cancel()
 
@@ -131,6 +137,50 @@ func (r *fargateRunner) Stop(ctx context.Context, h harness.Handle) ([]byte, err
 		return out, collectErr
 	}
 	return out, nil
+}
+
+// Find returns the task started with spec.Key, running or stopped. Stopped
+// tasks stay listed for about an hour.
+func (r *fargateRunner) Find(ctx context.Context, spec harness.Spec) (harness.Handle, bool, error) {
+	if spec.Key == "" {
+		return harness.Handle{}, false, errors.New("find needs a key")
+	}
+	for _, status := range []ecstypes.DesiredStatus{ecstypes.DesiredStatusRunning, ecstypes.DesiredStatusStopped} {
+		out, err := r.ecs.ListTasks(ctx, &ecs.ListTasksInput{
+			Cluster:       awssdk.String(r.cfg.cluster),
+			StartedBy:     awssdk.String(keyTag(spec.Key)),
+			DesiredStatus: status,
+		})
+		if err != nil {
+			return harness.Handle{}, false, fmt.Errorf("list tasks: %w", err)
+		}
+		if len(out.TaskArns) > 0 {
+			return harness.Handle{ID: out.TaskArns[0], SelfExits: spec.SelfExits}, true, nil
+		}
+	}
+	return harness.Handle{}, false, nil
+}
+
+// Exited reports whether the task is STOPPED. A task ECS no longer describes has stopped.
+func (r *fargateRunner) Exited(ctx context.Context, h harness.Handle) (bool, error) {
+	out, err := r.ecs.DescribeTasks(ctx, &ecs.DescribeTasksInput{
+		Cluster: awssdk.String(r.cfg.cluster),
+		Tasks:   []string{h.ID},
+	})
+	if err != nil {
+		return false, fmt.Errorf("describe task %s: %w", h.ID, err)
+	}
+	if len(out.Tasks) == 0 {
+		return true, nil
+	}
+	return awssdk.ToString(out.Tasks[0].LastStatus) == "STOPPED", nil
+}
+
+// keyTag returns the first 32 hex characters of key's SHA-256, which fits
+// startedBy and clientToken.
+func keyTag(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])[:32]
 }
 
 func loadFargateConfig() fargateConfig {

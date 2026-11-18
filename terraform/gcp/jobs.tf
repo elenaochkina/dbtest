@@ -1,8 +1,8 @@
 locals {
   registry = "${var.region}-docker.pkg.dev/${var.project}/${google_artifact_registry_repository.dbtest.repository_id}"
   jobs = {
-    probe = { memory = "512Mi" }
-    bench = { memory = "2Gi" }
+    probe = { cpu = "1", memory = "512Mi" }
+    bench = { cpu = "4", memory = "8Gi" }
   }
 }
 
@@ -23,7 +23,7 @@ resource "google_cloud_run_v2_job" "harness" {
       containers {
         image = "${local.registry}/${each.key}:${var.image_tag}"
         resources {
-          limits = { cpu = "1", memory = each.value.memory }
+          limits = { cpu = each.value.cpu, memory = each.value.memory }
         }
       }
 

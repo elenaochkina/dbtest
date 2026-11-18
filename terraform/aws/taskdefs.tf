@@ -38,8 +38,8 @@ resource "aws_ecs_task_definition" "bench" {
   family                   = "${var.project}-bench"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = 1024
-  memory                   = 2048
+  cpu                      = 4096
+  memory                   = 8192
   execution_role_arn       = aws_iam_role.execution.arn
 
   runtime_platform {

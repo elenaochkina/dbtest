@@ -39,6 +39,17 @@ type SaveResultInput struct {
 	Result pgbench.Result
 }
 
+// SaveTPCCInput persists one measured TPROC-C run.
+type SaveTPCCInput struct {
+	RunID            uuid.UUID
+	Provider         provider.DBServiceName
+	HighAvailability bool
+	Repetition       int
+	Bench            BenchContainerInput // warehouses, clients, ramp-up, duration
+	Build            BenchResult         // the build's elapsed_s
+	Run              BenchResult         // nopm, tpm, latencies
+}
+
 // EndRunInput closes a runs row, recording whether the run passed.
 type EndRunInput struct {
 	RunID  uuid.UUID
@@ -75,6 +86,37 @@ func (a *StateDBActivities) SaveResult(ctx context.Context, input SaveResultInpu
 func (a *StateDBActivities) EndRun(ctx context.Context, input EndRunInput) error {
 	run := &state.Run{Pool: a.statePool, ID: input.RunID, Logger: a.tel.Logger}
 	return run.End(ctx, input.Passed)
+}
+
+// SaveTPCCResult writes one measured run.
+func (a *StateDBActivities) SaveTPCCResult(ctx context.Context, input SaveTPCCInput) error {
+	return state.SaveTPCCResult(ctx, a.statePool, input.RunID, state.TPCCRow{
+		Provider:         string(input.Provider),
+		HighAvailability: input.HighAvailability,
+		Repetition:       input.Repetition,
+		Warehouses:       input.Bench.Warehouses,
+		VirtualUsers:     input.Bench.Clients,
+		RampUpSeconds:    int(input.Bench.RampUp.Seconds()),
+		DurationSeconds:  int(input.Bench.Duration.Seconds()),
+		BuildSeconds:     input.Build.ElapsedS,
+		NOPM:             input.Run.Metrics["nopm"],
+		TPM:              input.Run.Metrics["tpm"],
+		NewOrderP50Ms:    input.Run.Metrics["neword_p50_ms"],
+		NewOrderP95Ms:    input.Run.Metrics["neword_p95_ms"],
+		NewOrderP99Ms:    input.Run.Metrics["neword_p99_ms"],
+		Select1P50Ms:     optionalMetric(input.Run.Metrics, "select1_p50_ms"),
+		Select1P95Ms:     optionalMetric(input.Run.Metrics, "select1_p95_ms"),
+		Metrics:          input.Run.Metrics,
+	})
+}
+
+// optionalMetric returns the named metric, or nil when the run did not report it.
+func optionalMetric(metrics map[string]float64, name string) *float64 {
+	value, ok := metrics[name]
+	if !ok {
+		return nil
+	}
+	return &value
 }
 
 // SaveDowntimeResults writes one row per disruption.

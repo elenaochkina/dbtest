@@ -121,6 +121,7 @@ func (p *rdsservice) Provision(ctx context.Context, req provider.ProvisionReques
 		Engine:               aws.String("postgres"),
 		DBInstanceClass:      aws.String(instanceClass),
 		AllocatedStorage:     aws.Int32(allocatedStorageGiB(req)),
+		StorageType:          aws.String("gp3"),
 		MasterUsername:       aws.String(p.cfg.Username),
 		MasterUserPassword:   aws.String(password),
 		PubliclyAccessible:   aws.Bool(p.cfg.Public),

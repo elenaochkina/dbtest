@@ -8,12 +8,16 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
+	"github.com/elenaochkina/dbtest/hammerdb"
 	"github.com/elenaochkina/dbtest/workload"
+	"github.com/jackc/pgx/v5"
 )
 
 // result is the contract between bench and the harness. Metrics comes straight
@@ -30,13 +34,14 @@ type result struct {
 
 func main() {
 	dsn := flag.String("dsn", "", "target database DSN (required)")
-	name := flag.String("workload", "pgbench", "workload name (pgbench, warehouse)")
+	name := flag.String("workload", "pgbench", "workload name (pgbench, warehouse, tpcc)")
 	initOnly := flag.Bool("init", false, "run only the workload's setup phase, then exit")
 	scale := flag.Int("scale", 1, "pgbench scale factor")
-	clients := flag.Int("clients", 4, "pgbench client count")
+	clients := flag.Int("clients", 4, "client count (pgbench clients, tpcc virtual users)")
 	duration := flag.Duration("duration", 30*time.Second, "how long the measured phase runs")
+	rampUp := flag.Duration("rampup", 2*time.Minute, "tpcc ramp-up before the measured phase")
 	seed := flag.Int64("seed", 42, "random seed for warehouse data")
-	warehouses := flag.Int("warehouses", 5, "number of warehouses to seed")
+	warehouses := flag.Int("warehouses", 5, "number of warehouses (warehouse, tpcc)")
 	flag.Parse()
 
 	if *dsn == "" {
@@ -56,7 +61,20 @@ func main() {
 		Duration:    *duration,
 	}
 
-	res, err := run(ctx, *dsn, workload.WorkloadName(*name), *initOnly, cfg)
+	var (
+		res result
+		err error
+	)
+	if *name == "tpcc" {
+		res, err = runTPCC(ctx, *dsn, *initOnly, hammerdb.Config{
+			Warehouses: *warehouses,
+			Clients:    *clients,
+			RampUp:     *rampUp,
+			Duration:   *duration,
+		})
+	} else {
+		res, err = run(ctx, *dsn, workload.WorkloadName(*name), *initOnly, cfg)
+	}
 	// The result line is printed on every path, including failure.
 	if err != nil {
 		res.Aborted = true
@@ -103,6 +121,57 @@ func run(ctx context.Context, dsn string, name workload.WorkloadName, initOnly b
 		res.Metrics = out.Metrics()
 	}
 	return res, nil
+}
+
+// runTPCC builds the TPROC-C schema, or runs the timed driver, with HammerDB.
+func runTPCC(ctx context.Context, dsn string, initOnly bool, cfg hammerdb.Config) (res result, err error) {
+	res = result{Workload: "tpcc", Phase: "run"}
+	if initOnly {
+		res.Phase = "init"
+	}
+
+	start := time.Now()
+	defer func() { res.ElapsedS = time.Since(start).Seconds() }()
+
+	if initOnly {
+		return res, hammerdb.Initialize(ctx, dsn, cfg)
+	}
+	baseline, err := roundTrip(ctx, dsn)
+	if err != nil {
+		return res, fmt.Errorf("select 1 baseline: %w", err)
+	}
+	out, err := hammerdb.Run(ctx, dsn, cfg)
+	if err != nil {
+		return res, err
+	}
+	res.Metrics = out.Metrics()
+	maps.Copy(res.Metrics, baseline)
+	return res, nil
+}
+
+// roundTrip times 1000 SELECT 1 queries on one connection and returns their
+// p50 and p95 in milliseconds.
+func roundTrip(ctx context.Context, dsn string) (map[string]float64, error) {
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close(ctx)
+
+	times := make([]time.Duration, 1000)
+	for i := range times {
+		start := time.Now()
+		if _, err := conn.Exec(ctx, "SELECT 1"); err != nil {
+			return nil, err
+		}
+		times[i] = time.Since(start)
+	}
+	slices.Sort(times)
+	milliseconds := func(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+	return map[string]float64{
+		"select1_p50_ms": milliseconds(times[len(times)/2]),
+		"select1_p95_ms": milliseconds(times[len(times)*95/100]),
+	}, nil
 }
 
 // emit writes the result to stdout

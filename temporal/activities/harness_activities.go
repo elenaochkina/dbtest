@@ -2,9 +2,11 @@ package activities
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/elenaochkina/dbtest/harness"
@@ -12,6 +14,7 @@ import (
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/provider/cloud"
 	"github.com/elenaochkina/dbtest/telemetry"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -54,9 +57,24 @@ type BenchContainerInput struct {
 	// DSN addresses the database as a sibling container sees it, which is not the
 	// address the worker uses.
 	DSN      string
-	Workload string // pgbench or warehouse
+	Workload string // pgbench, warehouse or tpcc
+	Init     bool   // runs only the setup phase
 	// Scale sets how much data pgbench writes.
-	Scale int
+	Scale      int
+	Warehouses int
+	Clients    int
+	Duration   time.Duration
+	RampUp     time.Duration
+}
+
+// BenchResult is the JSON line bench prints when it exits.
+type BenchResult struct {
+	Workload string             `json:"workload"`
+	Phase    string             `json:"phase"`
+	Metrics  map[string]float64 `json:"metrics,omitempty"`
+	ElapsedS float64            `json:"elapsed_s"`
+	Aborted  bool               `json:"aborted"`
+	Error    string             `json:"error,omitempty"`
 }
 
 // ContainerInput is the input to a Stop activity.
@@ -107,8 +125,7 @@ func (a *HarnessActivities) runner(cloudName provider.CloudName, name harness.Ru
 }
 
 // StartProbe launches the prober and returns once it is running.
-// The prober polls until it is stopped, so the workflow holds the handle across
-// the disruptions.
+// The prober polls until it is stopped, so the workflow holds the handle across the disruptions.
 func (a *HarnessActivities) StartProbe(ctx context.Context, input ProbeInput) (harness.Handle, error) {
 	r, err := a.runner(input.Cloud, input.Runner)
 	if err != nil {
@@ -171,6 +188,7 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 		return err
 	}
 
+	input.Init = true
 	h, err := r.Run(ctx, benchSpec(input))
 	if err != nil {
 		return fmt.Errorf("start seed: %w", err)
@@ -196,6 +214,103 @@ func (a *HarnessActivities) InitializeBenchContainer(ctx context.Context, input 
 			slog.Int("scale", input.Scale),
 			slog.String("output", harness.Tail(out)),
 		)
+	}
+	return nil
+}
+
+// StartBench returns the bench container launched with this activity's key,
+// starting it if no earlier attempt did. It returns once the container is
+// running.
+func (a *HarnessActivities) StartBench(ctx context.Context, input BenchContainerInput) (harness.Handle, error) {
+	r, err := a.runner(input.Cloud, input.Runner)
+	if err != nil {
+		return harness.Handle{}, err
+	}
+	info := activity.GetInfo(ctx)
+	spec := benchSpec(input)
+	spec.Key = info.WorkflowExecution.RunID + "-" + info.ActivityID
+
+	h, found, err := r.Find(ctx, spec)
+	if err != nil {
+		return harness.Handle{}, fmt.Errorf("find bench: %w", err)
+	}
+	if !found {
+		if h, err = r.Run(ctx, spec); err != nil {
+			return harness.Handle{}, fmt.Errorf("start bench: %w", err)
+		}
+	}
+	if a.tel != nil {
+		a.tel.Logger.Info("bench started",
+			slog.String("container_id", h.ID),
+			slog.Bool("found", found),
+			slog.String("workload", input.Workload),
+			slog.Bool("init", input.Init),
+		)
+	}
+	return h, nil
+}
+
+// WaitForBenchResult polls the bench container until it exits, heartbeating on
+// each poll, then collects and parses its result line. It never starts a
+// container, so a retry attaches to the same one.
+func (a *HarnessActivities) WaitForBenchResult(ctx context.Context, input ContainerInput) (BenchResult, error) {
+	r, err := a.runner(input.Cloud, input.Runner)
+	if err != nil {
+		return BenchResult{}, err
+	}
+	for {
+		activity.RecordHeartbeat(ctx)
+		exited, err := r.Exited(ctx, input.Handle)
+		if err != nil {
+			return BenchResult{}, err
+		}
+		if exited {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return BenchResult{}, ctx.Err()
+		case <-time.After(15 * time.Second):
+		}
+	}
+
+	out, stopErr := r.Stop(ctx, input.Handle)
+	res, parseErr := parseBench(out)
+	if parseErr != nil {
+		if stopErr != nil {
+			return BenchResult{}, fmt.Errorf("bench: %w", stopErr)
+		}
+		return BenchResult{}, fmt.Errorf("%w: %s", parseErr, harness.Tail(out))
+	}
+	if res.Error != "" {
+		return BenchResult{}, temporal.NewNonRetryableApplicationError(
+			"bench failed: "+res.Error, "BenchFailed", nil)
+	}
+	if a.tel != nil {
+		a.tel.Logger.Info("bench finished",
+			slog.String("workload", res.Workload),
+			slog.String("phase", res.Phase),
+			slog.Float64("elapsed_s", res.ElapsedS),
+		)
+	}
+	return res, nil
+}
+
+// StopBench terminates the bench container and succeeds once it has exited.
+func (a *HarnessActivities) StopBench(ctx context.Context, input ContainerInput) error {
+	r, err := a.runner(input.Cloud, input.Runner)
+	if err != nil {
+		return err
+	}
+	h := input.Handle
+	h.SelfExits = false
+	_, stopErr := r.Stop(ctx, h)
+	exited, err := r.Exited(ctx, h)
+	if err != nil {
+		return err
+	}
+	if !exited {
+		return fmt.Errorf("bench %s still running after stop: %v", h.ID, stopErr)
 	}
 	return nil
 }
@@ -253,18 +368,48 @@ func probeSpec(in ProbeInput) harness.Spec {
 }
 
 func benchSpec(in BenchContainerInput) harness.Spec {
-	args := []string{"-dsn", in.DSN, "-init"}
+	args := []string{"-dsn", in.DSN}
+	if in.Init {
+		args = append(args, "-init")
+	}
 	if in.Workload != "" {
 		args = append(args, "-workload", in.Workload)
 	}
 	if in.Scale > 0 {
 		args = append(args, "-scale", strconv.Itoa(in.Scale))
 	}
+	if in.Warehouses > 0 {
+		args = append(args, "-warehouses", strconv.Itoa(in.Warehouses))
+	}
+	if in.Clients > 0 {
+		args = append(args, "-clients", strconv.Itoa(in.Clients))
+	}
+	if in.Duration > 0 {
+		args = append(args, "-duration", in.Duration.String())
+	}
+	if in.Workload == "tpcc" {
+		args = append(args, "-rampup", in.RampUp.String())
+	}
 	return harness.Spec{
-		Image: in.Image,
-		Name:  in.Name,
-		Args:  args,
-		// Seeding ends on its own, so Stop waits for it.
+		Image:     in.Image,
+		Name:      in.Name,
+		Args:      args,
 		SelfExits: true,
 	}
+}
+
+// parseBench returns the last JSON line of bench's output.
+func parseBench(out []byte) (BenchResult, error) {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var res BenchResult
+		if err := json.Unmarshal([]byte(line), &res); err == nil {
+			return res, nil
+		}
+	}
+	return BenchResult{}, fmt.Errorf("no bench result in %d lines of output", len(lines))
 }

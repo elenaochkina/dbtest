@@ -7,6 +7,9 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/bench ./cmd/bench
 
+FROM tpcorg/hammerdb:v6.1.1-postgres AS hammerdb
+
 FROM postgres:18
+COPY --from=hammerdb /home/hammerdb /opt/hammerdb
 COPY --from=build /out/bench /usr/local/bin/bench
 ENTRYPOINT ["bench"]

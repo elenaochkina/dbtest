@@ -118,6 +118,34 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS tpcc_results (
+			id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id           UUID        NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+			provider          TEXT        NOT NULL,
+			high_availability BOOLEAN     NOT NULL,
+			repetition       INT         NOT NULL,
+			warehouses       INT         NOT NULL,
+			virtual_users    INT         NOT NULL,
+			rampup_seconds   INT         NOT NULL,
+			duration_seconds INT         NOT NULL,
+			build_seconds    FLOAT8      NOT NULL,
+			nopm             FLOAT8      NOT NULL,
+			tpm              FLOAT8      NOT NULL,
+			neword_p50_ms    FLOAT8      NOT NULL,
+			neword_p95_ms    FLOAT8      NOT NULL,
+			neword_p99_ms    FLOAT8      NOT NULL,
+			select1_p50_ms   FLOAT8,
+			select1_p95_ms   FLOAT8,
+			metrics          JSONB       NOT NULL,
+			created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE (run_id, repetition)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate tpcc_results table: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS clusters (
 			id               TEXT        PRIMARY KEY,
 			provider         TEXT        NOT NULL,
