@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/elenaochkina/dbtest/experiment/search"
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/probe"
 	"github.com/elenaochkina/dbtest/provider"
@@ -66,17 +67,7 @@ type BenchContainerInput struct {
 	Duration   time.Duration
 	RampUp     time.Duration
 	// Search runs the tester image's client search instead of one bench run.
-	Search *SearchSettings
-}
-
-// SearchSettings are the tester's search bounds; see hammerdb.SearchConfig.
-type SearchSettings struct {
-	MinClients int
-	MaxClients int
-	Resolution int
-	MaxProbes  int
-	Tolerance  float64
-	Threshold  float64
+	Search *search.Config
 }
 
 // BenchResult is the JSON line bench prints when it exits.
@@ -425,19 +416,19 @@ func benchSpec(in BenchContainerInput) harness.Spec {
 
 // testerSpec runs the tester image's client search.
 func testerSpec(in BenchContainerInput) harness.Spec {
-	search := in.Search
+	settings := in.Search
 	return harness.Spec{
 		Image: in.Image,
 		Name:  in.Name,
 		Args: []string{
 			"-dsn", in.DSN,
 			"-warehouses", strconv.Itoa(in.Warehouses),
-			"-min-clients", strconv.Itoa(search.MinClients),
-			"-max-clients", strconv.Itoa(search.MaxClients),
-			"-resolution", strconv.Itoa(search.Resolution),
-			"-max-probes", strconv.Itoa(search.MaxProbes),
-			"-tolerance", strconv.FormatFloat(search.Tolerance, 'f', -1, 64),
-			"-threshold", strconv.FormatFloat(search.Threshold, 'f', -1, 64),
+			"-min-clients", strconv.Itoa(settings.MinClients),
+			"-max-clients", strconv.Itoa(settings.MaxClients),
+			"-resolution", strconv.Itoa(settings.Resolution),
+			"-max-probes", strconv.Itoa(settings.MaxProbes),
+			"-tolerance", strconv.FormatFloat(settings.Tolerance, 'f', -1, 64),
+			"-threshold", strconv.FormatFloat(settings.Threshold, 'f', -1, 64),
 			"-rampup", in.RampUp.String(),
 			"-duration", in.Duration.String(),
 		},

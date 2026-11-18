@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elenaochkina/dbtest/experiment/search"
 	"github.com/elenaochkina/dbtest/harness"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/activities"
@@ -102,7 +103,7 @@ var searchConfig = HammerDBSearchWorkflowConfig{
 	Warehouses: 32,
 	RampUp:     time.Minute,
 	Duration:   3 * time.Minute,
-	Search: activities.SearchSettings{
+	Search: search.Config{
 		MinClients: 8, MaxClients: 128, Resolution: 4, MaxProbes: 12, Tolerance: 0.03, Threshold: 0.95,
 	},
 	BuildTimeout: time.Hour,

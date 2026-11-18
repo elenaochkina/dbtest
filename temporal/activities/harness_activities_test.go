@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/elenaochkina/dbtest/experiment/search"
 )
 
 func TestParseBench(t *testing.T) {
@@ -48,7 +50,7 @@ func TestTesterSpec(t *testing.T) {
 		Warehouses: 32,
 		Duration:   3 * time.Minute,
 		RampUp:     time.Minute,
-		Search: &SearchSettings{
+		Search: &search.Config{
 			MinClients: 8, MaxClients: 128, Resolution: 4, MaxProbes: 12, Tolerance: 0.03, Threshold: 0.95,
 		},
 	})

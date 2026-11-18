@@ -1,4 +1,6 @@
-package hammerdb
+// Package search finds the client count with the most throughput by running
+// a timed benchmark at chosen client counts.
+package search
 
 import (
 	"context"
@@ -6,43 +8,43 @@ import (
 	"slices"
 )
 
-// SearchConfig bounds a client search.
-type SearchConfig struct {
+// Config bounds a client search.
+type Config struct {
 	MinClients int
 	MaxClients int
 	// Resolution is the client gap at which a bisection stops.
 	Resolution int
 	// MaxProbes caps the timed runs, not counting the final drift run.
 	MaxProbes int
-	// Tolerance is the NOPM fraction within which two runs count as equal.
+	// Tolerance is the throughput fraction within which two runs count as equal.
 	Tolerance float64
-	// Threshold is the fraction of peak NOPM that marks saturation and decline.
+	// Threshold is the fraction of peak throughput that marks saturation and decline.
 	Threshold float64
 }
 
 // Probe is one timed run at a client count.
 type Probe struct {
-	Clients int
-	Result  Result
+	Clients    int
+	Throughput float64
 }
 
-// SearchResult holds every probe and the client counts found from them.
-type SearchResult struct {
+// Result holds every probe and the client counts found from them.
+type Result struct {
 	Probes []Probe
-	// PeakClients is the fewest clients within Tolerance of the highest NOPM.
-	PeakClients int
-	PeakNOPM    float64
-	// SaturationClients is the fewest clients reaching Threshold of PeakNOPM.
+	// PeakClients is the fewest clients within Tolerance of the highest throughput.
+	PeakClients    int
+	PeakThroughput float64
+	// SaturationClients is the fewest clients reaching Threshold of PeakThroughput.
 	SaturationClients int
 	// DeclineClients is the fewest clients above the peak below Threshold of
-	// PeakNOPM, or 0 when no probe up to MaxClients fell that far.
+	// PeakThroughput, or 0 when no probe up to MaxClients fell that far.
 	DeclineClients int
-	// Drift is the NOPM change when PeakClients runs again at the end.
+	// Drift is the throughput change when PeakClients runs again at the end.
 	Drift float64
 }
 
-// Validate reports a config Search cannot use.
-func (cfg SearchConfig) Validate() error {
+// Validate reports a config Run cannot use.
+func (cfg Config) Validate() error {
 	switch {
 	case cfg.MinClients < 1 || cfg.MaxClients < cfg.MinClients:
 		return errors.New("search needs 1 <= min clients <= max clients")
@@ -58,61 +60,61 @@ func (cfg SearchConfig) Validate() error {
 	return nil
 }
 
-// Search runs the timed driver at chosen client counts to find the peak,
-// saturation and decline points. It doubles clients from MinClients until NOPM
-// falls below Threshold of the best run, bisects around the best run, then
+// Run runs probe at chosen client counts to find the peak, saturation and
+// decline points. It doubles clients from MinClients until throughput falls
+// below Threshold of the best run, bisects around the best run, then
 // bisects the rising side for saturation and the falling side for decline.
 // It runs no client count twice except the peak, once more at the end, to
-// measure drift. probe runs one client count. On an error Search returns the
-// probes so far with it.
-func Search(ctx context.Context, cfg SearchConfig, probe func(context.Context, int) (Result, error)) (SearchResult, error) {
+// measure drift. probe runs one client count and returns its throughput. On
+// an error Run returns the probes so far with it.
+func Run(ctx context.Context, cfg Config, probe func(context.Context, int) (float64, error)) (Result, error) {
 	if err := cfg.Validate(); err != nil {
-		return SearchResult{}, err
+		return Result{}, err
 	}
-	s := &search{cfg: cfg, probe: probe, nopm: map[int]float64{}}
+	s := &searcher{cfg: cfg, probe: probe, throughput: map[int]float64{}}
 	if err := s.run(ctx); err != nil {
 		return s.result(), err
 	}
 	res := s.result()
-	if res.PeakNOPM == 0 {
-		return res, errors.New("search: no run completed any new orders")
+	if res.PeakThroughput == 0 {
+		return res, errors.New("search: no run had any throughput")
 	}
 	again, err := probe(ctx, res.PeakClients)
 	if err != nil {
 		return res, err
 	}
-	res.Drift = (again.NOPM - res.PeakNOPM) / res.PeakNOPM
+	res.Drift = (again - res.PeakThroughput) / res.PeakThroughput
 	return res, nil
 }
 
-type search struct {
-	cfg    SearchConfig
-	probe  func(context.Context, int) (Result, error)
-	probes []Probe
-	nopm   map[int]float64
+type searcher struct {
+	cfg        Config
+	probe      func(context.Context, int) (float64, error)
+	probes     []Probe
+	throughput map[int]float64
 }
 
 var errBudget = errors.New("probe budget spent")
 
-// measure runs clients once and returns its NOPM.
-func (s *search) measure(ctx context.Context, clients int) (float64, error) {
-	if nopm, ok := s.nopm[clients]; ok {
-		return nopm, nil
+// measure runs clients once and returns its throughput.
+func (s *searcher) measure(ctx context.Context, clients int) (float64, error) {
+	if throughput, ok := s.throughput[clients]; ok {
+		return throughput, nil
 	}
 	if len(s.probes) >= s.cfg.MaxProbes {
 		return 0, errBudget
 	}
-	res, err := s.probe(ctx, clients)
+	throughput, err := s.probe(ctx, clients)
 	if err != nil {
 		return 0, err
 	}
-	s.probes = append(s.probes, Probe{Clients: clients, Result: res})
-	s.nopm[clients] = res.NOPM
-	return res.NOPM, nil
+	s.probes = append(s.probes, Probe{Clients: clients, Throughput: throughput})
+	s.throughput[clients] = throughput
+	return throughput, nil
 }
 
 // run probes until every bisection reaches Resolution or the budget is spent.
-func (s *search) run(ctx context.Context) error {
+func (s *searcher) run(ctx context.Context) error {
 	err := s.bracket(ctx)
 	if err == nil {
 		err = s.refinePeak(ctx)
@@ -129,17 +131,17 @@ func (s *search) run(ctx context.Context) error {
 	return err
 }
 
-// bracket doubles clients until NOPM falls below Threshold of the best run.
-func (s *search) bracket(ctx context.Context) error {
+// bracket doubles clients until throughput falls below Threshold of the best run.
+func (s *searcher) bracket(ctx context.Context) error {
 	best := 0.0
 	for clients := s.cfg.MinClients; ; clients *= 2 {
 		clients = min(clients, s.cfg.MaxClients)
-		nopm, err := s.measure(ctx, clients)
+		throughput, err := s.measure(ctx, clients)
 		if err != nil {
 			return err
 		}
-		best = max(best, nopm)
-		if nopm < s.cfg.Threshold*best || clients == s.cfg.MaxClients {
+		best = max(best, throughput)
+		if throughput < s.cfg.Threshold*best || clients == s.cfg.MaxClients {
 			return nil
 		}
 	}
@@ -148,7 +150,7 @@ func (s *search) bracket(ctx context.Context) error {
 // refinePeak bisects the gaps beside the best run, the higher neighbour first.
 // A neighbour above within Tolerance of the peak is a plateau, and its gap is
 // left alone.
-func (s *search) refinePeak(ctx context.Context) error {
+func (s *searcher) refinePeak(ctx context.Context) error {
 	for {
 		peak := s.peak()
 		below, above := s.neighbours(peak)
@@ -156,14 +158,14 @@ func (s *search) refinePeak(ctx context.Context) error {
 		if below > 0 && peak-below > s.cfg.Resolution {
 			gaps = append(gaps, [2]int{below, peak})
 		}
-		plateau := s.nopm[above] >= (1-s.cfg.Tolerance)*s.nopm[peak]
+		plateau := s.throughput[above] >= (1-s.cfg.Tolerance)*s.throughput[peak]
 		if above > 0 && above-peak > s.cfg.Resolution && !plateau {
 			gaps = append(gaps, [2]int{peak, above})
 		}
 		if len(gaps) == 0 {
 			return nil
 		}
-		if len(gaps) == 2 && s.nopm[above] > s.nopm[below] {
+		if len(gaps) == 2 && s.throughput[above] > s.throughput[below] {
 			gaps[0], gaps[1] = gaps[1], gaps[0]
 		}
 		if _, err := s.measure(ctx, (gaps[0][0]+gaps[0][1])/2); err != nil {
@@ -174,16 +176,16 @@ func (s *search) refinePeak(ctx context.Context) error {
 
 // refineSaturation bisects between the last run below the threshold and the
 // first at or above it, on the rising side of the peak.
-func (s *search) refineSaturation(ctx context.Context) error {
+func (s *searcher) refineSaturation(ctx context.Context) error {
 	for {
 		peak := s.peak()
-		target := s.cfg.Threshold * s.nopm[peak]
+		target := s.cfg.Threshold * s.throughput[peak]
 		low, high := 0, peak
 		for _, clients := range s.measured() {
 			if clients > peak {
 				break
 			}
-			if s.nopm[clients] < target {
+			if s.throughput[clients] < target {
 				low, high = clients, peak
 			} else if low > 0 && clients < high {
 				high = clients
@@ -200,16 +202,16 @@ func (s *search) refineSaturation(ctx context.Context) error {
 
 // refineDecline bisects between the peak and the first run above it that is
 // below the threshold.
-func (s *search) refineDecline(ctx context.Context) error {
+func (s *searcher) refineDecline(ctx context.Context) error {
 	for {
 		peak := s.peak()
-		target := s.cfg.Threshold * s.nopm[peak]
+		target := s.cfg.Threshold * s.throughput[peak]
 		low, high := peak, 0
 		for _, clients := range s.measured() {
 			if clients <= peak {
 				continue
 			}
-			if s.nopm[clients] < target {
+			if s.throughput[clients] < target {
 				high = clients
 				break
 			}
@@ -225,23 +227,23 @@ func (s *search) refineDecline(ctx context.Context) error {
 }
 
 // measured returns the client counts run so far, ascending.
-func (s *search) measured() []int {
-	counts := make([]int, 0, len(s.nopm))
-	for clients := range s.nopm {
+func (s *searcher) measured() []int {
+	counts := make([]int, 0, len(s.throughput))
+	for clients := range s.throughput {
 		counts = append(counts, clients)
 	}
 	slices.Sort(counts)
 	return counts
 }
 
-// peak returns the fewest clients within Tolerance of the highest NOPM.
-func (s *search) peak() int {
+// peak returns the fewest clients within Tolerance of the highest throughput.
+func (s *searcher) peak() int {
 	best := 0.0
-	for _, nopm := range s.nopm {
-		best = max(best, nopm)
+	for _, throughput := range s.throughput {
+		best = max(best, throughput)
 	}
 	for _, clients := range s.measured() {
-		if s.nopm[clients] >= (1-s.cfg.Tolerance)*best {
+		if s.throughput[clients] >= (1-s.cfg.Tolerance)*best {
 			return clients
 		}
 	}
@@ -250,7 +252,7 @@ func (s *search) peak() int {
 
 // neighbours returns the measured client counts just below and above clients,
 // or 0 where there is none.
-func (s *search) neighbours(clients int) (int, int) {
+func (s *searcher) neighbours(clients int) (int, int) {
 	below, above := 0, 0
 	for _, c := range s.measured() {
 		if c < clients {
@@ -264,19 +266,19 @@ func (s *search) neighbours(clients int) (int, int) {
 }
 
 // result derives the peak, saturation and decline from every probe so far.
-func (s *search) result() SearchResult {
-	res := SearchResult{Probes: s.probes}
-	if len(s.nopm) == 0 {
+func (s *searcher) result() Result {
+	res := Result{Probes: s.probes}
+	if len(s.throughput) == 0 {
 		return res
 	}
 	res.PeakClients = s.peak()
-	res.PeakNOPM = s.nopm[res.PeakClients]
-	target := s.cfg.Threshold * res.PeakNOPM
+	res.PeakThroughput = s.throughput[res.PeakClients]
+	target := s.cfg.Threshold * res.PeakThroughput
 	for _, clients := range s.measured() {
-		if clients <= res.PeakClients && res.SaturationClients == 0 && s.nopm[clients] >= target {
+		if clients <= res.PeakClients && res.SaturationClients == 0 && s.throughput[clients] >= target {
 			res.SaturationClients = clients
 		}
-		if clients > res.PeakClients && res.DeclineClients == 0 && s.nopm[clients] < target {
+		if clients > res.PeakClients && res.DeclineClients == 0 && s.throughput[clients] < target {
 			res.DeclineClients = clients
 		}
 	}

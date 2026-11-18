@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/elenaochkina/dbtest/experiment/search"
 	"github.com/elenaochkina/dbtest/hammerdb"
 )
 
@@ -66,7 +67,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	cfg := hammerdb.SearchConfig{
+	cfg := search.Config{
 		MinClients: *minClients,
 		MaxClients: *maxClients,
 		Resolution: *resolution,
@@ -95,13 +96,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	found, err := hammerdb.Search(ctx, cfg, func(ctx context.Context, clients int) (hammerdb.Result, error) {
+	found, err := search.Run(ctx, cfg, func(ctx context.Context, clients int) (float64, error) {
 		maintenanceSeconds := 0.0
 		if *maintenance {
 			maintenanceStart := time.Now()
 			checkpointed, err := hammerdb.Maintain(ctx, *dsn, base)
 			if err != nil {
-				return hammerdb.Result{}, fmt.Errorf("maintenance before %d clients: %w", clients, err)
+				return 0, fmt.Errorf("maintenance before %d clients: %w", clients, err)
 			}
 			maintenanceSeconds = time.Since(maintenanceStart).Seconds()
 			slog.Info("maintenance done", "clients", clients, "seconds", maintenanceSeconds, "checkpoint", checkpointed)
@@ -114,7 +115,7 @@ func main() {
 			Duration:   *duration,
 		})
 		if err != nil {
-			return out, fmt.Errorf("%d clients: %w", clients, err)
+			return 0, fmt.Errorf("%d clients: %w", clients, err)
 		}
 		p := probe{Clients: clients, Metrics: out.Metrics(), ElapsedS: time.Since(runStart).Seconds()}
 		maps.Copy(p.Metrics, baseline)
@@ -130,13 +131,13 @@ func main() {
 			Phase    string `json:"phase"`
 			probe
 		}{"tpcc", "probe", p})
-		return out, nil
+		return out.NOPM, nil
 	})
 	res.ElapsedS = time.Since(start).Seconds()
 	if found.PeakClients > 0 {
 		res.Metrics = map[string]float64{
 			"peak_clients":       float64(found.PeakClients),
-			"peak_nopm":          found.PeakNOPM,
+			"peak_nopm":          found.PeakThroughput,
 			"saturation_clients": float64(found.SaturationClients),
 			"decline_clients":    float64(found.DeclineClients),
 			"drift":              found.Drift,

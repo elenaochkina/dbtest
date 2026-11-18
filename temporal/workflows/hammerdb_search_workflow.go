@@ -3,7 +3,7 @@ package workflows
 import (
 	"time"
 
-	"github.com/elenaochkina/dbtest/hammerdb"
+	"github.com/elenaochkina/dbtest/experiment/search"
 	"github.com/elenaochkina/dbtest/provider"
 	"github.com/elenaochkina/dbtest/temporal/activities"
 	"go.temporal.io/sdk/temporal"
@@ -18,7 +18,7 @@ type HammerDBSearchWorkflowConfig struct {
 	// RampUp and Duration apply to each timed run of the search.
 	RampUp       time.Duration
 	Duration     time.Duration
-	Search       activities.SearchSettings
+	Search       search.Config
 	BuildTimeout time.Duration
 }
 
@@ -26,15 +26,7 @@ type HammerDBSearchWorkflowConfig struct {
 // throughput on one database. It builds the schema with the bench image, runs
 // the tester image's search, and records each timed run and the search result.
 func HammerDBSearchWorkflow(ctx workflow.Context, cfg HammerDBSearchWorkflowConfig) error {
-	search := cfg.Search
-	if err := (hammerdb.SearchConfig{
-		MinClients: search.MinClients,
-		MaxClients: search.MaxClients,
-		Resolution: search.Resolution,
-		MaxProbes:  search.MaxProbes,
-		Tolerance:  search.Tolerance,
-		Threshold:  search.Threshold,
-	}).Validate(); err != nil {
+	if err := cfg.Search.Validate(); err != nil {
 		return temporal.NewNonRetryableApplicationError(err.Error(), "InvalidConfig", nil)
 	}
 	if cfg.Warehouses < 1 || cfg.Duration < time.Minute || cfg.BuildTimeout <= 0 {
@@ -74,12 +66,12 @@ func HammerDBSearchWorkflow(ctx workflow.Context, cfg HammerDBSearchWorkflowConf
 			Warehouses: cfg.Warehouses,
 			RampUp:     cfg.RampUp,
 			Duration:   cfg.Duration,
-			Search:     &search,
+			Search:     &cfg.Search,
 		}
 		// Each run, the final drift run included, takes maintenance, ramp-up,
 		// duration and HammerDB's start and stop.
 		perRun := cfg.RampUp + cfg.Duration + 8*time.Minute
-		timeout := time.Duration(search.MaxProbes+1)*perRun + 15*time.Minute
+		timeout := time.Duration(cfg.Search.MaxProbes+1)*perRun + 15*time.Minute
 		result, err := runBench(ctx, harn, tester, timeout)
 		if err != nil {
 			return err
