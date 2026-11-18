@@ -1,5 +1,5 @@
 # Image for cmd/tester, which searches for the client count with the most
-# TPROC-C throughput.
+# HammerDB TPROC-C or pgbench throughput.
 FROM golang:1.25 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
