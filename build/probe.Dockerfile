@@ -1,7 +1,7 @@
 # Image for cmd/probe, the availability prober.
 #
 # Unlike bench it needs no pgbench, so the runtime is a static base rather than
-# postgres:16 — a couple of MB instead of ~680. distroless/static carries CA
+# postgres:18 — a couple of MB instead of ~680. distroless/static carries CA
 # certificates, which RDS needs for TLS.
 FROM golang:1.25 AS build
 WORKDIR /src

@@ -74,7 +74,7 @@ export AWS_PROFILE=dbtest
 make aws-cidr     # writes this machine's public IP to terraform/aws/terraform.tfvars and plans
 make aws-apply
 make env          # writes .env from the terraform/aws outputs and the GCP settings
-make push         # needs config.mk; see the Makefile
+make aws-push     # needs config.mk; see the Makefile
 ```
 
 Run `make env` after every apply that replaces a security group; the worker
@@ -115,7 +115,7 @@ Destroy `aws` before `aws-bootstrap`, which removes the `dbtest` role.
 - The policies match resources by the `dbtest` prefix and the
   `Project = dbtest` tag. Changing `var.project` in `aws/` needs the same
   change in both JSON files.
-- The `dbtest` role covers what Terraform, `make push` and the worker call,
+- The `dbtest` role covers what Terraform, `make aws-push` and the worker call,
   not the AWS console. Use an admin login to browse.
 - `terraform.tfvars` and state files are git-ignored. Keep account IDs out of
   committed files.

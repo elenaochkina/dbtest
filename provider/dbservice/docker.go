@@ -46,7 +46,7 @@ func (dockerRegistration) Build(c cloud.Cloud, tel *telemetry.Telemetry) (DBServ
 	}
 	img := os.Getenv("DOCKER_PG_IMAGE")
 	if img == "" {
-		img = "postgres:16"
+		img = "postgres:18"
 	}
 	return &dockerservice{client: local.Client(), image: img, cloud: c, tel: tel}, nil
 }
