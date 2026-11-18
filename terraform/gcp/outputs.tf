@@ -8,5 +8,6 @@ output "worker_env" {
   value       = <<-EOT
     export GCP_CLOUDRUN_PROBE_JOB=${google_cloud_run_v2_job.harness["probe"].name}
     export GCP_CLOUDRUN_BENCH_JOB=${google_cloud_run_v2_job.harness["bench"].name}
+    export GCP_CLOUDRUN_TESTER_JOB=${google_cloud_run_v2_job.harness["tester"].name}
   EOT
 }
