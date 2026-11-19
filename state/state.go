@@ -146,6 +146,51 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS searches (
+			id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id             UUID        NOT NULL UNIQUE REFERENCES runs(id) ON DELETE CASCADE,
+			tool               TEXT        NOT NULL,
+			provider           TEXT        NOT NULL,
+			high_availability  BOOLEAN     NOT NULL,
+			warehouses         INT,
+			scale              INT,
+			rampup_seconds     INT         NOT NULL,
+			duration_seconds   INT         NOT NULL,
+			build_seconds      FLOAT8      NOT NULL,
+			min_clients        INT         NOT NULL,
+			max_clients        INT         NOT NULL,
+			threshold          FLOAT8      NOT NULL,
+			peak_clients       INT         NOT NULL,
+			peak_throughput    FLOAT8      NOT NULL,
+			saturation_clients INT         NOT NULL,
+			decline_clients    INT,
+			trials             INT         NOT NULL,
+			drift              FLOAT8      NOT NULL,
+			created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate searches table: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS search_trials (
+			id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			run_id     UUID        NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+			trial      INT         NOT NULL,
+			clients    INT         NOT NULL,
+			repeat     BOOLEAN     NOT NULL,
+			throughput FLOAT8      NOT NULL,
+			metrics    JSONB       NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			UNIQUE (run_id, trial)
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate search_trials table: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS clusters (
 			id               TEXT        PRIMARY KEY,
 			provider         TEXT        NOT NULL,

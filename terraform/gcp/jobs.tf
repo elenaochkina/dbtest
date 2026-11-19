@@ -1,8 +1,9 @@
 locals {
   registry = "${var.region}-docker.pkg.dev/${var.project}/${google_artifact_registry_repository.dbtest.repository_id}"
   jobs = {
-    probe = { cpu = "1", memory = "512Mi" }
-    bench = { cpu = "4", memory = "8Gi" }
+    probe  = { cpu = "1", memory = "512Mi" }
+    bench  = { cpu = "4", memory = "8Gi" }
+    tester = { cpu = "4", memory = "8Gi" }
   }
 }
 

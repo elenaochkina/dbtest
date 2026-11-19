@@ -9,11 +9,18 @@ import (
 // Result holds the summary output from a single pgbench run.
 // It contains no database IDs — those belong to the state store.
 type Result struct {
-	TPS             float64
+	TPS float64
+	// TPSNoise is the standard deviation of the 5-second TPS intervals as a
+	// fraction of TPS.
+	TPSNoise        float64
 	LatencyAvgMs    float64
 	LatencyStddevMs float64
+	LatencyP50Ms    float64
+	LatencyP95Ms    float64
+	LatencyP99Ms    float64
 	ScaleFactor     int
 	Clients         int
+	Threads         int
 	Duration        time.Duration
 	Provider        string
 }
@@ -24,8 +31,13 @@ type Result struct {
 func (r Result) Metrics() map[string]float64 {
 	return map[string]float64{
 		"tps":               r.TPS,
+		"tps_noise":         r.TPSNoise,
 		"latency_avg_ms":    r.LatencyAvgMs,
 		"latency_stddev_ms": r.LatencyStddevMs,
+		"latency_p50_ms":    r.LatencyP50Ms,
+		"latency_p95_ms":    r.LatencyP95Ms,
+		"latency_p99_ms":    r.LatencyP99Ms,
+		"threads":           float64(r.Threads),
 	}
 }
 

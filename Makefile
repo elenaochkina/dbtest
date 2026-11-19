@@ -7,6 +7,7 @@ TAG      ?= dev
 PLATFORM ?= linux/arm64
 
 BENCH_IMAGE ?= dbtest/bench:dev
+TESTER_IMAGE ?= dbtest/tester:dev
 PROBE_IMAGE ?= dbtest/probe:dev
 
 TF := terraform -chdir=terraform/aws
@@ -18,7 +19,7 @@ GCP_REGISTRY  = $(shell $(GCP_TF) output -raw registry 2>/dev/null)
 
 STATE_DSN ?= postgres://postgres:test@localhost:5433/postgres
 
-.PHONY: build test images bench-image probe-image registry-login aws-push push-bench push-probe aws-cidr aws-apply gcp-push gcp-apply env run-worker refresh
+.PHONY: build test images bench-image probe-image tester-image registry-login aws-push push-bench push-probe push-tester aws-cidr aws-apply gcp-push gcp-apply env run-worker refresh
 
 build:
 	go build ./...
@@ -26,7 +27,7 @@ build:
 test:
 	go test ./...
 
-images: bench-image probe-image
+images: bench-image probe-image tester-image
 
 # Build the load-generator image. 
 bench-image:
@@ -35,13 +36,16 @@ bench-image:
 probe-image:
 	docker build -f build/probe.Dockerfile -t $(PROBE_IMAGE) .
 
+tester-image:
+	docker build -f build/tester.Dockerfile -t $(TESTER_IMAGE) .
+
 # Push to whichever registry config.mk names. The login token is short-lived,
 # so aws-push depends on it rather than assuming a prior login.
 registry-login:
 	@$(if $(REGISTRY_LOGIN),,$(error REGISTRY_LOGIN is unset - see config.mk.example))
 	$(REGISTRY_LOGIN)
 
-aws-push: registry-login push-bench push-probe
+aws-push: registry-login push-bench push-probe push-tester
 
 push-bench:
 	@$(if $(REGISTRY),,$(error REGISTRY is unset - see config.mk.example))
@@ -53,6 +57,11 @@ push-probe:
 	docker build --platform $(PLATFORM) -f build/probe.Dockerfile -t $(REGISTRY)/probe:$(TAG) .
 	docker push $(REGISTRY)/probe:$(TAG)
 
+push-tester:
+	@$(if $(REGISTRY),,$(error REGISTRY is unset - see config.mk.example))
+	docker build --platform $(PLATFORM) -f build/tester.Dockerfile -t $(REGISTRY)/tester:$(TAG) .
+	docker push $(REGISTRY)/tester:$(TAG)
+
 # Build amd64 images for Cloud Run and push them to Artifact Registry.
 gcp-push:
 	gcloud auth configure-docker $(firstword $(subst /, ,$(GCP_REGISTRY))) --quiet
@@ -60,6 +69,8 @@ gcp-push:
 	docker push $(GCP_REGISTRY)/probe:$(TAG)
 	docker build --platform linux/amd64 -f build/bench.Dockerfile -t $(GCP_REGISTRY)/bench:$(TAG) .
 	docker push $(GCP_REGISTRY)/bench:$(TAG)
+	docker build --platform linux/amd64 -f build/tester.Dockerfile -t $(GCP_REGISTRY)/tester:$(TAG) .
+	docker push $(GCP_REGISTRY)/tester:$(TAG)
 
 # Creating a job checks that its image exists, so the registry and images come first.
 gcp-apply:

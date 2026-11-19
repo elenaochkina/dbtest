@@ -15,6 +15,13 @@ import (
 )
 
 func hammerDBEnv(t *testing.T) *testsuite.TestWorkflowEnvironment {
+	env := databaseEnv(activities.ResolvedRunner{Name: harness.Docker})
+	env.OnActivity("StartBench", mock.Anything, mock.Anything).Return(harness.Handle{ID: "c1", SelfExits: true}, nil)
+	return env
+}
+
+// databaseEnv mocks every activity of withDatabase.
+func databaseEnv(runner activities.ResolvedRunner) *testsuite.TestWorkflowEnvironment {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterActivity(&activities.StateDBActivities{})
@@ -22,13 +29,12 @@ func hammerDBEnv(t *testing.T) *testsuite.TestWorkflowEnvironment {
 	env.RegisterActivity(&activities.HarnessActivities{})
 
 	env.OnActivity("CheckSupported", mock.Anything, mock.Anything).Return(nil)
-	env.OnActivity("ResolveRunner", mock.Anything, mock.Anything).Return(activities.ResolvedRunner{Name: harness.Docker}, nil)
+	env.OnActivity("ResolveRunner", mock.Anything, mock.Anything).Return(runner, nil)
 	env.OnActivity("StartRun", mock.Anything, mock.Anything).Return(uuid.New(), nil)
 	env.OnActivity("EndRun", mock.Anything, mock.Anything).Return(nil)
 	env.OnActivity("Provision", mock.Anything, mock.Anything).Return(provider.ClusterInfo{}, nil)
 	env.OnActivity("WaitForReady", mock.Anything, mock.Anything).Return(nil)
 	env.OnActivity("Deprovision", mock.Anything, mock.Anything).Return(nil)
-	env.OnActivity("StartBench", mock.Anything, mock.Anything).Return(harness.Handle{ID: "c1", SelfExits: true}, nil)
 	return env
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -29,14 +30,26 @@ type TPCCRow struct {
 	Metrics          map[string]float64
 }
 
+// execer is a pool or a transaction.
+type execer interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
 // SaveTPCCResult writes one run. A repeated insert for the same repetition is
 // a no-op.
 func SaveTPCCResult(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, row TPCCRow) error {
+	if err := insertTPCCResult(ctx, pool, runID, row); err != nil {
+		return fmt.Errorf("SaveTPCCResult: %w", err)
+	}
+	return nil
+}
+
+func insertTPCCResult(ctx context.Context, db execer, runID uuid.UUID, row TPCCRow) error {
 	metrics, err := json.Marshal(row.Metrics)
 	if err != nil {
-		return fmt.Errorf("SaveTPCCResult: encode metrics: %w", err)
+		return fmt.Errorf("encode metrics: %w", err)
 	}
-	_, err = pool.Exec(ctx,
+	_, err = db.Exec(ctx,
 		`INSERT INTO tpcc_results
 			(run_id, provider, high_availability, repetition, warehouses, virtual_users,
 			 rampup_seconds, duration_seconds, build_seconds, nopm, tpm,
@@ -47,8 +60,5 @@ func SaveTPCCResult(ctx context.Context, pool *pgxpool.Pool, runID uuid.UUID, ro
 		row.RampUpSeconds, row.DurationSeconds, row.BuildSeconds, row.NOPM, row.TPM,
 		row.NewOrderP50Ms, row.NewOrderP95Ms, row.NewOrderP99Ms, row.Select1P50Ms, row.Select1P95Ms, metrics,
 	)
-	if err != nil {
-		return fmt.Errorf("SaveTPCCResult: %w", err)
-	}
-	return nil
+	return err
 }

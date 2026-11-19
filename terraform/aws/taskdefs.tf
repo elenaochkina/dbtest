@@ -58,3 +58,29 @@ resource "aws_ecs_task_definition" "bench" {
     }
   }])
 }
+
+# Tester runs a client search and exits on its own when it finishes.
+resource "aws_ecs_task_definition" "tester" {
+  family                   = "${var.project}-tester"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 4096
+  memory                   = 8192
+  execution_role_arn       = aws_iam_role.execution.arn
+
+  runtime_platform {
+    cpu_architecture        = "ARM64"
+    operating_system_family = "LINUX"
+  }
+
+  container_definitions = jsonencode([{
+    name      = "tester"
+    image     = "${aws_ecr_repository.tester.repository_url}:${var.image_tag}"
+    essential = true
+
+    logConfiguration = {
+      logDriver = "awslogs"
+      options   = merge(local.log_options, { "awslogs-stream-prefix" = "tester" })
+    }
+  }])
+}

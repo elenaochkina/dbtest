@@ -11,13 +11,11 @@ import (
 	"maps"
 	"os"
 	"os/signal"
-	"slices"
 	"syscall"
 	"time"
 
 	"github.com/elenaochkina/dbtest/hammerdb"
 	"github.com/elenaochkina/dbtest/workload"
-	"github.com/jackc/pgx/v5"
 )
 
 // result is the contract between bench and the harness. Metrics comes straight
@@ -136,7 +134,7 @@ func runTPCC(ctx context.Context, dsn string, initOnly bool, cfg hammerdb.Config
 	if initOnly {
 		return res, hammerdb.Initialize(ctx, dsn, cfg)
 	}
-	baseline, err := roundTrip(ctx, dsn)
+	baseline, err := hammerdb.RoundTrip(ctx, dsn)
 	if err != nil {
 		return res, fmt.Errorf("select 1 baseline: %w", err)
 	}
@@ -147,31 +145,6 @@ func runTPCC(ctx context.Context, dsn string, initOnly bool, cfg hammerdb.Config
 	res.Metrics = out.Metrics()
 	maps.Copy(res.Metrics, baseline)
 	return res, nil
-}
-
-// roundTrip times 1000 SELECT 1 queries on one connection and returns their
-// p50 and p95 in milliseconds.
-func roundTrip(ctx context.Context, dsn string) (map[string]float64, error) {
-	conn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close(ctx)
-
-	times := make([]time.Duration, 1000)
-	for i := range times {
-		start := time.Now()
-		if _, err := conn.Exec(ctx, "SELECT 1"); err != nil {
-			return nil, err
-		}
-		times[i] = time.Since(start)
-	}
-	slices.Sort(times)
-	milliseconds := func(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
-	return map[string]float64{
-		"select1_p50_ms": milliseconds(times[len(times)/2]),
-		"select1_p95_ms": milliseconds(times[len(times)*95/100]),
-	}, nil
 }
 
 // emit writes the result to stdout

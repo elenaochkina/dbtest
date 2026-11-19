@@ -46,17 +46,19 @@ type Runner interface {
 	Exited(ctx context.Context, h Handle) (bool, error)
 }
 
-// Images names the probe and bench containers: an image tag on Docker, a task
-// definition on Fargate, a job on Cloud Run.
+// Images names the probe, bench and tester containers: an image tag on
+// Docker, a task definition on Fargate, a job on Cloud Run.
 type Images struct {
-	Probe string
-	Bench string
+	Probe  string
+	Bench  string
+	Tester string
 }
 
 // Definitions that terraform/gcp and harnesterraform/aws create.
 const (
-	ProbeName = "dbtest-probe"
-	BenchName = "dbtest-bench"
+	ProbeName  = "dbtest-probe"
+	BenchName  = "dbtest-bench"
+	TesterName = "dbtest-tester"
 )
 
 // RunnerName names a Runner implementation. A cloud lists the ones it can build.

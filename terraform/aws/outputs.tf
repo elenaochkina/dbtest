@@ -52,5 +52,6 @@ output "worker_env" {
     export AWS_ECS_LOG_GROUP=${aws_cloudwatch_log_group.tasks.name}
     export AWS_ECS_PROBE_TASK_DEFINITION=${aws_ecs_task_definition.probe.family}
     export AWS_ECS_BENCH_TASK_DEFINITION=${aws_ecs_task_definition.bench.family}
+    export AWS_ECS_TESTER_TASK_DEFINITION=${aws_ecs_task_definition.tester.family}
   EOT
 }

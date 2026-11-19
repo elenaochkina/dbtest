@@ -7,6 +7,15 @@ resource "aws_ecr_repository" "bench" {
   }
 }
 
+resource "aws_ecr_repository" "tester" {
+  name                 = "${var.project}/tester"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 resource "aws_ecr_repository" "probe" {
   name                 = "${var.project}/probe"
   image_tag_mutability = "MUTABLE"
@@ -18,7 +27,11 @@ resource "aws_ecr_repository" "probe" {
 
 # Untagged images are replaced on every push and otherwise bill forever.
 resource "aws_ecr_lifecycle_policy" "expire_untagged" {
-  for_each   = { bench = aws_ecr_repository.bench.name, probe = aws_ecr_repository.probe.name }
+  for_each = {
+    bench  = aws_ecr_repository.bench.name
+    probe  = aws_ecr_repository.probe.name
+    tester = aws_ecr_repository.tester.name
+  }
   repository = each.value
 
   policy = jsonencode({

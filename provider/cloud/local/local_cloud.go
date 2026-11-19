@@ -52,12 +52,13 @@ func (c *LocalCloud) NewRunner(name harness.RunnerName, tel *telemetry.Telemetry
 
 func (c *LocalCloud) Images(harness.RunnerName) harness.Images { return DockerImages() }
 
-// DockerImages returns the probe and bench image tags from .env, defaulting to
-// the tags make images builds.
+// DockerImages returns the probe, bench and tester image tags from .env,
+// defaulting to the tags make images builds.
 func DockerImages() harness.Images {
 	return harness.Images{
-		Probe: cloud.EnvOr("DBTEST_PROBE_IMAGE", "dbtest/probe:dev"),
-		Bench: cloud.EnvOr("DBTEST_BENCH_IMAGE", "dbtest/bench:dev"),
+		Probe:  cloud.EnvOr("DBTEST_PROBE_IMAGE", "dbtest/probe:dev"),
+		Bench:  cloud.EnvOr("DBTEST_BENCH_IMAGE", "dbtest/bench:dev"),
+		Tester: cloud.EnvOr("DBTEST_TESTER_IMAGE", "dbtest/tester:dev"),
 	}
 }
 

@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/elenaochkina/dbtest/experiment/search"
 )
 
 func TestParseBench(t *testing.T) {
@@ -38,5 +40,43 @@ func TestBenchSpec(t *testing.T) {
 	spec = benchSpec(BenchContainerInput{DSN: "postgres://db", Workload: "tpcc"})
 	if !slices.Contains(spec.Args, "-rampup") || spec.Args[len(spec.Args)-1] != "0s" {
 		t.Errorf("zero ramp-up args = %v, want -rampup 0s", spec.Args)
+	}
+}
+
+func TestTesterSpec(t *testing.T) {
+	spec := benchSpec(BenchContainerInput{
+		Image:      "dbtest/tester:dev",
+		DSN:        "postgres://db",
+		Tool:       "hammerdb",
+		Warehouses: 32,
+		Duration:   3 * time.Minute,
+		RampUp:     time.Minute,
+		Search: &search.Config{
+			MinClients: 8, MaxClients: 128, Resolution: 4, MaxTrials: 12, Tolerance: 0.03, Threshold: 0.95,
+		},
+	})
+	want := []string{"-dsn", "postgres://db", "-tool", "hammerdb", "-warehouses", "32", "-min-clients", "8", "-max-clients", "128",
+		"-resolution", "4", "-max-trials", "12", "-tolerance", "0.03", "-threshold", "0.95",
+		"-rampup", "1m0s", "-duration", "3m0s"}
+	if !slices.Equal(spec.Args, want) || !spec.SelfExits || spec.Image != "dbtest/tester:dev" {
+		t.Errorf("spec = %+v", spec)
+	}
+
+	spec = benchSpec(BenchContainerInput{DSN: "postgres://db", Tool: "pgbench", Warehouses: 32, Search: &search.Config{}})
+	if slices.Contains(spec.Args, "-warehouses") || !slices.Contains(spec.Args, "pgbench") {
+		t.Errorf("pgbench args = %v, want -tool pgbench without -warehouses", spec.Args)
+	}
+}
+
+func TestParseTesterResult(t *testing.T) {
+	out := []byte(`{"workload":"tpcc","phase":"trial","clients":8,"metrics":{"nopm":1000},"elapsed_s":240}
+{"workload":"tpcc","phase":"search","metrics":{"peak_clients":8},"trials":[{"clients":8,"metrics":{"nopm":1000},"elapsed_s":240},{"clients":8,"repeat":true,"metrics":{"nopm":990},"elapsed_s":240}],"elapsed_s":480,"aborted":false}
+`)
+	res, err := parseBench(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Phase != "search" || len(res.Trials) != 2 || !res.Trials[1].Repeat || res.Trials[0].Metrics["nopm"] != 1000 {
+		t.Errorf("result = %+v", res)
 	}
 }
